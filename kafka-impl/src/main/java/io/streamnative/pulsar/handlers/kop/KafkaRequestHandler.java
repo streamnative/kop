@@ -527,8 +527,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 allowed = policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
                             }
                             if (!allowed) {
-                                log.error("[{}] Automatic topic creation is not allowed on namespace {}",
-                                        ctx.channel(), namespace);
+                                log.error("[{}] Topic {} doesn't exist and it's not allowed "
+                                                 + "to auto create partitioned topic", ctx.channel(), topicName);
                                 future.complete(TopicAndMetadata.INVALID_PARTITIONS);
                             } else {
                                 log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
@@ -1133,23 +1133,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
                     return;
                 }
-
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Get earliest position for topic {}: {}, lac: {}",
                             ctx, perTopic.getName(), position, lac);
                 }
-                final long latestOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
-                if (latestOffset < 0) {
-                    log.warn("[{}] Unexpected latest offset {} (< 0) for topic {}",
-                            ctx, latestOffset, perTopic.getName());
-                    partitionData.complete(Pair.of(Errors.NONE, 0L));
-                    return;
-                }
                 if (position.compareTo(lac) > 0) {
-                    partitionData.complete(Pair.of(Errors.NONE, latestOffset));
+                    partitionData.complete(Pair.of(Errors.NONE, 0L));
                 } else {
                     MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false,
-                            timestamp, skipMessagesWithoutIndex)
+                                    timestamp, skipMessagesWithoutIndex)
                             .whenComplete((offset, throwable) -> {
                                 if (throwable != null) {
                                     log.error("[{}] Failed to get offset for position {}",
@@ -1157,10 +1149,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
                                     return;
                                 }
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}] Get offset of position for topic {}: {}, lac: {}, offset: {}",
+                                            ctx, perTopic.getName(), position, lac, offset);
+                                }
                                 partitionData.complete(Pair.of(Errors.NONE, offset));
-                    });
+                            });
                 }
-
             } else {
                 fetchOffsetByTimestamp(partitionData, managedLedger, lac, timestamp, perTopic.getName());
             }
