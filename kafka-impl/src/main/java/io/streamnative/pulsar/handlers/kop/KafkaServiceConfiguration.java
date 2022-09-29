@@ -502,6 +502,18 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Start the Migration service."
+    )
+    private boolean kopMigrationEnable = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Migration service port."
+    )
+    private int kopMigrationServicePort = 8002;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "KOP server compression type. Only used for entryFormat=mixed_kafka. If it's not set to none, "
                     + "the client messages will be used compression type which configured in here.\n"
                     + "The supported compression types are: [\"none\", \"gzip\", \"snappy\", \"lz4\"]"
