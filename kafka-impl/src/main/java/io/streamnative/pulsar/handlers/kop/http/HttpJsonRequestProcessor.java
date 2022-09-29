@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.http;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
+
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;

@@ -28,7 +28,8 @@ public class CreateTopicWithMigrationProcessor extends HttpJsonRequestProcessor<
     }
 
     @Override
-    protected CompletableFuture<Void> processRequest(CreateTopicWithMigrationRequest payload, List<String> patternGroups,
+    protected CompletableFuture<Void> processRequest(CreateTopicWithMigrationRequest payload,
+                                                     List<String> patternGroups,
                                                      FullHttpRequest request) {
         return null;
     }
