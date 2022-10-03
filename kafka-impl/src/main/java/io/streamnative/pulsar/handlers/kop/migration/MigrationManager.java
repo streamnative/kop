@@ -17,6 +17,11 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.http.HttpHandler;
+import io.streamnative.pulsar.handlers.kop.migration.processor.CreateTopicWithMigrationProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.processor.MigrationStatusProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.processor.StartMigrationProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.requests.CreateTopicWithMigrationRequest;
+import io.streamnative.pulsar.handlers.kop.migration.requests.StartMigrationRequest;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +65,9 @@ public class MigrationManager {
             return Optional.empty();
         }
         HttpHandler handler = new MigrationHandler();
+        handler.addProcessor(new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class));
+        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class));
+        handler.addProcessor(new MigrationStatusProcessor(Void.class));
 
         return Optional.of(new HttpChannelInitializer(handler));
     }
