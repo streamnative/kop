@@ -46,8 +46,8 @@
       --add-opens java.management/sun.management=ALL-UNNAMED <!--JvmDefaultGCMetricsLogger-->
     </test.additional.args>
     <!-- dependencies -->
-    <jackson.version>2.13.2</jackson.version>
-    <jackson-databind.version>2.13.2.1</jackson-databind.version>
+    <jackson.version>2.13.4</jackson.version>
+    <jackson-databind.version>2.13.4</jackson-databind.version>
     <kafka.version>2.1.1</kafka.version>
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>2.22.0</mockito.version>
