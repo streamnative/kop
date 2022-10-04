@@ -88,7 +88,7 @@ import org.apache.pulsar.metadata.api.GetResult;
 @Slf4j
 public final class MessageFetchContext {
 
-    private static final Recycler<MessageFetchContext> RECYCLER = new Recycler<MessageFetchContext>() {
+    private static final Recycler<MessageFetchContext> RECYCLER = new Recycler<>() {
         protected MessageFetchContext newObject(Handle<MessageFetchContext> handle) {
             return new MessageFetchContext(handle);
         }
@@ -264,13 +264,40 @@ public final class MessageFetchContext {
         recycle();
     }
 
+    private void fetchFromKafka(TopicPartition topicPartition, FetchRequest.PartitionData partitionData) {
+        Consumer<String, ByteBuffer> consumer =
+                migrationMetadataManager.getKafkaConsumerForTopic(topicPartition.topic(), "public/default",
+                        requestHandler.ctx.channel());
+        consumer.assign(fetchRequest.fetchData().keySet());
+        consumer.seek(topicPartition, partitionData.fetchOffset);
+        ConsumerRecords<String, ByteBuffer> records = consumer.poll(Duration.ofMillis(100));
+        if (records.count() == 0) {
+            addErrorPartitionResponse(topicPartition, Errors.NONE);
+            return;
+        }
+
+        MemoryRecordsBuilder memoryRecordsBuilder =
+                MemoryRecords.builder(ByteBuffer.allocate(0), CompressionType.NONE, TimestampType.LOG_APPEND_TIME,
+                        records.records(topicPartition).get(0).offset());
+        long highWatermark = 0;
+        for (ConsumerRecord<String, ByteBuffer> record : records) {
+            memoryRecordsBuilder.append(new SimpleRecord(record.timestamp(), record.value().array()));
+            highWatermark = Math.max(highWatermark, record.offset() + 1);
+        }
+        responseData.put(topicPartition,
+                new PartitionData<>(Errors.NONE, highWatermark, highWatermark, highWatermark, null,
+                        memoryRecordsBuilder.build()));
+        tryComplete();
+    }
+
     /**
      * Handle requests before a migration is done.
-     *   - If the migration has not started, proxy data requests to the backing Kafka instance;
-     *   - If the migration is in progress, return REBALANCE_IN_PROGRESS.
+     * - If the migration has not started, proxy data requests to the backing Kafka instance;
+     * - If the migration is in progress, return REBALANCE_IN_PROGRESS.
+     *
      * @param migrationMetadata the migration status of the topic
-     * @param topicPartition the topic partition
-     * @param partitionData the partition data
+     * @param topicPartition    the topic partition
+     * @param partitionData     the partition data
      * @return true if the request has been handled
      */
     private boolean handleRequestBeforeMigrationFinished(MigrationMetadata migrationMetadata,
@@ -279,36 +306,7 @@ public final class MessageFetchContext {
         MigrationStatus migrationStatus = migrationMetadata.getMigrationStatus();
         switch (migrationStatus) {
             case NOT_STARTED:
-                Consumer<String, ByteBuffer> consumer =
-                        migrationMetadataManager.getKafkaConsumerForTopic(topicPartition.topic(), "public/default",
-                                migrationMetadata.getKafkaClusterAddress());
-                consumer.assign(fetchRequest.fetchData().keySet());
-                consumer.seek(topicPartition, partitionData.fetchOffset);
-                ConsumerRecords<String, ByteBuffer> records = consumer.poll(Duration.ofMillis(100));
-                MemoryRecordsBuilder memoryRecordsBuilder = null;
-                long highWatermark = 0;
-                for (ConsumerRecord<String, ByteBuffer> record : records) {
-                    if (memoryRecordsBuilder == null) {
-                        memoryRecordsBuilder = MemoryRecords.builder(record.value(), CompressionType.NONE,
-                                TimestampType.LOG_APPEND_TIME, record.offset());
-                    } else {
-                        memoryRecordsBuilder.append(new SimpleRecord(record.timestamp(), record.value().array()));
-                    }
-                    highWatermark = Math.max(highWatermark, record.offset());
-                }
-                if (memoryRecordsBuilder != null) {
-                    responseData.put(topicPartition,
-                            new PartitionData<>(
-                                    Errors.NONE,
-                                    highWatermark,
-                                    highWatermark,
-                                    highWatermark,
-                                    null,
-                                    memoryRecordsBuilder.build()));
-                    tryComplete();
-                } else {
-                    addErrorPartitionResponse(topicPartition, Errors.NONE);
-                }
+                fetchFromKafka(topicPartition, partitionData);
                 return true;
             case STARTED:
                 responseData.put(topicPartition,
@@ -357,13 +355,21 @@ public final class MessageFetchContext {
                                     addErrorPartitionResponse(topicPartition, Errors.TOPIC_AUTHORIZATION_FAILED);
                                     return;
                                 }
-                                handlePartitionData(
-                                        topicPartition,
-                                        partitionData,
-                                        fullTopicName,
-                                        startPrepareMetadataNanos,
-                                        readCommitted,
-                                        limitBytes);
+                                if (migrationMetadata != null
+                                        && migrationMetadata.getMigrationOffset() > partitionData.fetchOffset) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Fetching old data from Kafka; offset: " + partitionData.fetchOffset);
+                                    }
+                                    fetchFromKafka(topicPartition, partitionData);
+                                } else {
+                                    handlePartitionData(
+                                            topicPartition,
+                                            partitionData,
+                                            fullTopicName,
+                                            startPrepareMetadataNanos,
+                                            readCommitted,
+                                            limitBytes);
+                                }
                             });
                 }));
     }
@@ -404,7 +410,8 @@ public final class MessageFetchContext {
                                      final long startPrepareMetadataNanos,
                                      final boolean readCommitted,
                                      AtomicLong limitBytes) {
-        final long offset = partitionData.fetchOffset;
+        final long fetchOffset = partitionData.fetchOffset;
+
         // the future that is returned by getTopicConsumerManager is always completed normally
         topicManager.getTopicConsumerManager(fullTopicName).thenAccept(tcm -> {
             if (tcm == null) {
@@ -417,7 +424,16 @@ public final class MessageFetchContext {
                             topicPartition, fullTopicName);
                 }
                 addErrorPartitionResponse(topicPartition, Errors.NOT_LEADER_FOR_PARTITION);
-            } else if (!checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
+                return;
+            }
+
+            MigrationMetadata migrationMetadata =
+                    MigrationMetadata.fromProperties(tcm.getManagedLedger().getProperties());
+            final long kafkaOffset = (migrationMetadata != null && migrationMetadata.getMigrationOffset() != -1) ?
+                    migrationMetadata.getMigrationOffset() : 0;
+            long offset = fetchOffset - kafkaOffset;
+
+            if (!checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
                 if (log.isDebugEnabled()) {
                     log.debug("Fetch for {}: remove tcm to get cursor for fetch offset: {} .",
                             topicPartition, offset);
@@ -453,7 +469,7 @@ public final class MessageFetchContext {
                             statsLogger.getPrepareMetadataStats().registerSuccessfulEvent(
                                     MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                             long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
-                            readEntries(cursor, topicPartition, cursorOffset, adjustedMaxBytes)
+                            readEntries(cursor, topicPartition, cursorOffset, adjustedMaxBytes, kafkaOffset)
                                     .whenComplete((entries, throwable) -> {
                                         if (throwable != null) {
                                             tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
@@ -634,7 +650,8 @@ public final class MessageFetchContext {
     private CompletableFuture<List<Entry>> readEntries(final ManagedCursor cursor,
                                                        final TopicPartition topicPartition,
                                                        final AtomicLong cursorOffset,
-                                                       long adjustedMaxBytes) {
+                                                       long adjustedMaxBytes,
+                                                       long kafkaOffset) {
         final OpStatsLogger messageReadStats = statsLogger.getMessageReadStats();
         // read readeEntryNum size entry.
         final long startReadingMessagesNanos = MathUtils.nowInNano();
@@ -653,7 +670,7 @@ public final class MessageFetchContext {
                 if (!entries.isEmpty()) {
                     final Entry lastEntry = entries.get(entries.size() - 1);
                     final PositionImpl currentPosition = PositionImpl.get(
-                            lastEntry.getLedgerId(), lastEntry.getEntryId());
+                            lastEntry.getLedgerId(), lastEntry.getEntryId() + kafkaOffset);
 
                     try {
                         final long lastOffset = MessageMetadataUtils.peekOffsetFromEntry(lastEntry);
@@ -677,6 +694,9 @@ public final class MessageFetchContext {
                                 topicPartition, currentPosition, e.getMessage());
                         messageReadStats.registerFailedEvent(
                                 MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
+                        readFuture.completeExceptionally(e);
+                        return;
+                    } catch (Exception e) {
                         readFuture.completeExceptionally(e);
                         return;
                     }

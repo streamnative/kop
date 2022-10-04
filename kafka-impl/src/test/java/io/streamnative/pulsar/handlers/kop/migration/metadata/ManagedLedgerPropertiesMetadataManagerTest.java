@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.migration.metadata;
 
 import static io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata.KAFKA_CLUSTER_ADDRESS;
+import static io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata.MIGRATION_OFFSET;
 import static io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata.TOPIC_MIGRATION_STATUS;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -72,11 +73,12 @@ public class ManagedLedgerPropertiesMetadataManagerTest {
         String topic = "topic";
         String address = "127.0.01:9091";
         KafkaConsumer<String, ByteBuffer> consumer =
-                metadataManager.getKafkaConsumerForTopic(topic, NAMESPACE_PREFIX, address);
+                metadataManager.getKafkaConsumerForTopic(topic, NAMESPACE_PREFIX, mock(Channel.class));
         assertEquals(metadataManager.kafkaConsumers.size(), 1);
 
         // Make sure the consumer is cached
-        assertSame(consumer, metadataManager.getKafkaConsumerForTopic(topic, NAMESPACE_PREFIX, address));
+        assertSame(consumer, metadataManager.getKafkaConsumerForTopic(topic, NAMESPACE_PREFIX,
+                mock(Channel.class)));
         assertEquals(metadataManager.kafkaConsumers.size(), 1);
 
         metadataManager.close();
@@ -92,7 +94,8 @@ public class ManagedLedgerPropertiesMetadataManagerTest {
                 CompletableFuture.completedFuture(Optional.of(persistentTopic)));
         when(persistentTopic.getManagedLedger()).thenReturn(managedLedger);
         when(managedLedger.getProperties()).thenReturn(
-                ImmutableMap.of(KAFKA_CLUSTER_ADDRESS, address, TOPIC_MIGRATION_STATUS, migrationStatus.name()));
+                ImmutableMap.of(KAFKA_CLUSTER_ADDRESS, address, TOPIC_MIGRATION_STATUS, migrationStatus.name(),
+                        MIGRATION_OFFSET, "123"));
 
         return new ManagedLedgerPropertiesMigrationMetadataManager(topicLookupService, mock(AdminManager.class));
     }
@@ -105,7 +108,7 @@ public class ManagedLedgerPropertiesMetadataManagerTest {
         ManagedLedgerPropertiesMigrationMetadataManager metadataManager =
                 setUpMetadata(topic, address, migrationStatus);
         assertEquals(metadataManager.getMigrationMetadata(topic, NAMESPACE_PREFIX, mock(Channel.class)).join(),
-                new MigrationMetadata(address, migrationStatus));
+                new MigrationMetadata(address, migrationStatus, -1));
 
         metadataManager.close();
     }

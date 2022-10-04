@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import com.google.common.base.Predicate;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata;
 import java.util.concurrent.CompletableFuture;
 import javax.annotation.Nullable;
 import lombok.AllArgsConstructor;
@@ -37,7 +38,12 @@ import org.apache.pulsar.common.protocol.Commands;
  */
 @Slf4j
 public class MessageMetadataUtils {
-
+    /**
+     * Returns the current offset of the ManagedLedger.
+     *
+     * @param managedLedger the ManagedLedger
+     * @return the current offset of the managed ledger
+     */
     public static long getCurrentOffset(ManagedLedger managedLedger) {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
     }

@@ -31,6 +31,9 @@ public class MigrationMetadata {
     static final String KAFKA_CLUSTER_ADDRESS = "migrationKafkaClusterAddress";
     @VisibleForTesting
     static final String TOPIC_MIGRATION_STATUS = "migrationTopicMigrationStatus";
+    @VisibleForTesting
+    static final String MIGRATION_OFFSET = "migrationOffset";
+
     /**
      * Address of the Kafka cluster backing this topic.
      */
@@ -41,6 +44,12 @@ public class MigrationMetadata {
      */
     private MigrationStatus migrationStatus;
 
+    /**
+     * Offset at which the migration happened. Any offset smaller or equal to this will have been stored in Kafka. -1
+     * means this topic hasn't been migrated yet.
+     */
+    private long migrationOffset;
+
     public Map<String, String> asProperties() {
         Map<String, String> props = new HashMap<>();
         if (kafkaClusterAddress != null) {
@@ -48,6 +57,9 @@ public class MigrationMetadata {
         }
         if (migrationStatus != null) {
             props.put(TOPIC_MIGRATION_STATUS, migrationStatus.name());
+        }
+        if (migrationOffset != -1) {
+            props.put(MIGRATION_OFFSET, Long.toString(migrationOffset));
         }
         return props;
     }
@@ -63,6 +75,11 @@ public class MigrationMetadata {
             return null;
         }
 
-        return new MigrationMetadata(kafkaClusterAddress, MigrationStatus.valueOf(status));
+        long migrationOffset = -1;
+        if (status.equals(MigrationStatus.DONE.name())) {
+            migrationOffset = Long.parseLong(props.get(MIGRATION_OFFSET));
+        }
+
+        return new MigrationMetadata(kafkaClusterAddress, MigrationStatus.valueOf(status), migrationOffset);
     }
 }
