@@ -77,7 +77,8 @@ public class MigrationManager {
         handler.addProcessor(
                 new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class, kafkaConfig,
                         migrationMetadataManager));
-        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class, kafkaConfig));
+        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class, kafkaConfig,
+                migrationMetadataManager));
         handler.addProcessor(new MigrationStatusProcessor(Void.class, kafkaConfig));
 
         return Optional.of(new HttpChannelInitializer(handler));

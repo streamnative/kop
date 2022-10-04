@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KafkaFutureUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
@@ -40,6 +41,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
@@ -47,13 +49,13 @@ import org.apache.kafka.common.serialization.ByteBufferDeserializer;
 import org.apache.kafka.common.serialization.ByteBufferSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
  * A MigrationMetadata Manager that uses Managed Ledger properties for metadata storage.
  */
 @Slf4j
 public class ManagedLedgerPropertiesMigrationMetadataManager implements MigrationMetadataManager {
-
     @VisibleForTesting
     final Map<String, Integer> numOutstandingRequests = new ConcurrentHashMap<>();
     @VisibleForTesting
@@ -90,9 +92,10 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
 
     @Override
     public KafkaConsumer<String, ByteBuffer> getKafkaConsumerForTopic(String topic, String namespacePrefix,
-                                                                      String kafkaClusterAddress) {
+                                                                      Channel channel) {
         String fullTopicName = new KopTopic(topic, namespacePrefix).getFullName();
         return kafkaConsumers.computeIfAbsent(fullTopicName, key -> {
+            String kafkaClusterAddress = getKafkaClusterAddress(topic, namespacePrefix, channel).join();
             Properties props = new Properties();
             props.put("bootstrap.servers", kafkaClusterAddress);
             props.put("key.deserializer", StringDeserializer.class);
@@ -239,9 +242,17 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
 
     @Override
     public CompletableFuture<Void> migrate(String topic, String namespacePrefix, Channel channel) {
-        // TODO: actually start the migration
-        setMigrationStatus(topic, namespacePrefix, MigrationStatus.STARTED, channel);
-        return CompletableFuture.completedFuture(null);
+        return setMigrationStatus(topic, namespacePrefix, MigrationStatus.STARTED, channel).thenCompose(
+                ignored -> {
+                    // TODO: Support multiple partitions
+                    TopicPartition topicPartition = new TopicPartition(topic, 0);
+                    // TODO: Wait for all the requests to finish
+                    long endOffset = getKafkaConsumerForTopic(topic, namespacePrefix, channel).endOffsets(
+                            Collections.singleton(topicPartition)).get(topicPartition);
+                    return setMigrationMetadata(topic, namespacePrefix,
+                            MigrationMetadata.builder().migrationStatus(MigrationStatus.DONE).migrationOffset(endOffset)
+                                    .build(), channel);
+                });
     }
 
     @Override
