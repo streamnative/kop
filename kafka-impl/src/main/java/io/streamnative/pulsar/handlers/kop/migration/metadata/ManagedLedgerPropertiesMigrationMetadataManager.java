@@ -28,7 +28,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -110,14 +113,14 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
         });
     }
 
-    private CompletableFuture<Map<String, String>> getManagedLedgerProperties(String topic, String namespacePrefix,
-                                                                              Channel channel) {
+    private CompletableFuture<ManagedLedger> getManagedLedger(String topic, String namespacePrefix,
+                                                              Channel channel) {
         String fullPartitionName = KopTopic.toString(topic, 0, namespacePrefix);
         return topicLookupService.getTopic(fullPartitionName, channel).thenApply(persistentTopic -> {
             if (!persistentTopic.isPresent()) {
                 throw new IllegalArgumentException("Cannot get topic " + fullPartitionName);
             }
-            return persistentTopic.get().getManagedLedger().getProperties();
+            return persistentTopic.get().getManagedLedger();
         });
     }
 
@@ -125,9 +128,10 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
     public CompletableFuture<MigrationMetadata> getMigrationMetadata(String topic, String namespacePrefix,
                                                                      Channel channel) {
         if (nonMigratoryTopics.contains(topic)) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
-        return getManagedLedgerProperties(topic, namespacePrefix, channel).thenApply(properties -> {
+        return getManagedLedger(topic, namespacePrefix, channel).thenApply(managedLedger -> {
+            Map<String, String> properties = managedLedger.getProperties();
             String status = properties.get(TOPIC_MIGRATION_STATUS);
             if (status == null) {
                 nonMigratoryTopics.add(topic);
@@ -190,8 +194,14 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
 
     private CompletableFuture<Void> setMigrationMetadata(String topic, String namespacePrefix, String key, String value,
                                                          Channel channel) {
-        return getManagedLedgerProperties(topic, namespacePrefix, channel).thenAccept(
-                properties -> properties.put(key, value));
+        return getManagedLedger(topic, namespacePrefix, channel).thenAccept(
+                managedLedger -> {
+                    try {
+                        managedLedger.setProperty(key, value);
+                    } catch (InterruptedException|ManagedLedgerException e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
     }
 
     private CompletableFuture<Void> setMigrationStatus(String topic, String namespacePrefix, MigrationStatus status,
