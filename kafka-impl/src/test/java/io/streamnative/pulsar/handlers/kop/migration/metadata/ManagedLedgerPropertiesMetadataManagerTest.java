@@ -36,6 +36,14 @@ import org.testng.annotations.Test;
 public class ManagedLedgerPropertiesMetadataManagerTest {
     private static final String NAMESPACE_PREFIX = "public/default";
 
+    private String fullPartitionName(String topic, int partition) {
+        return String.format("%s-partition-%d", fullTopicName(topic), partition);
+    }
+
+    private String fullTopicName(String topic) {
+        return String.format("persistent://%s/%s", NAMESPACE_PREFIX, topic);
+    }
+
     @Test
     public void testGetKafkaProducerForTopic() {
         ManagedLedgerPropertiesMigrationMetadataManager metadataManager =
@@ -78,7 +86,7 @@ public class ManagedLedgerPropertiesMetadataManagerTest {
         PersistentTopic persistentTopic = mock(PersistentTopic.class);
         ManagedLedger managedLedger = mock(ManagedLedger.class);
 
-        when(topicLookupService.getTopic(eq(topic), nullable(Channel.class))).thenReturn(
+        when(topicLookupService.getTopic(eq(fullPartitionName(topic, 0)), nullable(Channel.class))).thenReturn(
                 CompletableFuture.completedFuture(Optional.of(persistentTopic)));
         when(persistentTopic.getManagedLedger()).thenReturn(managedLedger);
         when(managedLedger.getProperties()).thenReturn(
@@ -135,10 +143,10 @@ public class ManagedLedgerPropertiesMetadataManagerTest {
                         mock(AdminManager.class));
         String topic = "topic";
         metadataManager.startProxyRequest(topic, NAMESPACE_PREFIX);
-        assertEquals(metadataManager.numOutstandingRequests.get(topic).intValue(), 1);
 
+        assertEquals(metadataManager.numOutstandingRequests.get(fullTopicName(topic)).intValue(), 1);
         metadataManager.finishProxyRequest(topic, NAMESPACE_PREFIX);
-        assertEquals(metadataManager.numOutstandingRequests.get(topic).intValue(), 0);
+        assertEquals(metadataManager.numOutstandingRequests.get(fullTopicName(topic)).intValue(), 0);
     }
 
     @Test
