@@ -28,7 +28,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
@@ -52,10 +51,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
  */
 @Slf4j
 public class ManagedLedgerPropertiesMigrationMetadataManager implements MigrationMetadataManager {
-    @VisibleForTesting
-    static final String KAFKA_CLUSTER_ADDRESS = "migrationKafkaClusterAddress";
-    @VisibleForTesting
-    static final String TOPIC_MIGRATION_STATUS = "migrationTopicMigrationStatus";
 
     @VisibleForTesting
     final Map<String, Integer> numOutstandingRequests = new ConcurrentHashMap<>();
@@ -131,21 +126,11 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
             return CompletableFuture.completedFuture(null);
         }
         return getManagedLedger(topic, namespacePrefix, channel).thenApply(managedLedger -> {
-            Map<String, String> properties = managedLedger.getProperties();
-            String status = properties.get(TOPIC_MIGRATION_STATUS);
-            if (status == null) {
+            MigrationMetadata migrationMetadata = MigrationMetadata.fromProperties(managedLedger.getProperties());
+            if (migrationMetadata == null) {
                 nonMigratoryTopics.add(topic);
-                return null;
             }
-
-            String kafkaClusterAddress = properties.get(KAFKA_CLUSTER_ADDRESS);
-            if (kafkaClusterAddress == null) {
-                log.error("Topic {} migration misconfigured", topic);
-                nonMigratoryTopics.add(topic);
-                return null;
-            }
-
-            return new MigrationMetadata(kafkaClusterAddress, MigrationStatus.valueOf(status));
+            return migrationMetadata;
         });
     }
 
@@ -192,13 +177,14 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
         });
     }
 
-    private CompletableFuture<Void> setMigrationMetadata(String topic, String namespacePrefix, String key, String value,
+    private CompletableFuture<Void> setMigrationMetadata(String topic, String namespacePrefix,
+                                                         MigrationMetadata migrationMetadata,
                                                          Channel channel) {
         return getManagedLedger(topic, namespacePrefix, channel).thenAccept(
                 managedLedger -> {
                     try {
-                        managedLedger.setProperty(key, value);
-                    } catch (InterruptedException|ManagedLedgerException e) {
+                        managedLedger.setProperties(migrationMetadata.asProperties());
+                    } catch (InterruptedException | ManagedLedgerException e) {
                         throw new IllegalStateException(e);
                     }
                 });
@@ -206,7 +192,8 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
 
     private CompletableFuture<Void> setMigrationStatus(String topic, String namespacePrefix, MigrationStatus status,
                                                        Channel channel) {
-        return setMigrationMetadata(topic, namespacePrefix, TOPIC_MIGRATION_STATUS, status.name(), channel);
+        return setMigrationMetadata(topic, namespacePrefix, MigrationMetadata.builder().migrationStatus(status).build(),
+                channel);
     }
 
     @Override
@@ -236,13 +223,10 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
                             throw value.exception();
                         }
                         log.info("Created topic partition: " + key + " with result " + value);
-                        return setMigrationMetadata(topic, namespacePrefix, KAFKA_CLUSTER_ADDRESS, kafkaClusterAddress,
-                                channel).thenCompose(
-                                ignored -> setMigrationStatus(
-                                        topic,
-                                        namespacePrefix,
-                                        MigrationStatus.NOT_STARTED,
-                                        channel));
+                        return setMigrationMetadata(topic, namespacePrefix,
+                                MigrationMetadata.builder().kafkaClusterAddress(kafkaClusterAddress)
+                                        .migrationStatus(MigrationStatus.NOT_STARTED).build(),
+                                channel);
                     }).toArray(CompletableFuture[]::new))).join();
             return null;
         }).whenComplete((value, throwable) -> {
