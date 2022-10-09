@@ -18,6 +18,7 @@ import com.google.common.collect.ImmutableMap;
 import io.netty.channel.Channel;
 import io.streamnative.pulsar.handlers.kop.AdminManager;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaFutureUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -206,42 +207,34 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
         KafkaFuture<TopicDescription> future =
                 new ArrayList<>(adminClient.describeTopics(Collections.singleton(topic)).values().values()).get(0);
 
-        // https://gist.github.com/bmaggi/8e42a16a02f18d3bff9b0b742a75bfe7
-        CompletableFuture<Void> wrappingFuture = new CompletableFuture<>();
-
-        future.thenApply(topicDescription -> {
+        return KafkaFutureUtils.toCompletableFuture(future.thenApply(topicDescription -> {
             log.error(topicDescription.toString());
             int numPartitions = topicDescription.partitions().size();
             int replicationFactor = topicDescription.partitions().get(0).replicas().size();
-            adminManager.createTopicsAsync(ImmutableMap.of(topic,
-                                    new CreateTopicsRequest.TopicDetails(numPartitions, (short) replicationFactor)),
-                            1000,
-                            namespacePrefix)
-                    .thenCompose(validResult -> CompletableFuture.allOf(validResult.entrySet().stream().map(entry -> {
-                        String key = entry.getKey();
-                        ApiError value = entry.getValue();
-                        if (!value.equals(ApiError.NONE)) {
-                            throw value.exception();
-                        }
-                        log.info("Created topic partition: " + key + " with result " + value);
-                        return setMigrationMetadata(topic, namespacePrefix,
-                                MigrationMetadata.builder().kafkaClusterAddress(kafkaClusterAddress)
-                                        .migrationStatus(MigrationStatus.NOT_STARTED).build(),
-                                channel);
-                    }).toArray(CompletableFuture[]::new))).join();
-            return null;
-        }).whenComplete((value, throwable) -> {
-            if (throwable != null) {
-                if (throwable instanceof UnknownTopicOrPartitionException) {
-                    throwable = new UnknownTopicOrPartitionException(
-                            String.format("Topic %s not found in Kafka at %s", topic, kafkaClusterAddress));
-                }
-                wrappingFuture.completeExceptionally(throwable);
-            } else {
-                wrappingFuture.complete(null);
+            try {
+                adminManager.createTopicsAsync(ImmutableMap.of(topic,
+                                        new CreateTopicsRequest.TopicDetails(numPartitions, (short) replicationFactor)),
+                                1000,
+                                namespacePrefix)
+                        .thenCompose(
+                                validResult -> CompletableFuture.allOf(validResult.entrySet().stream().map(entry -> {
+                                    String key = entry.getKey();
+                                    ApiError value = entry.getValue();
+                                    if (!value.equals(ApiError.NONE)) {
+                                        throw value.exception();
+                                    }
+                                    log.info("Created topic partition: " + key + " with result " + value);
+                                    return setMigrationMetadata(topic, namespacePrefix,
+                                            MigrationMetadata.builder().kafkaClusterAddress(kafkaClusterAddress)
+                                                    .migrationStatus(MigrationStatus.NOT_STARTED).build(),
+                                            channel);
+                                }).toArray(CompletableFuture[]::new))).join();
+            } catch (UnknownTopicOrPartitionException e) {
+                throw new UnknownTopicOrPartitionException(
+                        String.format("Topic %s not found in Kafka at %s", topic, kafkaClusterAddress));
             }
-        });
-        return wrappingFuture;
+            return null;
+        }));
     }
 
     @Override
