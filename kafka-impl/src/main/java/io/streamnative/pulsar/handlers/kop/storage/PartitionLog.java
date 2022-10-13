@@ -470,8 +470,9 @@ public class PartitionLog {
                             }
                             long readSize = entries.stream().mapToLong(Entry::getLength).sum();
                             limitBytes.addAndGet(-1 * readSize);
-                            handleEntries(future, entries, partitionData, tcm,
-                                    cursor, cursorOffset.get(), readCommitted, context);
+                            // Add new offset back to TCM after entries are read successfully
+                            tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
+                            handleEntries(future, entries, partitionData, tcm, cursor, readCommitted, context);
                         });
             }).exceptionally(ex -> {
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
@@ -519,20 +520,13 @@ public class PartitionLog {
                                final FetchRequest.PartitionData partitionData,
                                final KafkaTopicConsumerManager tcm,
                                final ManagedCursor cursor,
-                               final long cursorOffset,
                                final boolean readCommitted,
                                final MessageFetchContext context) {
         final long highWatermark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
-        // Add new offset back to TCM after entries are read successfully
-        tcm.add(cursorOffset, Pair.of(cursor, cursorOffset));
         final long lso = (readCommitted
                 ? this.firstUndecidedOffset().orElse(highWatermark) : highWatermark);
-        final List<Entry> committedEntries;
-        if (readCommitted) {
-            committedEntries = getCommittedEntries(entries, lso);
-        } else {
-            committedEntries = entries;
-        }
+        final List<Entry> committedEntries = readCommitted ? getCommittedEntries(entries, lso) : entries;
+
         if (log.isDebugEnabled()) {
             log.debug("Read {} entries but only {} entries are committed",
                     entries.size(), committedEntries.size());
@@ -543,23 +537,11 @@ public class PartitionLog {
         }
 
         // use compatible magic value by apiVersion
-        final short apiVersion = context.getHeader().apiVersion();
-        final byte magic;
-        if (apiVersion <= 1) {
-            magic = RecordBatch.MAGIC_VALUE_V0;
-        } else if (apiVersion <= 3) {
-            magic = RecordBatch.MAGIC_VALUE_V1;
-        } else {
-            magic = RecordBatch.CURRENT_MAGIC_VALUE;
-        }
+        final byte magic = getCompatibleMagic(context.getHeader().apiVersion());
 
         // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
-        final CompletableFuture<String> groupNameFuture;
-        if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
-            groupNameFuture = context.getCurrentConnectedGroupNameAsync();
-        } else {
-            groupNameFuture = CompletableFuture.completedFuture(null);
-        }
+        final CompletableFuture<String> groupNameFuture = kafkaConfig.isKopEnableGroupLevelConsumerMetrics()
+                ? context.getCurrentConnectedGroupNameAsync() : CompletableFuture.completedFuture(null);
 
         groupNameFuture.whenCompleteAsync((groupName, ex) -> {
             if (ex != null) {
@@ -591,6 +573,18 @@ public class PartitionLog {
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
             return null;
         });
+    }
+
+    private static byte getCompatibleMagic(short apiVersion) {
+        final byte magic;
+        if (apiVersion <= 1) {
+            magic = RecordBatch.MAGIC_VALUE_V0;
+        } else if (apiVersion <= 3) {
+            magic = RecordBatch.MAGIC_VALUE_V1;
+        } else {
+            magic = RecordBatch.CURRENT_MAGIC_VALUE;
+        }
+        return magic;
     }
 
     private Position getLastPositionFromEntries(List<Entry> entries) {
