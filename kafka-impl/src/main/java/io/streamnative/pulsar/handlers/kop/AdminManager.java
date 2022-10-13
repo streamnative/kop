@@ -56,10 +56,10 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 
 @Slf4j
-class AdminManager {
+public class AdminManager {
 
     private final DelayedOperationPurgatory<DelayedOperation> topicPurgatory =
-            DelayedOperationPurgatory.<DelayedOperation>builder()
+            DelayedOperationPurgatory.builder()
                     .purgatoryName("topic")
                     .timeoutTimer(SystemTimer.builder().executorName("topic").build())
                     .build();
@@ -83,9 +83,9 @@ class AdminManager {
         topicPurgatory.shutdown();
     }
 
-    CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo,
-                                                               int timeoutMs,
-                                                               String namespacePrefix) {
+    public CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo,
+                                                                      int timeoutMs,
+                                                                      String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -245,11 +245,10 @@ class AdminManager {
     }
 
     private DescribeConfigsResponse.ConfigEntry buildDummyEntryConfig(String configName, String configValue) {
-        DescribeConfigsResponse.ConfigEntry configEntry = new DescribeConfigsResponse.ConfigEntry(
+        return new DescribeConfigsResponse.ConfigEntry(
                 configName, configValue,
                 DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG, true, true,
                 Collections.emptyList());
-        return configEntry;
     }
 
     public void deleteTopic(String topicToDelete,

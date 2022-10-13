@@ -32,7 +32,7 @@ import org.apache.pulsar.common.naming.TopicName;
 public class KafkaTopicLookupService {
     private final BrokerService brokerService;
 
-    KafkaTopicLookupService(BrokerService brokerService) {
+    public KafkaTopicLookupService(BrokerService brokerService) {
         this.brokerService = brokerService;
      }
 
