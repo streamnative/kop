@@ -30,7 +30,7 @@
   <description>OAuth 2.0 login callback handler for Kafka client</description>
 
   <properties>
-    <jackson.version>2.13.4</jackson.version>
+    <jackson.version>2.13.4.2</jackson.version>
     <async-http-client.version>2.12.1</async-http-client.version>
     <guava.version>31.1-jre</guava.version>
   </properties>
