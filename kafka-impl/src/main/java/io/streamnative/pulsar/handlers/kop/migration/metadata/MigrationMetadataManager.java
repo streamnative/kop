@@ -41,12 +41,12 @@ public interface MigrationMetadataManager {
      * Get a Kafka consumer for the given topic.
      *
      * @param topic               the topic
-     * @param kafkaClusterAddress address of the Kafka cluster for the topic
      * @param namespacePrefix     namespace prefix of the topic
+     * @param channel
      * @return a Kafka consumer
      */
     Consumer<String, ByteBuffer> getKafkaConsumerForTopic(String topic, String namespacePrefix,
-                                                          String kafkaClusterAddress);
+                                                          Channel channel);
 
     /**
      * Get an AdminClient for a Kafka instance.

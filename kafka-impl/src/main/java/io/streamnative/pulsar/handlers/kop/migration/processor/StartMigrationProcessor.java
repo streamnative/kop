@@ -13,8 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.processor;
 
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.http.HttpJsonRequestProcessor;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadataManager;
 import io.streamnative.pulsar.handlers.kop.migration.requests.StartMigrationRequest;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -23,13 +26,19 @@ import java.util.concurrent.CompletableFuture;
  * Http processor for starting a Kafka to KoP migration.
  */
 public class StartMigrationProcessor extends HttpJsonRequestProcessor<StartMigrationRequest, Void> {
-    public StartMigrationProcessor(Class<StartMigrationRequest> requestModel) {
+    private final KafkaServiceConfiguration kafkaConfig;
+    private final MigrationMetadataManager migrationMetadataManager;
+
+    public StartMigrationProcessor(Class<StartMigrationRequest> requestModel, KafkaServiceConfiguration kafkaConfig,
+                                   MigrationMetadataManager migrationMetadataManager) {
         super(requestModel, "/migration/start", "POST");
+        this.kafkaConfig = kafkaConfig;
+        this.migrationMetadataManager = migrationMetadataManager;
     }
 
     @Override
     protected CompletableFuture<Void> processRequest(StartMigrationRequest payload, List<String> patternGroups,
-                                                     FullHttpRequest request) {
-        return null;
+                                                     FullHttpRequest request, Channel channel) {
+        return migrationMetadataManager.migrate(payload.getTopic(), "public/default", channel);
     }
 }

@@ -13,7 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.processor;
 
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.http.HttpJsonRequestProcessor;
 import io.streamnative.pulsar.handlers.kop.migration.requests.MigrationStatusResponse;
 import java.util.List;
@@ -24,13 +26,18 @@ import java.util.concurrent.CompletableFuture;
  */
 public class MigrationStatusProcessor
         extends HttpJsonRequestProcessor<Void, MigrationStatusResponse> {
-    public MigrationStatusProcessor(Class<Void> requestModel) {
+    private final KafkaServiceConfiguration kafkaConfig;
+
+    public MigrationStatusProcessor(Class<Void> requestModel,
+                                    KafkaServiceConfiguration kafkaConfig) {
         super(requestModel, "/migration/status", "GET");
+        this.kafkaConfig = kafkaConfig;
     }
 
     @Override
     protected CompletableFuture<MigrationStatusResponse> processRequest(Void payload, List<String> patternGroups,
-                                                                        FullHttpRequest request) {
+                                                                        FullHttpRequest request,
+                                                                        Channel channel) {
         return null;
     }
 }
