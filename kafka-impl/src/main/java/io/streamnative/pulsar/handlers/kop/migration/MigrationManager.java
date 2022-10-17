@@ -17,6 +17,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.http.HttpHandler;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadataManager;
 import io.streamnative.pulsar.handlers.kop.migration.processor.CreateTopicWithMigrationProcessor;
 import io.streamnative.pulsar.handlers.kop.migration.processor.MigrationStatusProcessor;
 import io.streamnative.pulsar.handlers.kop.migration.processor.StartMigrationProcessor;
@@ -36,20 +37,27 @@ import org.apache.pulsar.client.api.PulsarClientException;
 public class MigrationManager {
     private final KafkaServiceConfiguration kafkaConfig;
     private final PulsarClient pulsarClient;
+    private final MigrationMetadataManager migrationMetadataManager;
 
     /**
      * Creates a MigrationManager.
-     * @param kafkaConfig the KafkaConfig used by the underlying PulsarClient
-     * @param pulsar the PulsarService
+     *
+     * @param kafkaConfig              the KafkaConfig used by the underlying PulsarClient
+     * @param pulsar                   the PulsarService
+     * @param migrationMetadataManager the MigrationMetadataManager that manages the topic migration metadata
      */
     public MigrationManager(KafkaServiceConfiguration kafkaConfig,
-                            PulsarService pulsar) {
+                            PulsarService pulsar,
+                            MigrationMetadataManager migrationMetadataManager) {
         this.kafkaConfig = kafkaConfig;
-        this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {});
+        this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {
+        });
+        this.migrationMetadataManager = migrationMetadataManager;
     }
 
     /**
      * Get the address of the KoP migration service.
+     *
      * @return the address of the KoP migration service
      */
     public InetSocketAddress getAddress() {
@@ -58,6 +66,7 @@ public class MigrationManager {
 
     /**
      * Build an HttpChannelInitializer for KoP migration service.
+     *
      * @return the HttpChannelInitializer for KoP migration service
      */
     public Optional<HttpChannelInitializer> build() {
@@ -65,9 +74,11 @@ public class MigrationManager {
             return Optional.empty();
         }
         HttpHandler handler = new MigrationHandler();
-        handler.addProcessor(new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class));
-        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class));
-        handler.addProcessor(new MigrationStatusProcessor(Void.class));
+        handler.addProcessor(
+                new CreateTopicWithMigrationProcessor(CreateTopicWithMigrationRequest.class, kafkaConfig,
+                        migrationMetadataManager));
+        handler.addProcessor(new StartMigrationProcessor(StartMigrationRequest.class, kafkaConfig));
+        handler.addProcessor(new MigrationStatusProcessor(Void.class, kafkaConfig));
 
         return Optional.of(new HttpChannelInitializer(handler));
     }

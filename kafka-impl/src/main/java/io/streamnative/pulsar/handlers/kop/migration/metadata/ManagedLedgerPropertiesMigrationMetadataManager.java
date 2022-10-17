@@ -18,6 +18,7 @@ import com.google.common.collect.ImmutableMap;
 import io.netty.channel.Channel;
 import io.streamnative.pulsar.handlers.kop.AdminManager;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaFutureUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -29,6 +30,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -37,6 +40,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.serialization.ByteBufferDeserializer;
@@ -49,10 +53,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
  */
 @Slf4j
 public class ManagedLedgerPropertiesMigrationMetadataManager implements MigrationMetadataManager {
-    @VisibleForTesting
-    static final String KAFKA_CLUSTER_ADDRESS = "migrationKafkaClusterAddress";
-    @VisibleForTesting
-    static final String TOPIC_MIGRATION_STATUS = "migrationTopicMigrationStatus";
 
     @VisibleForTesting
     final Map<String, Integer> numOutstandingRequests = new ConcurrentHashMap<>();
@@ -110,14 +110,14 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
         });
     }
 
-    private CompletableFuture<Map<String, String>> getManagedLedgerProperties(String topic, String namespacePrefix,
-                                                                              Channel channel) {
+    private CompletableFuture<ManagedLedger> getManagedLedger(String topic, String namespacePrefix,
+                                                              Channel channel) {
         String fullPartitionName = KopTopic.toString(topic, 0, namespacePrefix);
         return topicLookupService.getTopic(fullPartitionName, channel).thenApply(persistentTopic -> {
             if (!persistentTopic.isPresent()) {
                 throw new IllegalArgumentException("Cannot get topic " + fullPartitionName);
             }
-            return persistentTopic.get().getManagedLedger().getProperties();
+            return persistentTopic.get().getManagedLedger();
         });
     }
 
@@ -125,23 +125,14 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
     public CompletableFuture<MigrationMetadata> getMigrationMetadata(String topic, String namespacePrefix,
                                                                      Channel channel) {
         if (nonMigratoryTopics.contains(topic)) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
-        return getManagedLedgerProperties(topic, namespacePrefix, channel).thenApply(properties -> {
-            String status = properties.get(TOPIC_MIGRATION_STATUS);
-            if (status == null) {
+        return getManagedLedger(topic, namespacePrefix, channel).thenApply(managedLedger -> {
+            MigrationMetadata migrationMetadata = MigrationMetadata.fromProperties(managedLedger.getProperties());
+            if (migrationMetadata == null) {
                 nonMigratoryTopics.add(topic);
-                return null;
             }
-
-            String kafkaClusterAddress = properties.get(KAFKA_CLUSTER_ADDRESS);
-            if (kafkaClusterAddress == null) {
-                log.error("Topic {} migration misconfigured", topic);
-                nonMigratoryTopics.add(topic);
-                return null;
-            }
-
-            return new MigrationMetadata(kafkaClusterAddress, MigrationStatus.valueOf(status));
+            return migrationMetadata;
         });
     }
 
@@ -188,15 +179,23 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
         });
     }
 
-    private CompletableFuture<Void> setMigrationMetadata(String topic, String namespacePrefix, String key, String value,
+    private CompletableFuture<Void> setMigrationMetadata(String topic, String namespacePrefix,
+                                                         MigrationMetadata migrationMetadata,
                                                          Channel channel) {
-        return getManagedLedgerProperties(topic, namespacePrefix, channel).thenAccept(
-                properties -> properties.put(key, value));
+        return getManagedLedger(topic, namespacePrefix, channel).thenAccept(
+                managedLedger -> {
+                    try {
+                        managedLedger.setProperties(migrationMetadata.asProperties());
+                    } catch (InterruptedException | ManagedLedgerException e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
     }
 
     private CompletableFuture<Void> setMigrationStatus(String topic, String namespacePrefix, MigrationStatus status,
                                                        Channel channel) {
-        return setMigrationMetadata(topic, namespacePrefix, TOPIC_MIGRATION_STATUS, status.name(), channel);
+        return setMigrationMetadata(topic, namespacePrefix, MigrationMetadata.builder().migrationStatus(status).build(),
+                channel);
     }
 
     @Override
@@ -208,41 +207,34 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
         KafkaFuture<TopicDescription> future =
                 new ArrayList<>(adminClient.describeTopics(Collections.singleton(topic)).values().values()).get(0);
 
-        // https://gist.github.com/bmaggi/8e42a16a02f18d3bff9b0b742a75bfe7
-        CompletableFuture<Void> wrappingFuture = new CompletableFuture<>();
-
-        future.thenApply(topicDescription -> {
+        return KafkaFutureUtils.toCompletableFuture(future.thenApply(topicDescription -> {
             log.error(topicDescription.toString());
             int numPartitions = topicDescription.partitions().size();
             int replicationFactor = topicDescription.partitions().get(0).replicas().size();
-            adminManager.createTopicsAsync(ImmutableMap.of(topic,
-                                    new CreateTopicsRequest.TopicDetails(numPartitions, (short) replicationFactor)),
-                            1000,
-                            namespacePrefix)
-                    .thenCompose(validResult -> CompletableFuture.allOf(validResult.entrySet().stream().map(entry -> {
-                        String key = entry.getKey();
-                        ApiError value = entry.getValue();
-                        if (!value.equals(ApiError.NONE)) {
-                            throw value.exception();
-                        }
-                        log.info("Created topic partition: " + key + " with result " + value);
-                        return setMigrationMetadata(topic, namespacePrefix, KAFKA_CLUSTER_ADDRESS, kafkaClusterAddress,
-                                channel).thenCompose(
-                                ignored -> setMigrationStatus(
-                                        topic,
-                                        namespacePrefix,
-                                        MigrationStatus.NOT_STARTED,
-                                        channel));
-                    }).toArray(CompletableFuture[]::new))).join();
-            return null;
-        }).whenComplete((value, throwable) -> {
-            if (throwable != null) {
-                wrappingFuture.completeExceptionally(throwable);
-            } else {
-                wrappingFuture.complete(null);
+            try {
+                adminManager.createTopicsAsync(ImmutableMap.of(topic,
+                                        new CreateTopicsRequest.TopicDetails(numPartitions, (short) replicationFactor)),
+                                1000,
+                                namespacePrefix)
+                        .thenCompose(
+                                validResult -> CompletableFuture.allOf(validResult.entrySet().stream().map(entry -> {
+                                    String key = entry.getKey();
+                                    ApiError value = entry.getValue();
+                                    if (!value.equals(ApiError.NONE)) {
+                                        throw value.exception();
+                                    }
+                                    log.info("Created topic partition: " + key + " with result " + value);
+                                    return setMigrationMetadata(topic, namespacePrefix,
+                                            MigrationMetadata.builder().kafkaClusterAddress(kafkaClusterAddress)
+                                                    .migrationStatus(MigrationStatus.NOT_STARTED).build(),
+                                            channel);
+                                }).toArray(CompletableFuture[]::new))).join();
+            } catch (UnknownTopicOrPartitionException e) {
+                throw new UnknownTopicOrPartitionException(
+                        String.format("Topic %s not found in Kafka at %s", topic, kafkaClusterAddress));
             }
-        });
-        return wrappingFuture;
+            return null;
+        }));
     }
 
     @Override

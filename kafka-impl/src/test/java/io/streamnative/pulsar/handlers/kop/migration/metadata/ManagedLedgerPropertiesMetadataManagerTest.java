@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.metadata;
 
+import static io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata.KAFKA_CLUSTER_ADDRESS;
+import static io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadata.TOPIC_MIGRATION_STATUS;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
@@ -90,9 +92,7 @@ public class ManagedLedgerPropertiesMetadataManagerTest {
                 CompletableFuture.completedFuture(Optional.of(persistentTopic)));
         when(persistentTopic.getManagedLedger()).thenReturn(managedLedger);
         when(managedLedger.getProperties()).thenReturn(
-                ImmutableMap.of(ManagedLedgerPropertiesMigrationMetadataManager.KAFKA_CLUSTER_ADDRESS, address,
-                        ManagedLedgerPropertiesMigrationMetadataManager.TOPIC_MIGRATION_STATUS,
-                        migrationStatus.name()));
+                ImmutableMap.of(KAFKA_CLUSTER_ADDRESS, address, TOPIC_MIGRATION_STATUS, migrationStatus.name()));
 
         return new ManagedLedgerPropertiesMigrationMetadataManager(topicLookupService, mock(AdminManager.class));
     }
