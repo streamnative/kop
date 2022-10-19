@@ -13,15 +13,24 @@
  */
 package io.streamnative.pulsar.handlers.kop.migration.metadata;
 
+import com.google.common.annotations.VisibleForTesting;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 
 /**
  * Metadata about Kafka migration for a topic.
  */
 @AllArgsConstructor
+@Builder
 @Data
 public class MigrationMetadata {
+    @VisibleForTesting
+    static final String KAFKA_CLUSTER_ADDRESS = "migrationKafkaClusterAddress";
+    @VisibleForTesting
+    static final String TOPIC_MIGRATION_STATUS = "migrationTopicMigrationStatus";
     /**
      * Address of the Kafka cluster backing this topic.
      */
@@ -31,4 +40,29 @@ public class MigrationMetadata {
      * Migration status of the topic.
      */
     private MigrationStatus migrationStatus;
+
+    public Map<String, String> asProperties() {
+        Map<String, String> props = new HashMap<>();
+        if (kafkaClusterAddress != null) {
+            props.put(KAFKA_CLUSTER_ADDRESS, kafkaClusterAddress);
+        }
+        if (migrationStatus != null) {
+            props.put(TOPIC_MIGRATION_STATUS, migrationStatus.name());
+        }
+        return props;
+    }
+
+    public static MigrationMetadata fromProperties(Map<String, String> props) {
+        String status = props.get(TOPIC_MIGRATION_STATUS);
+        if (status == null) {
+            return null;
+        }
+
+        String kafkaClusterAddress = props.get(KAFKA_CLUSTER_ADDRESS);
+        if (kafkaClusterAddress == null) {
+            return null;
+        }
+
+        return new MigrationMetadata(kafkaClusterAddress, MigrationStatus.valueOf(status));
+    }
 }
