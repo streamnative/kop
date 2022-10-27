@@ -178,6 +178,10 @@ public class EntryFormatterTest {
                 }
                 return EntryFilter.FilterResult.ACCEPT;
             }
+
+            /**
+             * Ignore the method
+             */
             @Override
             public void close() {
             }
