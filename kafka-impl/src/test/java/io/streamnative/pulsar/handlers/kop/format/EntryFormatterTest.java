@@ -16,7 +16,9 @@ package io.streamnative.pulsar.handlers.kop.format;
 import static org.apache.kafka.common.record.LegacyRecord.RECORD_OVERHEAD_V0;
 import static org.apache.kafka.common.record.LegacyRecord.RECORD_OVERHEAD_V1;
 import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
+import static org.mockito.Mockito.mock;
 
+import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
@@ -27,6 +29,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
@@ -44,6 +47,10 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.FilterContext;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -101,6 +108,16 @@ public class EntryFormatterTest {
         };
     }
 
+    @DataProvider(name = "entryFormatters")
+    public Object[] entryFormatters() {
+        init();
+        return new Object[] {
+                pulsarFormatter,
+                kafkaV1Formatter,
+                kafkaMixedFormatter
+        };
+    }
+
     /**
      * 1. When magic=0, magic=0 has no concept of relative offset.
      * 2. When magic=1, simulate the internal offset is not set.
@@ -142,6 +159,38 @@ public class EntryFormatterTest {
         }
         checkCorrectOffset(encodeResult.getRecords());
 
+    }
+    @Test(dataProvider = "entryFormatters")
+    public void testEntryFormatterDecode(AbstractEntryFormatter entryFormatter) {
+        //Mock entries
+        Entry entry1 = mock(Entry.class);
+        Entry entry2 = mock(Entry.class);
+
+        // Filter the entries
+        ImmutableMap.Builder<String, EntryFilterWithClassLoader> builder = ImmutableMap.builder();
+        EntryFilter mockEntryFilter = new EntryFilter() {
+            @Override
+            public FilterResult filterEntry(Entry entry, FilterContext context) {
+                MessageMetadata msgMetadata = context.getMsgMetadata();
+                // Filter with replicatedFrom in MessageMetadata
+                if (msgMetadata != null && msgMetadata.hasReplicatedFrom()) {
+                    return EntryFilter.FilterResult.REJECT;
+                }
+                return EntryFilter.FilterResult.ACCEPT;
+            }
+            @Override
+            public void close() {
+            }
+        };
+        builder.put("mockEntryFilter", new EntryFilterWithClassLoader(mockEntryFilter, null));
+        Assert.assertEquals(
+                entryFormatter.filterOnlyByMsgMetadata(new MessageMetadata().setReplicatedFrom("cluster-1"),
+                        entry1,
+                        builder.build().values().asList()), EntryFilter.FilterResult.REJECT);
+        Assert.assertEquals(
+                entryFormatter.filterOnlyByMsgMetadata(new MessageMetadata(),
+                        entry2,
+                        builder.build().values().asList()), EntryFilter.FilterResult.ACCEPT);
     }
 
     private static void checkWrongOffset(MemoryRecords records,
