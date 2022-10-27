@@ -19,6 +19,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -45,8 +46,8 @@ public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
     }
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
-        return super.decode(entries, magic);
+    public DecodeResult decode(List<Entry> entries, byte magic, List<EntryFilterWithClassLoader> entryfilters) {
+        return super.decode(entries, magic, entryfilters);
     }
 
     private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {

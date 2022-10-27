@@ -27,6 +27,7 @@ import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MarkerType;
@@ -114,8 +115,9 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     }
 
     @Override
-    public DecodeResult decode(final List<Entry> entries, final byte magic) {
-        return super.decode(entries, magic);
+    public DecodeResult decode(final List<Entry> entries, final byte magic,
+                               List<EntryFilterWithClassLoader> entryfilters) {
+        return super.decode(entries, magic, entryfilters);
     }
 
     // convert kafka Record to Pulsar Message.

@@ -491,7 +491,8 @@ public final class MessageFetchContext {
 
             final long startDecodingEntriesNanos = MathUtils.nowInNano();
             final DecodeResult decodeResult = requestHandler
-                    .getEntryFormatter().decode(entries, magic);
+                    .getEntryFormatter().decode(entries, magic,
+                            requestHandler.getPulsarService().getBrokerService().getEntryFilters().values().asList());
             requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
             decodeResults.add(decodeResult);

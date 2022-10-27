@@ -30,6 +30,9 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.FilterContext;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -43,7 +46,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     private final Time time = Time.SYSTEM;
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
+    public DecodeResult decode(List<Entry> entries, byte magic, List<EntryFilterWithClassLoader> entryfilters) {
         int totalSize = 0;
         int conversionCount = 0;
         long conversionTimeNanos = 0L;
@@ -54,6 +57,10 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
                 final ByteBuf byteBuf = entry.getDataBuffer();
                 final MessageMetadata metadata = MessageMetadataUtils.parseMessageMetadata(byteBuf);
+                EntryFilter.FilterResult filterResult = filterOnlyByMsgMetadata(metadata, entry, entryfilters);
+                if (filterResult == EntryFilter.FilterResult.REJECT) {
+                    continue;
+                }
                 if (isKafkaEntryFormat(metadata)) {
                     byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
@@ -126,4 +133,24 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
         return false;
     }
 
+    private static EntryFilter.FilterResult filterOnlyByMsgMetadata(MessageMetadata msgMetadata, Entry entry,
+                                                                    List<EntryFilterWithClassLoader> entryFilters) {
+        FilterContext filterContext = new FilterContext();
+        filterContext.setMsgMetadata(msgMetadata);
+
+        EntryFilter.FilterResult result = EntryFilter.FilterResult.ACCEPT;
+        for (EntryFilter entryFilter : entryFilters) {
+            EntryFilter.FilterResult filterResult = entryFilter.filterEntry(entry, filterContext);
+            if (filterResult == null
+                    || filterResult == EntryFilter.FilterResult.RESCHEDULE
+                    || filterResult == EntryFilter.FilterResult.ACCEPT) {
+                continue;
+            }
+            if (filterResult == EntryFilter.FilterResult.REJECT) {
+                result = EntryFilter.FilterResult.REJECT;
+                break;
+            }
+        }
+        return result;
+    }
 }
