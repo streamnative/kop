@@ -135,6 +135,9 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
 
     protected EntryFilter.FilterResult filterOnlyByMsgMetadata(MessageMetadata msgMetadata, Entry entry,
                                                                     List<EntryFilterWithClassLoader> entryFilters) {
+        if (entryFilters == null || entryFilters.isEmpty()) {
+            return EntryFilter.FilterResult.ACCEPT;
+        }
         FilterContext filterContext = new FilterContext();
         filterContext.setMsgMetadata(msgMetadata);
 
