@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
 import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
+import com.google.common.collect.ImmutableList;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
@@ -44,9 +45,14 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     public static final String IDENTITY_KEY = "entry.format";
     public static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
     private final Time time = Time.SYSTEM;
+    private final ImmutableList<EntryFilterWithClassLoader> entryfilters;
+
+    protected AbstractEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+        this.entryfilters = entryfilters;
+    }
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic, List<EntryFilterWithClassLoader> entryfilters) {
+    public DecodeResult decode(List<Entry> entries, byte magic) {
         int totalSize = 0;
         int conversionCount = 0;
         long conversionTimeNanos = 0L;

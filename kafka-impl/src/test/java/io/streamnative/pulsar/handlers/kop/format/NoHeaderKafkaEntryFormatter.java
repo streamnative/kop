@@ -17,7 +17,6 @@ import io.netty.buffer.Unpooled;
 import java.util.List;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 
 /**
  * The entry formatter that uses Kafka's format but has no header.
@@ -34,7 +33,7 @@ public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
     }
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic, List<EntryFilterWithClassLoader> entryfilters) {
+    public DecodeResult decode(List<Entry> entries, byte magic) {
         // Do nothing
         return null;
     }

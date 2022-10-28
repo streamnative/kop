@@ -85,9 +85,9 @@ public class EntryFormatterTest {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
         KafkaV1ServiceConfiguration.setEntryFormat("kafka");
         kafkaMixedServiceConfiguration.setEntryFormat("mixed_kafka");
-        pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration);
-        kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration);
-        kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration);
+        pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration, null);
+        kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration, null);
+        kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration, null);
     }
 
     @DataProvider(name = "compressionTypesAndMagic")

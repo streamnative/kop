@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
@@ -44,6 +45,10 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     //// for Batch messages
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
+
+    protected PulsarEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+        super(entryfilters);
+    }
 
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
@@ -115,9 +120,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     }
 
     @Override
-    public DecodeResult decode(final List<Entry> entries, final byte magic,
-                               List<EntryFilterWithClassLoader> entryfilters) {
-        return super.decode(entries, magic, entryfilters);
+    public DecodeResult decode(final List<Entry> entries, final byte magic) {
+        return super.decode(entries, magic);
     }
 
     // convert kafka Record to Pulsar Message.

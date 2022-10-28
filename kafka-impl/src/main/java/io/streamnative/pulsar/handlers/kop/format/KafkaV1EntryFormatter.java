@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import com.google.common.collect.ImmutableList;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.List;
@@ -31,6 +32,10 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
 
+    protected KafkaV1EntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+        super(entryfilters);
+    }
+
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
         final MemoryRecords records = encodeRequest.getRecords();
@@ -46,8 +51,8 @@ public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
     }
 
     @Override
-    public DecodeResult decode(List<Entry> entries, byte magic, List<EntryFilterWithClassLoader> entryfilters) {
-        return super.decode(entries, magic, entryfilters);
+    public DecodeResult decode(List<Entry> entries, byte magic) {
+        return super.decode(entries, magic);
     }
 
     private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {

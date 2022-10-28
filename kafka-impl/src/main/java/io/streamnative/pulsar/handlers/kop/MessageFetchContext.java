@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
@@ -69,7 +68,6 @@ import org.apache.kafka.common.requests.FetchResponse.PartitionData;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.metadata.api.GetResult;
 
 /**
@@ -492,14 +490,8 @@ public final class MessageFetchContext {
             }
 
             final long startDecodingEntriesNanos = MathUtils.nowInNano();
-            ImmutableMap<String, EntryFilterWithClassLoader> entryfilters =
-                    requestHandler.getPulsarService().getBrokerService().getEntryFilters();
-            if (entryfilters == null) {
-                ImmutableMap.Builder<String, EntryFilterWithClassLoader> builder = ImmutableMap.builder();
-                entryfilters = builder.build();
-            }
-            final DecodeResult decodeResult = requestHandler.getEntryFormatter()
-                    .decode(entries, magic, entryfilters.values().asList());
+            final DecodeResult decodeResult = requestHandler
+                    .getEntryFormatter().decode(entries, magic);
             requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
                     MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
             decodeResults.add(decodeResult);

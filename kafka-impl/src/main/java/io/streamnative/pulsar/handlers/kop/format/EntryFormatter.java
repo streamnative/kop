@@ -17,7 +17,6 @@ import java.util.List;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 
 /**
  * The formatter for conversion between Kafka records and Bookie entries.
@@ -38,10 +37,9 @@ public interface EntryFormatter {
      *
      * @param entries the list of entries
      * @param magic the Kafka record batch's magic value
-     * @param entryfilters the entry filters of broker
      * @return the DecodeResult contains the Kafka records
      */
-    DecodeResult decode(List<Entry> entries, byte magic, List<EntryFilterWithClassLoader> entryfilters);
+    DecodeResult decode(List<Entry> entries, byte magic);
 
     /**
      * Get the number of messages from MemoryRecords.
