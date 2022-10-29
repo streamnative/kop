@@ -32,7 +32,7 @@
 
   <properties>
     <schema.registry.version>5.0.0</schema.registry.version>
-    <hydra.version>1.11.7</hydra.version>
+    <hydra.version>2.0.1</hydra.version>
   </properties>
 
   <!-- include the dependencies -->
@@ -196,8 +196,7 @@
             <configuration>
               <tasks>
                 <echo>copy protocol handler</echo>
-                <copy file="${basedir}/../kafka-impl/target/pulsar-protocol-handler-kafka-${project.version}.nar"
-                      tofile="${basedir}/src/test/resources/test-protocol-handler.nar"/>
+                <copy file="${basedir}/../kafka-impl/target/pulsar-protocol-handler-kafka-${project.version}.nar" tofile="${basedir}/src/test/resources/test-protocol-handler.nar"/>
               </tasks>
             </configuration>
           </execution>
