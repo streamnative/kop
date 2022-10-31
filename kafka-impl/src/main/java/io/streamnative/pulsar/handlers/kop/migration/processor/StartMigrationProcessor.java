@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Http processor for starting a Kafka to KoP migration.
  */
-public class StartMigrationProcessor extends HttpJsonRequestProcessor<StartMigrationRequest, Void> {
+public class StartMigrationProcessor extends HttpJsonRequestProcessor<StartMigrationRequest, String> {
     private final KafkaServiceConfiguration kafkaConfig;
     private final MigrationMetadataManager migrationMetadataManager;
 
@@ -37,8 +37,9 @@ public class StartMigrationProcessor extends HttpJsonRequestProcessor<StartMigra
     }
 
     @Override
-    protected CompletableFuture<Void> processRequest(StartMigrationRequest payload, List<String> patternGroups,
-                                                     FullHttpRequest request, Channel channel) {
-        return migrationMetadataManager.migrate(payload.getTopic(), "public/default", channel);
+    protected CompletableFuture<String> processRequest(StartMigrationRequest payload, List<String> patternGroups,
+                                                       FullHttpRequest request, Channel channel) {
+        return migrationMetadataManager.migrate(payload.getTopic(), "public/default", channel)
+                .thenApply(ignored -> "Migration started");
     }
 }
