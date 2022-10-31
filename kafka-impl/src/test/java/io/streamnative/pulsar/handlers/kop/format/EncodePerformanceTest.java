@@ -66,9 +66,9 @@ public class EncodePerformanceTest {
     private static void runSingleTest(final MemoryRecords records, final String description, final int repeatTimes) {
         PartitionLog.LogAppendInfo appendInfo = PARTITION_LOG.analyzeAndValidateRecords(records);
         final EncodeRequest encodeRequest = EncodeRequest.get(records, appendInfo);
-        final EntryFormatter pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration);
-        final EntryFormatter kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration);
-        final EntryFormatter kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration);
+        final EntryFormatter pulsarFormatter = EntryFormatterFactory.create(pulsarServiceConfiguration, null);
+        final EntryFormatter kafkaV1Formatter = EntryFormatterFactory.create(KafkaV1ServiceConfiguration, null);
+        final EntryFormatter kafkaMixedFormatter = EntryFormatterFactory.create(kafkaMixedServiceConfiguration, null);
         // Here we also add a comparison with NoHeaderKafkaEntryFormatter to measure the overhead of adding a header
         // and copy the ByteBuffer of MemoryRecords that are done by KafkaEntryFormatter.
         final EntryFormatter noHeaderKafkaFormatter = new NoHeaderKafkaEntryFormatter();
