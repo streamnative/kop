@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 import static org.apache.kafka.common.record.Records.MAGIC_OFFSET;
 import static org.apache.kafka.common.record.Records.OFFSET_OFFSET;
 
+import com.google.common.collect.ImmutableList;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
@@ -30,6 +31,9 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.FilterContext;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -41,6 +45,11 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
     public static final String IDENTITY_KEY = "entry.format";
     public static final String IDENTITY_VALUE = EntryFormatterFactory.EntryFormat.KAFKA.name().toLowerCase();
     private final Time time = Time.SYSTEM;
+    private final ImmutableList<EntryFilterWithClassLoader> entryfilters;
+
+    protected AbstractEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+        this.entryfilters = entryfilters;
+    }
 
     @Override
     public DecodeResult decode(List<Entry> entries, byte magic) {
@@ -54,6 +63,10 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                 long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
                 final ByteBuf byteBuf = entry.getDataBuffer();
                 final MessageMetadata metadata = MessageMetadataUtils.parseMessageMetadata(byteBuf);
+                EntryFilter.FilterResult filterResult = filterOnlyByMsgMetadata(metadata, entry, entryfilters);
+                if (filterResult == EntryFilter.FilterResult.REJECT) {
+                    continue;
+                }
                 if (isKafkaEntryFormat(metadata)) {
                     byte batchMagic = byteBuf.getByte(byteBuf.readerIndex() + MAGIC_OFFSET);
                     byteBuf.setLong(byteBuf.readerIndex() + OFFSET_OFFSET, startOffset);
@@ -126,4 +139,27 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
         return false;
     }
 
+    protected EntryFilter.FilterResult filterOnlyByMsgMetadata(MessageMetadata msgMetadata, Entry entry,
+                                                                    List<EntryFilterWithClassLoader> entryFilters) {
+        if (entryFilters == null || entryFilters.isEmpty()) {
+            return EntryFilter.FilterResult.ACCEPT;
+        }
+        FilterContext filterContext = new FilterContext();
+        filterContext.setMsgMetadata(msgMetadata);
+
+        EntryFilter.FilterResult result = EntryFilter.FilterResult.ACCEPT;
+        for (EntryFilter entryFilter : entryFilters) {
+            EntryFilter.FilterResult filterResult = entryFilter.filterEntry(entry, filterContext);
+            if (filterResult == null
+                    || filterResult == EntryFilter.FilterResult.RESCHEDULE
+                    || filterResult == EntryFilter.FilterResult.ACCEPT) {
+                continue;
+            }
+            if (filterResult == EntryFilter.FilterResult.REJECT) {
+                result = EntryFilter.FilterResult.REJECT;
+                break;
+            }
+        }
+        return result;
+    }
 }
