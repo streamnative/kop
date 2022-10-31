@@ -324,7 +324,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig);
+        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig,
+                pulsarService.getBrokerService().getEntryFilters());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.currentConnectedClientId = new ConcurrentSkipListSet<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
