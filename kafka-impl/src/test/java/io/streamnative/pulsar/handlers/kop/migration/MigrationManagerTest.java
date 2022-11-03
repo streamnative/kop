@@ -19,6 +19,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadataManager;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 import org.apache.pulsar.broker.PulsarService;
@@ -33,7 +34,9 @@ public class MigrationManagerTest {
         KafkaServiceConfiguration kafkaServiceConfiguration = new KafkaServiceConfiguration();
         int port = 8005;
         kafkaServiceConfiguration.setKopMigrationServicePort(port);
-        MigrationManager migrationManager = new MigrationManager(kafkaServiceConfiguration, pulsarService);
+        MigrationMetadataManager migrationMetadataManager = mock(MigrationMetadataManager.class);
+        MigrationManager migrationManager =
+                new MigrationManager(kafkaServiceConfiguration, pulsarService, migrationMetadataManager);
         assertEquals(migrationManager.getAddress(), new InetSocketAddress(port));
     }
 
@@ -43,7 +46,9 @@ public class MigrationManagerTest {
         when(pulsarService.getBrokerServiceUrl()).thenReturn("http://localhost");
         KafkaServiceConfiguration kafkaServiceConfiguration = new KafkaServiceConfiguration();
         kafkaServiceConfiguration.setKopMigrationEnable(true);
-        MigrationManager migrationManager = new MigrationManager(kafkaServiceConfiguration, pulsarService);
+        MigrationMetadataManager migrationMetadataManager = mock(MigrationMetadataManager.class);
+        MigrationManager migrationManager =
+                new MigrationManager(kafkaServiceConfiguration, pulsarService, migrationMetadataManager);
         assertTrue(migrationManager.build().isPresent());
     }
 
@@ -53,7 +58,9 @@ public class MigrationManagerTest {
         when(pulsarService.getBrokerServiceUrl()).thenReturn("http://localhost");
         KafkaServiceConfiguration kafkaServiceConfiguration = new KafkaServiceConfiguration();
         kafkaServiceConfiguration.setKopMigrationEnable(false);
-        MigrationManager migrationManager = new MigrationManager(kafkaServiceConfiguration, pulsarService);
+        MigrationMetadataManager migrationMetadataManager = mock(MigrationMetadataManager.class);
+        MigrationManager migrationManager =
+                new MigrationManager(kafkaServiceConfiguration, pulsarService, migrationMetadataManager);
         assertEquals(migrationManager.build(), Optional.empty());
     }
 }

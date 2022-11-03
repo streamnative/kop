@@ -29,6 +29,8 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.ManagedLedgerPropertiesMigrationMetadataManager;
+import io.streamnative.pulsar.handlers.kop.migration.metadata.MigrationMetadataManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -105,6 +107,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private NamespaceBundleOwnershipListenerImpl bundleListener;
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
+    private MigrationMetadataManager migrationMetadataManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -208,10 +211,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildTime());
 
         brokerService = service;
+        PulsarService pulsarService = brokerService.getPulsar();
         kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService);
         PulsarAdmin pulsarAdmin;
         try {
-            pulsarAdmin = brokerService.getPulsar().getAdminClient();
+            pulsarAdmin = pulsarService.getAdminClient();
             adminManager = new AdminManager(pulsarAdmin, kafkaConfig);
         } catch (PulsarServerException e) {
             log.error("Failed to get pulsarAdmin", e);
@@ -223,7 +227,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         try {
-            kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar());
+            kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, pulsarService);
         } catch (Exception ex) {
             log.error("Failed to get kopBrokerLookupManager", ex);
             throw new IllegalStateException(ex);
@@ -265,7 +269,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         // init KopEventManager
         kopEventManager = new KopEventManager(adminManager,
-                brokerService.getPulsar().getLocalMetadataStore(),
+                pulsarService.getLocalMetadataStore(),
                 requestStats.getStatsLogger(),
                 kafkaConfig,
                 groupCoordinatorsByTenant);
@@ -281,9 +285,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         conf.addProperty("cluster", kafkaConfig.getClusterName());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
-        schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
+        schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, pulsarService,
                 brokerService.getAuthenticationService());
-        migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
+        migrationMetadataManager = new ManagedLedgerPropertiesMigrationMetadataManager(
+                new KafkaTopicLookupService(pulsarService.getBrokerService()), adminManager);
+        migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar(), migrationMetadataManager);
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -408,7 +414,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState,
+                migrationMetadataManager);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
