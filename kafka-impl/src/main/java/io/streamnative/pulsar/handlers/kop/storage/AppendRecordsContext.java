@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
-import io.streamnative.pulsar.handlers.kop.RequestStats;
 import java.util.Map;
 import java.util.function.Consumer;
 import lombok.Getter;
@@ -35,7 +34,6 @@ public class AppendRecordsContext {
 
     private final Recycler.Handle<AppendRecordsContext> recyclerHandle;
     private KafkaTopicManager topicManager;
-    private RequestStats requestStats;
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
@@ -46,13 +44,11 @@ public class AppendRecordsContext {
 
     // recycler and get for this object
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
-                                           final RequestStats requestStats,
                                            final Consumer<Integer> startSendOperationForThrottling,
                                            final Consumer<Integer> completeSendOperationForThrottling,
                                            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
         AppendRecordsContext context = RECYCLER.get();
         context.topicManager = topicManager;
-        context.requestStats = requestStats;
         context.startSendOperationForThrottling = startSendOperationForThrottling;
         context.completeSendOperationForThrottling = completeSendOperationForThrottling;
         context.pendingTopicFuturesMap = pendingTopicFuturesMap;
@@ -62,7 +58,6 @@ public class AppendRecordsContext {
 
     public void recycle() {
         topicManager = null;
-        requestStats = null;
         startSendOperationForThrottling = null;
         completeSendOperationForThrottling = null;
         pendingTopicFuturesMap = null;

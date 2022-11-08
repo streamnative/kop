@@ -132,9 +132,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             }
             return new ReplicaManager(
                     kafkaConfig,
+                    requestStats,
                     Time.SYSTEM,
                     entryFormatter,
-                    producePurgatory);
+                    producePurgatory,
+                    fetchPurgatory);
         });
     }
 

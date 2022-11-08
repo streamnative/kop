@@ -53,6 +53,7 @@ import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
+import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -62,6 +63,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -108,6 +110,7 @@ import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
@@ -130,6 +133,7 @@ import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
@@ -152,6 +156,7 @@ import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.SyncGroupResponse;
@@ -589,6 +594,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, List<Integer>> topicToPartitionIndexes = new HashMap<>();
         fullTopicNames.forEach(fullTopicName -> {
             final TopicName topicName = TopicName.get(fullTopicName);
+            // Skip Pulsar's system topic
+            if (topicName.getLocalName().startsWith("__change_events")
+                    && topicName.getPartitionedTopicName().endsWith("__change_events")) {
+                return;
+            }
             topicToPartitionIndexes.computeIfAbsent(
                     topicName.getPartitionedTopicName(),
                     ignored -> new ArrayList<>()
@@ -823,11 +833,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
                         topicManager,
-                        requestStats,
                         this::startSendOperationForThrottling,
                         this::completeSendOperationForThrottling,
                         pendingTopicFuturesMap);
-                getReplicaManager().appendRecords(
+                ReplicaManager replicaManager = getReplicaManager();
+                replicaManager.appendRecords(
                         timeoutMs,
                         false,
                         namespacePrefix,
@@ -845,6 +855,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     mergedResponse.putAll(invalidRequestResponses);
                     resultFuture.complete(new ProduceResponse(mergedResponse));
+                    response.keySet().forEach(tp -> {
+                        replicaManager.tryCompleteDelayedFetch(new DelayedOperationKey.TopicPartitionOperationKey(tp));
+                    });
                 });
             }
         };
@@ -1087,16 +1100,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
-    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, Long timestamp) {
+    private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, long timestamp) {
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
 
-        topicManager.getTopic(topicName).whenComplete((perTopicOpt, t) -> {
-            if (t != null) {
-                log.error("Failed while get persistentTopic topic: {} ts: {}. ",
-                    !perTopicOpt.isPresent() ? "null" : perTopicOpt.get().getName(), timestamp, t);
-                partitionData.complete(Pair.of(Errors.forException(t), null));
-                return;
-            }
+        topicManager.getTopic(topicName).thenAccept((perTopicOpt) -> {
             if (!perTopicOpt.isPresent()) {
                 partitionData.complete(Pair.of(Errors.UNKNOWN_TOPIC_OR_PARTITION, null));
                 return;
@@ -1542,18 +1549,108 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ctx.channel(), fetch.getHeader(), request.fetchData().size());
 
             request.fetchData().forEach((topic, data) -> {
-                log.debug("  Fetch request topic:{} data:{}.",
-                    topic, data.toString());
+                log.debug("Fetch request topic:{} data:{}.", topic, data.toString());
             });
         }
-        TransactionCoordinator transactionCoordinator = null;
-        if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)
-                && kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
-            transactionCoordinator = getTransactionCoordinator();
+
+        if (request.fetchData().isEmpty()) {
+            resultFuture.complete(new FetchResponse<>(
+                    Errors.NONE,
+                    new LinkedHashMap<>(),
+                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                    request.metadata().sessionId()));
+            return;
         }
-        String namespacePrefix = currentNamespacePrefix();
-        MessageFetchContext.get(this, transactionCoordinator, fetch, resultFuture,
-                fetchPurgatory, namespacePrefix).handleFetch();
+
+        ConcurrentHashMap<TopicPartition, FetchResponse.PartitionData<Records>> erroneous =
+                new ConcurrentHashMap<>();
+        ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> interesting =
+                new ConcurrentHashMap<>();
+
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.fetchData().size());
+        Runnable completeOne = () -> {
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                TransactionCoordinator transactionCoordinator = null;
+                if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)
+                        && kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+                    transactionCoordinator = getTransactionCoordinator();
+                }
+                String namespacePrefix = currentNamespacePrefix();
+                int fetchMaxBytes = request.maxBytes();
+                int fetchMinBytes = Math.min(request.minBytes(), fetchMaxBytes);
+                if (interesting.isEmpty()) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Fetch interesting is empty. Partitions: [{}]", request.fetchData());
+                    }
+                    resultFuture.complete(new FetchResponse<>(
+                            Errors.NONE,
+                            new LinkedHashMap<>(erroneous),
+                            ((Integer) THROTTLE_TIME_MS.defaultValue),
+                            request.metadata().sessionId()));
+                } else {
+                    MessageFetchContext context = MessageFetchContext
+                            .get(this, transactionCoordinator, maxReadEntriesNum, namespacePrefix,
+                                    getKafkaTopicManagerSharedState(), this.executor, fetch);
+                    this.getReplicaManager().fetchMessage(
+                            request.maxWait(),
+                            fetchMinBytes,
+                            fetchMaxBytes,
+                            interesting,
+                            request.isolationLevel(),
+                            context
+                    ).thenAccept(resultMap -> {
+                        LinkedHashMap<TopicPartition, FetchResponse.PartitionData<Records>> partitions =
+                                new LinkedHashMap<>();
+                        resultMap.forEach((tp, data) -> {
+                            partitions.put(tp, data.toPartitionData());
+                        });
+                        partitions.putAll(erroneous);
+                        resultFuture.complete(new ResponseCallbackWrapper(new FetchResponse<>(
+                                Errors.NONE,
+                                partitions,
+                                ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                request.metadata().sessionId()), () ->
+                                resultMap.forEach((__, readRecordsResult) -> {
+                                    readRecordsResult.recycle();
+                                })
+                        ));
+                        context.recycle();
+                    });
+                }
+            }
+        };
+
+        // Regular Kafka consumers need READ permission on each partition they are fetching.
+        request.fetchData().forEach((topicPartition, partitionData) -> {
+            final String fullTopicName = KopTopic.toString(topicPartition, this.currentNamespacePrefix());
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("Read topic authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            completeOne.run();
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                            completeOne.run();
+                            return;
+                        }
+                        interesting.put(topicPartition, partitionData);
+                        completeOne.run();
+                    });
+        });
+
+
+
+    }
+
+    private static FetchResponse.PartitionData<Records> errorResponse(Errors error) {
+        return new FetchResponse.PartitionData<>(error,
+                FetchResponse.INVALID_HIGHWATERMARK,
+                FetchResponse.INVALID_LAST_STABLE_OFFSET,
+                FetchResponse.INVALID_LOG_START_OFFSET, null, MemoryRecords.EMPTY);
     }
 
     @Override
@@ -1659,9 +1756,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         getGroupCoordinator().handleLeaveGroup(
             request.groupId(),
             request.memberId()
-        ).thenAccept(errors -> {
-            resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors));
-        });
+        ).thenAccept(errors -> resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors)));
     }
 
     @Override
@@ -2138,7 +2233,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Map<TopicPartition, MemoryRecords> controlRecords = generateTxnMarkerRecords(marker);
             AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
                     topicManager,
-                    requestStats,
                     this::startSendOperationForThrottling,
                     this::completeSendOperationForThrottling,
                     this.pendingTopicFuturesMap);
