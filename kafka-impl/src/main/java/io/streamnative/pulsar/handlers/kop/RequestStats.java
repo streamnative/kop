@@ -31,6 +31,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_S
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
 
 import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
@@ -66,9 +67,16 @@ public class RequestStats {
     public static final AtomicInteger ALIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
     public static final AtomicInteger ACTIVE_CHANNEL_COUNT_INSTANCE = new AtomicInteger(0);
 
+
     public static final RequestStats NULL_INSTANCE = new RequestStats(NullStatsLogger.INSTANCE);
 
     private final StatsLogger statsLogger;
+
+    @StatsDoc(
+            name = WAITING_FETCHES_TRIGGERED,
+            help = "number of pending fetches that woke up due to some data produced"
+    )
+    private final Counter waitingFetchesTriggered;
 
     @StatsDoc(
             name = REQUEST_PARSE_LATENCY,
@@ -160,6 +168,7 @@ public class RequestStats {
         this.prepareMetadataStats = statsLogger.getOpStatsLogger(PREPARE_METADATA);
         this.messageReadStats = statsLogger.getOpStatsLogger(MESSAGE_READ);
         this.fetchDecodeStats  = statsLogger.getOpStatsLogger(FETCH_DECODE);
+        this.waitingFetchesTriggered = statsLogger.getCounter(WAITING_FETCHES_TRIGGERED);
         this.networkTotalBytesIn = statsLogger.getCounter(NETWORK_TOTAL_BYTES_IN);
         this.networkTotalBytesOut = statsLogger.getCounter(NETWORK_TOTAL_BYTES_OUT);
 
