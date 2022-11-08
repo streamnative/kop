@@ -46,8 +46,8 @@
       --add-opens java.management/sun.management=ALL-UNNAMED <!--JvmDefaultGCMetricsLogger-->
     </test.additional.args>
     <!-- dependencies -->
-    <jackson.version>2.13.2</jackson.version>
-    <jackson-databind.version>2.13.2.1</jackson-databind.version>
+    <jackson.version>2.14.0</jackson.version>
+    <jackson-databind.version>2.13.4</jackson-databind.version>
     <kafka.version>2.1.1</kafka.version>
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>2.22.0</mockito.version>
@@ -337,7 +337,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${maven-surefire-plugin.version}</version>
         <configuration>
-          <argLine> -Xmx2G
+          <argLine>@{argLine} -Xmx2G
             -Dpulsar.allocator.pooled=false
             -Dpulsar.allocator.leak_detection=Advanced
             -Dlog4j.configurationFile="log4j2.xml"
