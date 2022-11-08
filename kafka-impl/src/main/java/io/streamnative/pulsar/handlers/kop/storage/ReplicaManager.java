@@ -13,8 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
+import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -25,14 +28,20 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ProduceResponse;
+import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 
 /**
@@ -42,14 +51,18 @@ import org.apache.kafka.common.utils.Time;
 public class ReplicaManager {
     private final PartitionLogManager logManager;
     private final DelayedOperationPurgatory<DelayedOperation> producePurgatory;
+    private final DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
     private final String metadataNamespace;
 
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
+                          RequestStats requestStats,
                           Time time,
                           EntryFormatter entryFormatter,
-                          DelayedOperationPurgatory<DelayedOperation> producePurgatory) {
-        this.logManager = new PartitionLogManager(kafkaConfig, entryFormatter, time);
+                          DelayedOperationPurgatory<DelayedOperation> producePurgatory,
+                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
+        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryFormatter, time);
         this.producePurgatory = producePurgatory;
+        this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
@@ -128,6 +141,96 @@ public class ReplicaManager {
             producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
         }
         return completableFuture;
+    }
+
+
+    public CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> fetchMessage(
+            final long timeout,
+            final int fetchMinBytes,
+            final int fetchMaxBytes,
+            final ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> fetchInfos,
+            final IsolationLevel isolationLevel,
+            final MessageFetchContext context) {
+        CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> future =
+                new CompletableFuture<>();
+        final boolean readCommitted =
+                (context.getTc() != null && isolationLevel.equals(IsolationLevel.READ_COMMITTED));
+        final long startTime = SystemTime.SYSTEM.hiResClockMs();
+
+        readFromLocalLog(readCommitted, fetchMaxBytes, context.getMaxReadEntriesNum(), fetchInfos, context)
+                .thenAccept(readResults -> {
+                    final MutableLong bytesReadable = new MutableLong(0);
+                    final MutableBoolean errorReadingData = new MutableBoolean(false);
+                    readResults.forEach((topicPartition, readRecordsResult) -> {
+                        if (readRecordsResult.errors() != Errors.NONE) {
+                            errorReadingData.setTrue();
+                        }
+                        if (readRecordsResult.decodeResult() != null) {
+                            bytesReadable.addAndGet(readRecordsResult.decodeResult().getRecords().sizeInBytes());
+                        }
+                    });
+
+                    long now = SystemTime.SYSTEM.hiResClockMs();
+                    long currentWait = now - startTime;
+                    long remainingMaxWait = timeout - currentWait;
+                    long maxWait = Math.min(remainingMaxWait, timeout);
+                    if (maxWait <= 0 || fetchInfos.isEmpty()
+                            || bytesReadable.longValue() >= fetchMinBytes || errorReadingData.booleanValue()) {
+                        future.complete(readResults);
+                        return;
+                    }
+                    List<Object> delayedFetchKeys = fetchInfos.keySet().stream()
+                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+                    DelayedFetch delayedFetch = new DelayedFetch(
+                            maxWait,
+                            fetchMaxBytes,
+                            bytesReadable.getValue(),
+                            readCommitted,
+                            context,
+                            this,
+                            fetchInfos,
+                            readResults,
+                            future
+                    );
+                    fetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys);
+                });
+
+        return future;
+    }
+
+    public CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> readFromLocalLog(
+            final boolean readCommitted,
+            final int fetchMaxBytes,
+            final int maxReadEntriesNum,
+            final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
+            final MessageFetchContext context) {
+        AtomicLong limitBytes = new AtomicLong(fetchMaxBytes);
+        CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> resultFuture = new CompletableFuture<>();
+        ConcurrentHashMap<TopicPartition, PartitionLog.ReadRecordsResult> result = new ConcurrentHashMap<>();
+        AtomicInteger restTopicPartitionNeedRead = new AtomicInteger(readPartitionInfo.size());
+
+        Runnable complete = () -> {
+            if (restTopicPartitionNeedRead.decrementAndGet() == 0) {
+                resultFuture.complete(result);
+            }
+        };
+        readPartitionInfo.forEach((tp, fetchInfo) -> {
+            getPartitionLog(tp, context.getNamespacePrefix())
+                    .readRecords(fetchInfo, readCommitted,
+                            limitBytes, maxReadEntriesNum, context)
+                    .thenAccept(readResult -> {
+                        result.put(tp, readResult);
+                        complete.run();
+                    });
+        });
+        return resultFuture;
+    }
+
+    public void tryCompleteDelayedFetch(DelayedOperationKey key) {
+        int completed = fetchPurgatory.checkAndComplete(key);
+        if (log.isDebugEnabled()) {
+            log.debug("Request key {} unblocked {} fetch requests.", key.keyLabel(), completed);
+        }
     }
 
 }

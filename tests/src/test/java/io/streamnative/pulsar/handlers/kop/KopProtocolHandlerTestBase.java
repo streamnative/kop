@@ -821,7 +821,7 @@ public abstract class KopProtocolHandlerTestBase {
                 handler.getReplicaManager(conf.getKafkaMetadataTenant());
 
         return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
-                .newCnxWithoutStats(new TenantContextManager() {
+                .newCnx(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
                         return groupCoordinator;
