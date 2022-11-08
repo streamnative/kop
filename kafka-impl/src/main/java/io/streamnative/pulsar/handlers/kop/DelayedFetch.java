@@ -112,7 +112,7 @@ public class DelayedFetch extends DelayedOperation {
             PartitionLog partitionLog = replicaManager.getPartitionLog(tp, context.getNamespacePrefix());
             PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
             if (currLastPosition.compareTo(PositionImpl.EARLIEST) == 0) {
-                HAS_ERROR_UPDATER.compareAndSet(this, false, true);
+                HAS_ERROR_UPDATER.set(this, true);
                 return forceComplete();
             }
             PositionImpl lastPosition = (PositionImpl) result.lastPosition();
