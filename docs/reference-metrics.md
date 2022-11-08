@@ -75,7 +75,7 @@ The KoP metrics are exposed under "/metrics" at port `8080` along with Pulsar me
 | kop_server_ENTRIES_OUT | Counter | The consumer entries out stats. <br> Available labels: *topic*, *partition*, *group*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li><li>*group*: the group id for consumer to consumer message from topic-partition</li></ul>|
 | kop_server_CONSUME_MESSAGE_CONVERSIONS | Counter | The consumer message conversions in stats. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li></ul>|
 | kop_server_CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS | Summary | The consumer message convert latency in nanoseconds. <br> Available labels: *topic*, *partition*. </br> <ul><li>*topic*: the topic name to consume.</li><li>*partition*: the partition id for the topic to consume</li></ul>|
-
+| kop_server_WAITING_FETCHES_TRIGGERED | Counter | Number of fetches that have been delayed due to not enough data, and that have been unblocked because some message has been produced|
 
 ### Kop event metrics
 

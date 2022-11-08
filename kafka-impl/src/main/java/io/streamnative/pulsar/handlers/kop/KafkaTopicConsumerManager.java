@@ -111,7 +111,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     }
 
     // delete passed in cursor.
-    void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
+    public void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
         if (cursor != null) {
             topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
                 @Override
