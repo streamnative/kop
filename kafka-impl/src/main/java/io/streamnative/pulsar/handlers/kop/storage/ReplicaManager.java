@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
@@ -57,19 +58,15 @@ public class ReplicaManager {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
-    public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(
-            final long timeout,
-            final boolean internalTopicsAllowed,
-            final String namespacePrefix,
-            final Map<TopicPartition, MemoryRecords> entriesPerPartition,
-            final PartitionLog.AppendOrigin origin,
-            final AppendRecordsContext appendRecordsContext) {
-        CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture =
-                new CompletableFuture<>();
-        final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
-        final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
+    @AllArgsConstructor
+    private static class PendingProduceCallback implements Runnable {
 
-        Runnable complete = () -> {
+        final AtomicInteger topicPartitionNum;
+        Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap;
+        final CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture;
+        Map<TopicPartition, MemoryRecords> entriesPerPartition;
+        @Override
+        public void run() {
             topicPartitionNum.set(0);
             if (completableFuture.isDone()) {
                 // It may be triggered again in DelayedProduceAndFetch
@@ -85,7 +82,30 @@ public class ReplicaManager {
                 log.debug("Complete handle appendRecords.");
             }
             completableFuture.complete(responseMap);
-        };
+
+            // clear references to data,
+            // this object will be retained in the purgatory
+            // we don't need to keep a hard reference to the data
+            // one we passed responseMap to the caller
+            responseMap = null;
+            entriesPerPartition = null;
+        }
+    }
+
+    public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(
+            final long timeout,
+            final boolean internalTopicsAllowed,
+            final String namespacePrefix,
+            final Map<TopicPartition, MemoryRecords> entriesPerPartition,
+            final PartitionLog.AppendOrigin origin,
+            final AppendRecordsContext appendRecordsContext) {
+        CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture =
+                new CompletableFuture<>();
+        final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
+        final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
+
+        PendingProduceCallback complete =
+                new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
         BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
                 (topicPartition, response) -> {
             responseMap.put(topicPartition, response);
@@ -121,6 +141,8 @@ public class ReplicaManager {
         if (timeout <= 0) {
             complete.run();
         } else {
+            // producePurgatory will retain a reference to the callback for timeout ms,
+            // even if the operation succeeds
             List<Object> delayedCreateKeys =
                     entriesPerPartition.keySet().stream()
                             .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
