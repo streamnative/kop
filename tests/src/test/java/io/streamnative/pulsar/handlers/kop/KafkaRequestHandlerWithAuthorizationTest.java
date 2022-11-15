@@ -60,25 +60,7 @@ import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
-import org.apache.kafka.common.requests.AbstractRequest;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
-import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
-import org.apache.kafka.common.requests.CreatePartitionsRequest;
-import org.apache.kafka.common.requests.CreatePartitionsResponse;
-import org.apache.kafka.common.requests.IsolationLevel;
-import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetResponse;
-import org.apache.kafka.common.requests.MetadataRequest;
-import org.apache.kafka.common.requests.MetadataResponse;
-import org.apache.kafka.common.requests.OffsetCommitRequest;
-import org.apache.kafka.common.requests.OffsetCommitResponse;
-import org.apache.kafka.common.requests.OffsetFetchRequest;
-import org.apache.kafka.common.requests.OffsetFetchResponse;
-import org.apache.kafka.common.requests.ProduceRequest;
-import org.apache.kafka.common.requests.RequestHeader;
-import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
-import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
+import org.apache.kafka.common.requests.*;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -276,17 +258,42 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @Test(timeOut = 20000)
     public void testHandleProduceRequest() throws ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
-        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
-        final ProduceRequest request = createProduceRequest(TOPIC);
-        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
+        final String topic = TOPIC;
+        final String topic2 = "topic2";
+
+        // Build input params
+        Map<TopicPartition, MemoryRecords> partitionRecords = new HashMap<>();
+        TopicPartition topicPartition1 = new TopicPartition(topic, 0);
+        TopicPartition topicPartition2 = new TopicPartition(topic2, 0);
+        partitionRecords.put(topicPartition1,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
+        partitionRecords.put(topicPartition2,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test2".getBytes())));
+        final ProduceRequest request = ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
+
+        // authorize topic2
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.WRITE),
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topic2, 0,
+                                handler.currentNamespacePrefix())))
+                );
+
+        // Handle request
+        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
+        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleProduceRequest(new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
                 PulsarByteBufAllocator.DEFAULT.heapBuffer(),
                 null), responseFuture);
-        AbstractResponse response = responseFuture.get();
-        assertEquals((int) response.errorCounts().get(Errors.TOPIC_AUTHORIZATION_FAILED), 1);
+        final ProduceResponse response = (ProduceResponse) responseFuture.get();
+
+        //Topic: "topic2" authorize success. Error is not TOPIC_AUTHORIZATION_FAILED
+        assertEquals(response.responses().get(topicPartition2).error,Errors.NOT_LEADER_FOR_PARTITION);
+        //Topic: `TOPIC` authorize failed.
+        assertEquals(response.responses().get(topicPartition1).error,Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     @Test(timeOut = 20000)
