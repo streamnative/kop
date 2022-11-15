@@ -71,15 +71,15 @@ import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.ProduceRequest;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
-import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
-import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -289,7 +289,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
         partitionRecords.put(topicPartition2,
                 MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test2".getBytes())));
-        final ProduceRequest request = ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
+        final ProduceRequest request =
+                ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
 
         // authorize topic2
         doReturn(CompletableFuture.completedFuture(true))
@@ -310,9 +311,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         final ProduceResponse response = (ProduceResponse) responseFuture.get();
 
         //Topic: "topic2" authorize success. Error is not TOPIC_AUTHORIZATION_FAILED
-        assertEquals(response.responses().get(topicPartition2).error,Errors.NOT_LEADER_FOR_PARTITION);
+        assertEquals(response.responses().get(topicPartition2).error, Errors.NOT_LEADER_FOR_PARTITION);
         //Topic: `TOPIC` authorize failed.
-        assertEquals(response.responses().get(topicPartition1).error,Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(response.responses().get(topicPartition1).error, Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     @Test(timeOut = 20000)
