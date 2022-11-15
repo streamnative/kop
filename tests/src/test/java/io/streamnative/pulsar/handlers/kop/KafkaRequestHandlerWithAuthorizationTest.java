@@ -295,7 +295,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         doReturn(CompletableFuture.completedFuture(true))
                 .when(spyHandler)
                 .authorize(eq(AclOperation.WRITE),
-                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topic2, 0,
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition2,
                                 handler.currentNamespacePrefix())))
                 );
 
