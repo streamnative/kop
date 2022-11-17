@@ -13,17 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.VisibleForTesting;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -36,8 +31,6 @@ public class EndPoint {
     public static final String END_POINT_SEPARATOR = ",";
     private static final String PROTOCOL_MAP_SEPARATOR = ",";
     private static final String PROTOCOL_SEPARATOR = ":";
-    private static final String REGEX = "^(.*)://\\[?([0-9a-zA-Z\\-%._:]*)\\]?:(-?[0-9]+)";
-    private static final Pattern PATTERN = Pattern.compile(REGEX);
 
     @Getter
     private final String originalListener; // the original listener string, like "PLAINTEXT://localhost:9092"
@@ -56,13 +49,14 @@ public class EndPoint {
 
     public EndPoint(final String listener, final Map<String, SecurityProtocol> protocolMap) {
         this.originalListener = listener;
-        final String errorMessage = "listener '" + listener + "' is invalid";
-        final Matcher matcher = matcherListener(listener, errorMessage);
+        AdvertisedListener advertisedListener = AdvertisedListener.create(listener);
+        this.listenerName = advertisedListener.getListenerName();
+        this.hostname = advertisedListener.getHostname();
+        this.port = advertisedListener.getPort();
 
-        this.listenerName = matcher.group(1);
         if (protocolMap == null || protocolMap.isEmpty()) {
             validInProtocolMap = false;
-            this.securityProtocol = SecurityProtocol.forName(matcher.group(1));
+            this.securityProtocol = SecurityProtocol.forName(listenerName);
         } else {
             validInProtocolMap = true;
             this.securityProtocol = protocolMap.get(this.listenerName);
@@ -71,19 +65,6 @@ public class EndPoint {
             }
         }
         this.tlsEnabled = (securityProtocol == SecurityProtocol.SSL) || (securityProtocol == SecurityProtocol.SASL_SSL);
-
-        final String originalHostname = matcher.group(2);
-        if (originalHostname.isEmpty()) {
-            try {
-                this.hostname = InetAddress.getLocalHost().getCanonicalHostName();
-            } catch (UnknownHostException e) {
-                throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
-            }
-        } else {
-            this.hostname = originalHostname;
-        }
-        this.port = Integer.parseInt(matcher.group(3));
-        checkState(port >= 0 && port <= 65535, errorMessage + ": port " + port + " is invalid");
     }
 
     public InetSocketAddress getInetAddress() {
@@ -183,13 +164,6 @@ public class EndPoint {
             protocolMap.put(protocol[0], SecurityProtocol.forName(protocol[1]));
         }
         return protocolMap;
-    }
-
-    public static Matcher matcherListener(String listener, String errorMessage) {
-        final Matcher matcher = PATTERN.matcher(listener);
-        checkState(matcher.find(), errorMessage);
-        checkState(matcher.groupCount() == 3, errorMessage);
-        return matcher;
     }
 
 }
