@@ -19,14 +19,11 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -494,29 +491,21 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
-            final String errorMessage = "listener '" + listener + "' is invalid";
-            final Matcher matcher = EndPoint.matcherListener(listener, errorMessage);
-            String hostname = matcher.group(2);
-            if (hostname.isEmpty()) {
-                try {
-                    hostname = InetAddress.getLocalHost().getCanonicalHostName();
-                    listenersReBuilder.append(matcher.group(1))
-                            .append("://")
-                            .append(hostname)
-                            .append(":")
-                            .append(matcher.group(3));
-                } catch (UnknownHostException e) {
-                    throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
-                }
-            } else if (hostname.equals("advertisedAddress")) {
+            AdvertisedListener advertisedListener = AdvertisedListener.create(listener);
+            String hostname = advertisedListener.getHostname();
+            if (hostname.equals("advertisedAddress")) {
                 hostname = getAdvertisedAddress();
-                listenersReBuilder.append(matcher.group(1))
+                listenersReBuilder.append(advertisedListener.getListenerName())
                         .append("://")
                         .append(hostname)
                         .append(":")
-                        .append(matcher.group(3));
+                        .append(advertisedListener.getPort());
             } else {
-                listenersReBuilder.append(listener);
+                listenersReBuilder.append(advertisedListener.getListenerName())
+                        .append("://")
+                        .append(advertisedListener.getHostname())
+                        .append(":")
+                        .append(advertisedListener.getPort());
             }
             listenersReBuilder.append(EndPoint.END_POINT_SEPARATOR);
         }
