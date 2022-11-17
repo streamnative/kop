@@ -19,8 +19,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
@@ -540,16 +538,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                         .append(":")
                         .append(advertisedListener.getPort());
             } else {
-                try {
-                    hostname = InetAddress.getLocalHost().getCanonicalHostName();
-                    listenersReBuilder.append(advertisedListener.getListenerName())
-                            .append("://")
-                            .append(hostname)
-                            .append(":")
-                            .append(advertisedListener.getPort());
-                } catch (UnknownHostException e) {
-                    throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
-                }
+                listenersReBuilder.append(advertisedListener.getListenerName())
+                        .append("://")
+                        .append(advertisedListener.getHostname())
+                        .append(":")
+                        .append(advertisedListener.getPort());
             }
             listenersReBuilder.append(EndPoint.END_POINT_SEPARATOR);
         }
