@@ -47,7 +47,7 @@ public class EndPointTest {
         try {
             new EndPoint("hello world", null);
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage().contains("listener 'hello world' is invalid"));
+            assertTrue(e.getMessage().contains("Listener 'hello world' is invalid"));
         }
         try {
             new EndPoint("pulsar://localhost:6650", null);
@@ -59,13 +59,13 @@ public class EndPointTest {
             new EndPoint("PLAINTEXT://localhost:65536", null);
             fail();
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage().contains("port 65536 is invalid"));
+            assertTrue(e.getMessage().contains("port '65536' is invalid"));
         }
         try {
             new EndPoint("PLAINTEXT://localhost:-1", null);
             fail();
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage().contains("port -1 is invalid"));
+            assertTrue(e.getMessage().contains("port '-1' is invalid"));
         }
     }
 
