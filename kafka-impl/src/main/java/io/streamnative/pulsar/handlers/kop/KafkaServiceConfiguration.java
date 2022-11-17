@@ -532,7 +532,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
             AdvertisedListener advertisedListener = AdvertisedListener.create(listener);
             String hostname = advertisedListener.getHostname();
-            if (hostname.isEmpty()) {
+            if (hostname.equals("advertisedAddress")) {
+                hostname = getAdvertisedAddress();
+                listenersReBuilder.append(advertisedListener.getListenerName())
+                        .append("://")
+                        .append(hostname)
+                        .append(":")
+                        .append(advertisedListener.getPort());
+            } else {
                 try {
                     hostname = InetAddress.getLocalHost().getCanonicalHostName();
                     listenersReBuilder.append(advertisedListener.getListenerName())
@@ -543,15 +550,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                 } catch (UnknownHostException e) {
                     throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
                 }
-            } else if (hostname.equals("advertisedAddress")) {
-                hostname = getAdvertisedAddress();
-                listenersReBuilder.append(advertisedListener.getListenerName())
-                        .append("://")
-                        .append(hostname)
-                        .append(":")
-                        .append(advertisedListener.getPort());
-            } else {
-                listenersReBuilder.append(listener);
             }
             listenersReBuilder.append(EndPoint.END_POINT_SEPARATOR);
         }
