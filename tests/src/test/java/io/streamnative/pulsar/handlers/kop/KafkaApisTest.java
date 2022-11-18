@@ -54,6 +54,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -96,6 +97,7 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.Topic;
@@ -413,14 +415,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         KafkaConsumer<String, String> consumer1 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer1.assign(topicPartitions);
         Long startTime1 = System.currentTimeMillis();
-        consumer1.poll(Duration.ofMillis(maxWaitMs));
+        ConsumerRecords<String, String> emptyResult = consumer1.poll(Duration.ofMillis(maxWaitMs));
         Long endTime1 = System.currentTimeMillis();
         log.info("cost time1:" + (endTime1 - startTime1));
+        assertEquals(0, emptyResult.count());
 
         // case2: consuming an topic after producing data.
+        @Cleanup
         KafkaProducer<String, String> kProducer = createKafkaProducer();
         produceData(kProducer, topicPartitions, 10);
 
+        @Cleanup
         KafkaConsumer<String, String> consumer2 = createKafkaConsumer(maxWaitMs, minBytes);
         consumer2.assign(topicPartitions);
         consumer2.seekToBeginning(topicPartitions);
@@ -696,6 +701,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             TopicPartition tp = topicPartitions.get(index);
             for (int messageIndex = 0; messageIndex < numMessagesPerPartition; messageIndex++) {
                 String suffix = tp.toString() + "-" + messageIndex;
+                TimeUnit.MILLISECONDS.sleep(100);
                 producer
                     .send(
                         new ProducerRecord<>(
@@ -1021,5 +1027,46 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // Now, the managed ledger is closed
         verifySendMessageToPartition(topicPartition, newNormalRecords(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
         verifySendMessageToPartition(topicPartition, newAbortTxnMarker(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
+    }
+
+
+    /**
+     * Test the sending speed of fetch request when the readable data is less than fetch.minBytes.
+     */
+    @Test(timeOut = 60000)
+    public void testFetchMinBytesSingleConsumer() throws Exception {
+        final String topic = "testMinBytesTopic";
+        final TopicPartition topicPartition = new TopicPartition(topic, 0);
+        admin.topics().createPartitionedTopic(topic, 1);
+        triggerTopicLookup(topic, 1);
+        kafkaRequestHandler.getTopicManager().setRemoteAddress(new InetSocketAddress(42));
+        final int maxWaitMs = 3000;
+        final int minBytes = 1;
+
+        @Cleanup
+        final KafkaHeaderAndRequest request = buildRequest(FetchRequest.Builder.forConsumer(maxWaitMs, minBytes,
+                Collections.singletonMap(topicPartition, new FetchRequest.PartitionData(
+                        0L, -1L, 1024 * 1024
+                ))));
+        final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
+        final long startTime = System.currentTimeMillis();
+        kafkaRequestHandler.handleFetchRequest(request, future);
+
+        // Trigger the fetch
+        final int numMessages = 10;
+        final KafkaProducer<String, String> producer = createKafkaProducer();
+        produceData(producer, Collections.singletonList(new TopicPartition(topic, 0)), numMessages);
+        AbstractResponse abstractResponse = ((ResponseCallbackWrapper)
+                future.get(maxWaitMs + 1000, TimeUnit.MILLISECONDS)).getResponse();
+        assertTrue(abstractResponse instanceof FetchResponse);
+        final FetchResponse<MemoryRecords> response = (FetchResponse<MemoryRecords>) abstractResponse;
+        assertEquals(response.error(), Errors.NONE);
+        final long endTime = System.currentTimeMillis();
+        log.info("Take {} ms to process FETCH request, record count: {}",
+                endTime - startTime, response.responseData().size());
+        assertTrue(endTime - startTime <= maxWaitMs);
+
+        Long waitingFetchesTriggered = kafkaRequestHandler.getRequestStats().getWaitingFetchesTriggered().get();
+        assertEquals((long) waitingFetchesTriggered, 1);
     }
 }
