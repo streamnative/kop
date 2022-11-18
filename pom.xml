@@ -55,6 +55,7 @@
     <junit.version>4.13.1</junit.version>
     <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
     <snakeyaml.version>1.31</snakeyaml.version>
+    <commons-validator.version>1.7</commons-validator.version>
 
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -257,6 +258,11 @@
         <groupId>org.yaml</groupId>
         <artifactId>snakeyaml</artifactId>
         <version>${snakeyaml.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>commons-validator</groupId>
+        <artifactId>commons-validator</artifactId>
+        <version>${commons-validator.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
