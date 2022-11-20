@@ -426,10 +426,6 @@
     </repository>
     <repository>
       <id>ossrh</id>
-      <url>https://s01.oss.sonatype.org/service/local/repositories/iostreamnative-1658/content</url>
-    </repository>
-    <repository>
-      <id>ossrh</id>
       <url>https://s01.oss.sonatype.org/service/local/repositories/iostreamnative-1715/content</url>
     </repository>
   </repositories>
