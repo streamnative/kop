@@ -426,10 +426,6 @@
       <layout>default</layout>
       <url>https://repo1.maven.org/maven2</url>
     </repository>
-    <repository>
-      <id>ossrh</id>
-      <url>https://s01.oss.sonatype.org/service/local/repositories/iostreamnative-1658/content</url>
-    </repository>
   </repositories>
   <distributionManagement>
     <snapshotRepository>
