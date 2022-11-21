@@ -606,7 +606,7 @@ public class PartitionLog {
                 getEntryFormatter(context.getTopicManager().getTopic(fullPartitionName));
 
         entryFormatterHandle.whenComplete((entryFormatter, ee) -> {
-        if (ee != null ) {
+        if (ee != null) {
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
             return;
         }
