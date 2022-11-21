@@ -17,12 +17,8 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
-import java.util.function.Function;
-
 import lombok.AllArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
