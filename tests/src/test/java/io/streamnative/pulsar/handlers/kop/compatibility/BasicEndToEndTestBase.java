@@ -184,7 +184,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
 
             // 4.Consume all messages
             List<ConsumerRecord<String, String>> records = consumer.receiveUntil(count, 6000);
-            Assert.assertEquals(count, records.size());
+            Assert.assertEquals(records.size(), count);
             Map<Integer, List<ConsumerRecord<String, String>>> totalRecordsGroupByPartition = records.stream()
                     .collect(Collectors.groupingBy(ConsumerRecord::getPartition));
 
@@ -238,7 +238,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             // 11.Consume messages and verify that the number of messages is the same
             // as the number of messages calculated according to the commit offset
             List<ConsumerRecord<String, String>> commitRecordList = consumer.receiveUntil(messagesSize, 12000);
-            Assert.assertEquals(messagesSize, commitRecordList.size());
+            Assert.assertEquals(commitRecordList.size(), messagesSize);
 
             // 12.The results of consumption are grouped according to partitions to facilitate
             // the comparison between the results of consumption and the messages produced later

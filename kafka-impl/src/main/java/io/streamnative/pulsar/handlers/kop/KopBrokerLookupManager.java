@@ -21,7 +21,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -81,9 +80,11 @@ public class KopBrokerLookupManager {
                         if (log.isDebugEnabled()) {
                             log.debug("Found listener {} for topic {}", listener, topic);
                         }
-                        final Matcher matcher = EndPoint.matcherListener(listener,
-                                listener + " cannot be split into 3 parts");
-                        return Optional.of(new InetSocketAddress(matcher.group(2), Integer.parseInt(matcher.group(3))));
+                        final AdvertisedListener advertisedListener = AdvertisedListener.create(listener);
+
+                        return Optional.of(new InetSocketAddress(
+                                advertisedListener.getHostname(),
+                                advertisedListener.getPort()));
                     } catch (IllegalStateException | NumberFormatException e) {
                         log.error("Failed to find the advertised listener: {}", e.getMessage());
                         removeTopicManagerCache(topic);

@@ -130,16 +130,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
             EntryFormatter entryFormatter;
             try {
-                entryFormatter = EntryFormatterFactory.create(kafkaConfig);
+                entryFormatter = EntryFormatterFactory.create(kafkaConfig, brokerService.getEntryFilters());
             } catch (IllegalArgumentException e) {
                 log.error("Failed to init create enter formatter {}", tenant, e);
                 throw new IllegalStateException(e);
             }
             return new ReplicaManager(
                     kafkaConfig,
+                    requestStats,
                     Time.SYSTEM,
                     entryFormatter,
-                    producePurgatory);
+                    producePurgatory,
+                    fetchPurgatory);
         });
     }
 

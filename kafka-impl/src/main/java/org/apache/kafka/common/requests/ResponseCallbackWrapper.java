@@ -13,6 +13,7 @@
  */
 package org.apache.kafka.common.requests;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.util.Map;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
@@ -29,6 +30,11 @@ public class ResponseCallbackWrapper extends AbstractResponse {
     public ResponseCallbackWrapper(AbstractResponse abstractResponse, ResponseCallback responseCallback) {
         this.abstractResponse = abstractResponse;
         this.responseCallback = responseCallback;
+    }
+
+    @VisibleForTesting
+    public AbstractResponse getResponse() {
+        return this.abstractResponse;
     }
 
     @Override

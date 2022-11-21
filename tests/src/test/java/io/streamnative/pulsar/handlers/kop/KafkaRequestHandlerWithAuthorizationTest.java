@@ -76,6 +76,7 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
@@ -276,17 +277,43 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @Test(timeOut = 20000)
     public void testHandleProduceRequest() throws ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
-        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
-        final ProduceRequest request = createProduceRequest(TOPIC);
-        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
+        final String topic = TOPIC;
+        final String topic2 = "topic2";
+
+        // Build input params
+        Map<TopicPartition, MemoryRecords> partitionRecords = new HashMap<>();
+        TopicPartition topicPartition1 = new TopicPartition(topic, 0);
+        TopicPartition topicPartition2 = new TopicPartition(topic2, 0);
+        partitionRecords.put(topicPartition1,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
+        partitionRecords.put(topicPartition2,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test2".getBytes())));
+        final ProduceRequest request =
+                ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
+
+        // authorize topic2
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.WRITE),
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition2,
+                                handler.currentNamespacePrefix())))
+                );
+
+        // Handle request
+        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
+        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleProduceRequest(new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
                 PulsarByteBufAllocator.DEFAULT.heapBuffer(),
                 null), responseFuture);
-        AbstractResponse response = responseFuture.get();
-        assertEquals((int) response.errorCounts().get(Errors.TOPIC_AUTHORIZATION_FAILED), 1);
+        final ProduceResponse response = (ProduceResponse) responseFuture.get();
+
+        //Topic: "topic2" authorize success. Error is not TOPIC_AUTHORIZATION_FAILED
+        assertEquals(response.responses().get(topicPartition2).error, Errors.NOT_LEADER_FOR_PARTITION);
+        //Topic: `TOPIC` authorize failed.
+        assertEquals(response.responses().get(topicPartition1).error, Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     @Test(timeOut = 20000)
