@@ -40,10 +40,14 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -59,6 +63,8 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -128,18 +134,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            EntryFormatter entryFormatter;
-            try {
-                entryFormatter = EntryFormatterFactory.create(kafkaConfig, brokerService.getEntryFilters());
-            } catch (IllegalArgumentException e) {
-                log.error("Failed to init create enter formatter {}", tenant, e);
-                throw new IllegalStateException(e);
-            }
             return new ReplicaManager(
                     kafkaConfig,
                     requestStats,
                     Time.SYSTEM,
-                    entryFormatter,
+                    brokerService.getEntryFilters(),
                     producePurgatory,
                     fetchPurgatory);
         });
