@@ -816,7 +816,7 @@ public abstract class KopProtocolHandlerTestBase {
                 .map(f -> ((KafkaChannelInitializer) f))
                 .findFirst()
                 .get()
-                .newCnxWithoutStats(new TenantContextManager() {
+                .newCnx(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
                         return groupCoordinator;
