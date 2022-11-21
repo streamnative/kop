@@ -128,12 +128,13 @@ public class PartitionLog {
         this.producerStateManager = producerStateManager;
     }
 
-    private CompletableFuture<EntryFormatter> getEntryFormatter(CompletableFuture<Optional<PersistentTopic>> topicFuture) {
+    private CompletableFuture<EntryFormatter> getEntryFormatter(
+            CompletableFuture<Optional<PersistentTopic>> topicFuture) {
         return entryFormatter.accumulateAndGet(null, (current, ___) -> {
             if (current != null) {
                 return current;
             }
-            return topicFuture.thenCompose( (persistentTopic) -> {
+            return topicFuture.thenCompose((persistentTopic) -> {
                 TopicName logicalName = TopicName.get(persistentTopic.get().getName());
                 TopicName actualName;
                 if (logicalName.isPartitioned()) {
@@ -601,9 +602,10 @@ public class PartitionLog {
         final CompletableFuture<String> groupNameFuture = kafkaConfig.isKopEnableGroupLevelConsumerMetrics()
                 ? context.getCurrentConnectedGroupNameAsync() : CompletableFuture.completedFuture(null);
 
-        final CompletableFuture<EntryFormatter> entryFormatterHandle = getEntryFormatter(context.getTopicManager().getTopic(fullPartitionName));
+        final CompletableFuture<EntryFormatter> entryFormatterHandle =
+                getEntryFormatter(context.getTopicManager().getTopic(fullPartitionName));
 
-        entryFormatterHandle.whenComplete( (entryFormatter, ee) -> {
+        entryFormatterHandle.whenComplete((entryFormatter, ee) -> {
         if (ee != null ) {
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
             return;
