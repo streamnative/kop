@@ -30,8 +30,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -214,9 +212,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final ConcurrentSkipListSet<String> currentConnectedClientId;
     private final String groupIdStoredPath;
 
-    @Getter
-    private final EntryFormatter entryFormatter;
-
     private final Set<String> groupIds = new HashSet<>();
     // key is the topic(partition), value is the future that indicates whether the PersistentTopic instance of the key
     // is found.
@@ -324,8 +319,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
-        this.entryFormatter = EntryFormatterFactory.create(kafkaConfig,
-                pulsarService.getBrokerService().getEntryFilters());
         this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.currentConnectedClientId = new ConcurrentSkipListSet<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();

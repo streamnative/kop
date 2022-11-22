@@ -32,8 +32,8 @@ public class EntryFormatterFactory {
     }
 
     public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig,
-                                        final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap) {
-        final String format = kafkaConfig.getEntryFormat();
+                                        final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                                        final String format) {
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
 
