@@ -25,8 +25,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
@@ -128,18 +126,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            EntryFormatter entryFormatter;
-            try {
-                entryFormatter = EntryFormatterFactory.create(kafkaConfig, brokerService.getEntryFilters());
-            } catch (IllegalArgumentException e) {
-                log.error("Failed to init create enter formatter {}", tenant, e);
-                throw new IllegalStateException(e);
-            }
             return new ReplicaManager(
                     kafkaConfig,
                     requestStats,
                     Time.SYSTEM,
-                    entryFormatter,
+                    brokerService.getEntryFilters(),
                     producePurgatory,
                     fetchPurgatory);
         });
