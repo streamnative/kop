@@ -45,7 +45,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
-    protected PulsarEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters, boolean applyAvroSchemaOnDecode) {
+    protected PulsarEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters,
+                                   boolean applyAvroSchemaOnDecode) {
         super(entryfilters, applyAvroSchemaOnDecode);
     }
 

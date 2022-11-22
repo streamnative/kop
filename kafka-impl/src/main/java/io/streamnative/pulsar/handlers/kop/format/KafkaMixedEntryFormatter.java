@@ -35,7 +35,8 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
 
-    protected KafkaMixedEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters, boolean applyAvroSchemaOnDecode) {
+    protected KafkaMixedEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters,
+                                       boolean applyAvroSchemaOnDecode) {
         super(entryfilters, applyAvroSchemaOnDecode);
     }
 

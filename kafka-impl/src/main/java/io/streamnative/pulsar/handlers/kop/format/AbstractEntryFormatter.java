@@ -52,7 +52,8 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
 
     private final boolean applyAvroSchemaOnDecode;
 
-    protected AbstractEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters, boolean applyAvroSchemaOnDecode) {
+    protected AbstractEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters,
+                                     boolean applyAvroSchemaOnDecode) {
         this.entryfilters = entryfilters;
         this.applyAvroSchemaOnDecode = applyAvroSchemaOnDecode;
     }
