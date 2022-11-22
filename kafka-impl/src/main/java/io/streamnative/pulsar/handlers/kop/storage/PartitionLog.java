@@ -107,7 +107,7 @@ public class PartitionLog {
     private final Time time;
     private final TopicPartition topicPartition;
     private final String fullPartitionName;
-    private AtomicReference<CompletableFuture<EntryFormatter>> entryFormatter = new AtomicReference<>();
+    private final AtomicReference<CompletableFuture<EntryFormatter>> entryFormatter = new AtomicReference<>();
     private final ProducerStateManager producerStateManager;
 
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
@@ -135,6 +135,9 @@ public class PartitionLog {
                 return current;
             }
             return topicFuture.thenCompose((persistentTopic) -> {
+                if (!persistentTopic.isPresent()) {
+                    throw new IllegalStateException("Topic " + fullPartitionName + " is not ready");
+                }
                 TopicName logicalName = TopicName.get(persistentTopic.get().getName());
                 TopicName actualName;
                 if (logicalName.isPartitioned()) {
@@ -151,7 +154,11 @@ public class PartitionLog {
                                 return buildEntryFormatter(persistentTopic.get().getManagedLedger().getProperties());
                             }
                         });
+
                 result.exceptionally(ex -> {
+                   // this error will happen in a separate thread, and during the execution of
+                   // accumulateAndGet
+                   // the only thing we can do is to clear the cache
                    log.error("Cannot create the EntryFormatter for {}", fullPartitionName, ex);
                    entryFormatter.set(null);
                    return null;
@@ -162,12 +169,15 @@ public class PartitionLog {
     }
 
     private EntryFormatter buildEntryFormatter(Map<String, String> topicProperties) {
-        if (topicProperties == null) {
-            topicProperties = Collections.emptyMap();
+        final String entryFormat;
+        if (topicProperties != null) {
+            entryFormat = topicProperties.getOrDefault("kafkaEntryFormat", kafkaConfig.getEntryFormat());
+        } else {
+            entryFormat = kafkaConfig.getEntryFormat();
         }
-        String entryFormat = topicProperties.getOrDefault("kafkaEntryFormat", kafkaConfig.getEntryFormat());
         if (log.isDebugEnabled()) {
-            log.debug("getEntryFormatter {} -> {}", topicProperties, entryFormat);
+            log.debug("entryFormat for {} is {} (topicProperties {})", fullPartitionName,
+                    entryFormat, topicProperties);
         }
         return EntryFormatterFactory.create(kafkaConfig, entryfilterMap, entryFormat);
     }
