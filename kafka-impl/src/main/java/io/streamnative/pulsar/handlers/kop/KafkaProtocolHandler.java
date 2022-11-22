@@ -103,10 +103,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private NamespaceBundleOwnershipListenerImpl bundleListener;
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
+    private ReplicaManager replicaManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private final Map<String, ReplicaManager> replicaManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -123,17 +123,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
     }
 
-    @Override
-    public ReplicaManager getReplicaManager(String tenant) {
-        return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            return new ReplicaManager(
-                    kafkaConfig,
-                    requestStats,
-                    Time.SYSTEM,
-                    brokerService.getEntryFilters(),
-                    producePurgatory,
-                    fetchPurgatory);
-        });
+    public ReplicaManager getReplicaManager() {
+        return replicaManager;
     }
 
     @Override
@@ -235,6 +226,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             @Override
             public void whenUnload(TopicName topicName) {
                 invalidateBundleCache(topicName);
+                invalidatePartitionLog(topicName);
             }
 
             @Override
@@ -245,7 +237,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             private void invalidateBundleCache(TopicName topicName) {
                 kafkaTopicManagerSharedState.deReference(topicName.toString());
                 if (!topicName.isPartitioned()) {
-                    kafkaTopicManagerSharedState.deReference(topicName.getPartition(0).toString());
+                    String nonPartitionedTopicName = topicName.getPartition(0).toString();
+                    kafkaTopicManagerSharedState.deReference(nonPartitionedTopicName);
+                }
+            }
+
+            private void invalidatePartitionLog(TopicName topicName) {
+                getReplicaManager().removePartitionLog(topicName.toString());
+                if (!topicName.isPartitioned()) {
+                    getReplicaManager().removePartitionLog(topicName.getPartition(0).toString());
                 }
             }
         });
@@ -392,6 +392,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar(),
                 kafkaConfig,
                 this,
+                replicaManager,
                 kopBrokerLookupManager,
                 adminManager,
                 producePurgatory,
@@ -418,6 +419,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
+
+        replicaManager = new ReplicaManager(
+                kafkaConfig,
+                requestStats,
+                Time.SYSTEM,
+                brokerService.getEntryFilters(),
+                producePurgatory,
+                fetchPurgatory);
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =

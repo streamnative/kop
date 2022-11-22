@@ -59,7 +59,11 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
                     if (log.isDebugEnabled()) {
                         log.debug("[{}][{}] Trigger load callback for {}", brokerUrl, listener.name(), topic);
                     }
-                    listener.whenLoad(TopicName.get(topic));
+                    try {
+                        listener.whenLoad(TopicName.get(topic));
+                    } catch (Exception ex) {
+                        log.error("[{}][{}] Failed to do load for {}", brokerUrl, listener.name(), topic, ex);
+                    }
                 });
             });
         });
@@ -81,7 +85,11 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
                     if (log.isDebugEnabled()) {
                         log.debug("[{}][{}] Trigger unload callback for {}", brokerUrl, listener.name(), topic);
                     }
-                    listener.whenUnload(TopicName.get(topic));
+                    try {
+                        listener.whenUnload(TopicName.get(topic));
+                    } catch (Exception ex) {
+                        log.error("[{}][{}] Failed to do unload for {}", brokerUrl, listener.name(), topic, ex);
+                    }
                 });
             });
         });

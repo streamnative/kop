@@ -805,8 +805,7 @@ public abstract class KopProtocolHandlerTestBase {
         final GroupCoordinator groupCoordinator = handler.getGroupCoordinator(conf.getKafkaMetadataTenant());
         final TransactionCoordinator transactionCoordinator =
                 handler.getTransactionCoordinator(conf.getKafkaMetadataTenant());
-        final ReplicaManager replicaManager =
-                handler.getReplicaManager(conf.getKafkaMetadataTenant());
+        final ReplicaManager replicaManager = handler.getReplicaManager();
 
         return handler
                 .getChannelInitializerMap()
@@ -825,11 +824,6 @@ public abstract class KopProtocolHandlerTestBase {
                     @Override
                     public TransactionCoordinator getTransactionCoordinator(String tenant) {
                         return transactionCoordinator;
-                    }
-
-                    @Override
-                    public ReplicaManager getReplicaManager(String tenant) {
-                        return replicaManager;
                     }
                 });
     }
