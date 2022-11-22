@@ -13,15 +13,16 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 
 /**
  * Manage {@link PartitionLog}.
@@ -32,27 +33,27 @@ public class PartitionLogManager {
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
     private final Map<String, PartitionLog> logMap;
-    private final EntryFormatter formatter;
     private final Time time;
+    private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                RequestStats requestStats,
-                               EntryFormatter entryFormatter,
+                               final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
                                Time time) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
-        this.formatter = entryFormatter;
+        this.entryfilterMap = entryfilterMap;
         this.time = time;
     }
 
     public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
 
-        return logMap.computeIfAbsent(kopTopic, key ->
-                new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, formatter,
-                        new ProducerStateManager(kopTopic))
-        );
+        return logMap.computeIfAbsent(kopTopic, key -> {
+                return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryfilterMap,
+                        new ProducerStateManager(kopTopic));
+        });
     }
 }
 

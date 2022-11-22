@@ -13,12 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
@@ -44,6 +44,7 @@ import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 
 /**
  * Used to append records. Mapping to Kafka ReplicaManager.scala.
@@ -58,10 +59,11 @@ public class ReplicaManager {
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
                           RequestStats requestStats,
                           Time time,
-                          EntryFormatter entryFormatter,
+                          ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
-        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryFormatter, time);
+        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
+                time);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();

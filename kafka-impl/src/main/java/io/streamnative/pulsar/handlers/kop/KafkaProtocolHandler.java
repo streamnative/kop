@@ -25,8 +25,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
@@ -123,18 +121,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            EntryFormatter entryFormatter;
-            try {
-                entryFormatter = EntryFormatterFactory.create(kafkaConfig, brokerService.getEntryFilters());
-            } catch (IllegalArgumentException e) {
-                log.error("Failed to init create enter formatter {}", tenant, e);
-                throw new IllegalStateException(e);
-            }
             return new ReplicaManager(
                     kafkaConfig,
                     requestStats,
                     Time.SYSTEM,
-                    entryFormatter,
+                    brokerService.getEntryFilters(),
                     producePurgatory,
                     fetchPurgatory);
         });
@@ -147,7 +138,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public boolean accept(String protocol) {
-        return PROTOCOL_NAME.equals(protocol.toLowerCase());
+        return PROTOCOL_NAME.equalsIgnoreCase(protocol);
     }
 
     @Override
@@ -411,11 +402,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
 
-        producePurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        producePurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("produce")
                 .timeoutTimer(SystemTimer.builder().executorName("produce").build())
                 .build();
-        fetchPurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        fetchPurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
