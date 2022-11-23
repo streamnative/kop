@@ -76,10 +76,8 @@ public class ReplicaManager {
 
     public void removePartitionLog(String topicName) {
         PartitionLog partitionLog = logManager.removeLog(topicName);
-        if (log.isDebugEnabled()) {
-            if (partitionLog != null) {
-                log.debug("PartitionLog: {} has bean removed.", partitionLog);
-            }
+        if (log.isDebugEnabled() && partitionLog != null) {
+            log.debug("PartitionLog: {} has bean removed.", partitionLog);
         }
     }
 
