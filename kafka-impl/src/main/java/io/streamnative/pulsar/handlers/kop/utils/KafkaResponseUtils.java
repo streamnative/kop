@@ -16,15 +16,30 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import io.streamnative.pulsar.handlers.kop.ApiVersion;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.ApiVersionsResponseData;
+import org.apache.kafka.common.message.CreatePartitionsResponseData;
+import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteGroupsResponseData;
+import org.apache.kafka.common.message.DeleteRecordsResponseData;
+import org.apache.kafka.common.message.DeleteTopicsResponseData;
+import org.apache.kafka.common.message.FindCoordinatorResponseData;
+import org.apache.kafka.common.message.HeartbeatResponseData;
+import org.apache.kafka.common.message.JoinGroupResponseData;
+import org.apache.kafka.common.message.LeaveGroupResponseData;
+import org.apache.kafka.common.message.ListGroupsResponseData;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -40,7 +55,7 @@ import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupResponse;
 import org.apache.kafka.common.requests.ListGroupsResponse;
-import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
@@ -52,36 +67,88 @@ import org.apache.pulsar.common.schema.KeyValue;
 public class KafkaResponseUtils {
 
     public static ApiVersionsResponse newApiVersions(List<ApiVersion> versionList) {
-        return new ApiVersionsResponse(0, Errors.NONE, versionList.stream()
-                .map(apiVersion -> new ApiVersionsResponse.ApiVersion(
-                        apiVersion.apiKey, apiVersion.minVersion, apiVersion.maxVersion))
-                .collect(Collectors.toList())
-        );
+        ApiVersionsResponseData data = new ApiVersionsResponseData();
+        versionList.forEach(apiVersion ->  {
+            data.apiKeys().add(new ApiVersionsResponseData.ApiVersion()
+                    .setApiKey(apiVersion.apiKey)
+                    .setMinVersion(apiVersion.minVersion)
+                    .setMaxVersion(apiVersion.maxVersion));
+        });
+        return new ApiVersionsResponse(data);
     }
 
     public static ApiVersionsResponse newApiVersions(Errors errors) {
-        return new ApiVersionsResponse(0, errors, Collections.emptyList());
+        ApiVersionsResponseData data = new ApiVersionsResponseData();
+        data.setErrorCode(errors.code());
+        return new ApiVersionsResponse(data);
     }
 
     public static CreatePartitionsResponse newCreatePartitions(Map<String, ApiError> topicToErrors) {
-        return new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, topicToErrors);
+        CreatePartitionsResponseData data = new CreatePartitionsResponseData();
+        data.setThrottleTimeMs(AbstractResponse.DEFAULT_THROTTLE_TIME);
+        topicToErrors.forEach((topic, errors) -> {
+            data.results().add(new CreatePartitionsResponseData.CreatePartitionsTopicResult()
+                    .setName(topic)
+                    .setErrorCode(errors.error().code())
+                    .setErrorMessage(errors.messageWithFallback()));
+        });
+        return new CreatePartitionsResponse(data);
     }
 
     public static CreateTopicsResponse newCreateTopics(Map<String, ApiError> errorMap) {
-        return new CreateTopicsResponse(errorMap);
+        CreateTopicsResponseData data = new CreateTopicsResponseData();
+        errorMap.forEach((topic, errors) -> {
+            data.topics().add(new CreateTopicsResponseData.CreatableTopicResult()
+                            .setName(topic)
+                            .setErrorMessage(errors.messageWithFallback())
+                    .setErrorCode(errors.error().code()));
+        });
+        return new CreateTopicsResponse(data);
     }
 
     public static DeleteGroupsResponse newDeleteGroups(Map<String, Errors> groupToErrors) {
-        return new DeleteGroupsResponse(groupToErrors);
+        DeleteGroupsResponseData deleteGroupsResponseData = new DeleteGroupsResponseData();
+        groupToErrors.forEach((group, errors) -> {
+            deleteGroupsResponseData.results().add(new DeleteGroupsResponseData.DeletableGroupResult()
+                    .setGroupId(group)
+                    .setErrorCode(errors.code()));
+        });
+        return new DeleteGroupsResponse(deleteGroupsResponseData);
     }
 
     public static DeleteTopicsResponse newDeleteTopics(Map<String, Errors> topicToErrors) {
-        return new DeleteTopicsResponse(topicToErrors);
+        DeleteTopicsResponseData deleteTopicsResponseData = new DeleteTopicsResponseData();
+        topicToErrors.forEach((topic, errors) -> {
+            deleteTopicsResponseData.responses().add(new DeleteTopicsResponseData.DeletableTopicResult()
+                    .setName(topic)
+                    .setErrorCode(errors.code())
+                    .setErrorMessage(errors.message()));
+        });
+        return new DeleteTopicsResponse(deleteTopicsResponseData);
     }
 
     public static DeleteRecordsResponse newDeleteRecords(Map<TopicPartition,
-            DeleteRecordsResponse.PartitionResponse> responseMap) {
-        return new DeleteRecordsResponse(-1, responseMap);
+            Errors> responseMap) {
+        DeleteRecordsResponseData data = new DeleteRecordsResponseData();
+        responseMap.keySet()
+                .stream()
+                .map(TopicPartition::topic)
+                .distinct()
+                .forEach((String topic) -> {
+                    DeleteRecordsResponseData.DeleteRecordsTopicResult deleteRecordsTopicResult = new DeleteRecordsResponseData.DeleteRecordsTopicResult();
+                    deleteRecordsTopicResult.setName(topic);
+                    DeleteRecordsResponseData.DeleteRecordsPartitionResultCollection partitionResults = deleteRecordsTopicResult.partitions();
+                    responseMap.entrySet().stream().filter(
+                            entry -> entry.getKey().topic().equals(topic)
+                    ).forEach(partitions -> {
+                        DeleteRecordsResponseData.DeleteRecordsPartitionResult result = new DeleteRecordsResponseData.DeleteRecordsPartitionResult()
+                                .setPartitionIndex(partitions.getKey().partition())
+                                .setErrorCode(partitions.getValue().code());
+                        partitionResults.add(result);
+
+                    });
+        });
+        return new DeleteRecordsResponse(data);
     }
 
     public static DescribeGroupsResponse newDescribeGroups(
@@ -111,16 +178,24 @@ public class KafkaResponseUtils {
         }));
     }
 
-    public static FindCoordinatorResponse newFindCoordinator(Node node) {
-        return new FindCoordinatorResponse(Errors.NONE, node);
+    public static FindCoordinatorResponse newFindCoordinator(MetadataResponse.PartitionMetadata node) {
+        FindCoordinatorResponseData data = new FindCoordinatorResponseData();
+        data.setNodeId(node.leaderId.get());
+        data.setErrorCode(Errors.NONE.code());
+        return new FindCoordinatorResponse(data);
     }
 
     public static FindCoordinatorResponse newFindCoordinator(Errors errors) {
-        return new FindCoordinatorResponse(errors, Node.noNode());
+        FindCoordinatorResponseData data = new FindCoordinatorResponseData();
+        data.setErrorCode(errors.code());
+        data.setErrorMessage(errors.message());
+        return new FindCoordinatorResponse(data);
     }
 
     public static HeartbeatResponse newHeartbeat(Errors errors) {
-        return new HeartbeatResponse(errors);
+        HeartbeatResponseData data = new HeartbeatResponseData();
+        data.setErrorCode(errors.code());
+        return new HeartbeatResponse(data);
     }
 
     public static JoinGroupResponse newJoinGroup(Errors errors,
@@ -128,53 +203,126 @@ public class KafkaResponseUtils {
                                                  String groupProtocol,
                                                  String memberId,
                                                  String leaderId,
-                                                 Map<String, ByteBuffer> groupMembers) {
-        return new JoinGroupResponse(errors, generationId, groupProtocol, memberId, leaderId, groupMembers);
+                                                 Map<String, byte[]> groupMembers) {
+        JoinGroupResponseData data = new JoinGroupResponseData()
+                .setErrorCode(errors.code())
+                .setLeader(leaderId)
+                .setGenerationId(generationId)
+                .setMemberId(memberId)
+                .setMembers(groupMembers
+                        .entrySet()
+                        .stream()
+                        .map(entry ->
+                            new JoinGroupResponseData.JoinGroupResponseMember()
+                                    .setMemberId(entry.getKey())
+                                    .setMetadata(entry.getValue())
+                        )
+                        .collect(Collectors.toList()));
+        return new JoinGroupResponse(data);
     }
 
     public static LeaveGroupResponse newLeaveGroup(Errors errors) {
-        return new LeaveGroupResponse(errors);
+        LeaveGroupResponseData data = new LeaveGroupResponseData();
+        data.setErrorCode(errors.code());
+        return new LeaveGroupResponse(data);
     }
 
     public static ListGroupsResponse newListGroups(Errors errors,
                                                    List<GroupMetadata.GroupOverview> groups) {
-        return new ListGroupsResponse(errors, groups.stream()
-                .map(groupOverview -> new ListGroupsResponse.Group(
-                        groupOverview.groupId(), groupOverview.protocolType()))
-                .collect(Collectors.toList())
+        ListGroupsResponseData data = new ListGroupsResponseData();
+        data.setErrorCode(errors.code());
+        data.setGroups(groups.stream().map(overView -> new ListGroupsResponseData.ListedGroup()
+                .setGroupId(overView.groupId())
+                .setProtocolType(overView.protocolType()))
+                .collect(Collectors.toList()));
+        return new ListGroupsResponse(data)
         );
     }
 
-    public static ListOffsetResponse newListOffset(
+    public static ListOffsetsResponse newListOffset(
             Map<TopicPartition,
             Pair<Errors, Long>> partitionToOffset,
             boolean legacy) {
         if (legacy) {
-            return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
-                    pair -> new ListOffsetResponse.PartitionData(
-                            pair.getLeft(),
-                            Optional.ofNullable(pair.getRight()).map(Collections::singletonList)
-                                    .orElse(Collections.emptyList()))
-                    ));
+            ListOffsetsResponseData data = new ListOffsetsResponseData();
+            List<ListOffsetsResponseData.ListOffsetsTopicResponse> topicsResponse = data.topics();
+            List<String> topics = partitionToOffset.keySet().stream().map(TopicPartition::topic).distinct().collect(Collectors.toList());
+            topics.forEach(topic -> {
+                ListOffsetsResponseData.ListOffsetsTopicResponse  listOffsetsTopicResponse = new ListOffsetsResponseData.ListOffsetsTopicResponse()
+                        .setName(topic);
+                topicsResponse.add(listOffsetsTopicResponse);
+                partitionToOffset.forEach((TopicPartition topicPartition, Pair<Errors, Long> errorsLongPair) ->  {
+                    if (topicPartition.topic().equals(topic)) {
+                        Errors errors = errorsLongPair.getKey();
+                        long offset = errorsLongPair.getValue() != null ? errorsLongPair.getValue() : 0L;
+                        listOffsetsTopicResponse.partitions().add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                                .setOldStyleOffsets(Collections.singletonList(offset))
+                                .setPartitionIndex(topicPartition.partition())
+                                .setErrorCode(errors.code()));
+                    }
+                });
+            });
+            return new ListOffsetsResponse(data);
         } else {
-            return new ListOffsetResponse(CoreUtils.mapValue(partitionToOffset,
-                    pair -> new ListOffsetResponse.PartitionData(
-                            pair.getLeft(), // error
-                            0L, // timestamp
-                            Optional.ofNullable(
-                                    pair.getRight() != null ? pair.getRight().intValue() : null)
-                                    .orElse(0) // offset
-                            , Optional.empty()
-                    )
-            ));
+            ListOffsetsResponseData data = new ListOffsetsResponseData();
+            List<ListOffsetsResponseData.ListOffsetsTopicResponse> topicsResponse = data.topics();
+            List<String> topics = partitionToOffset.keySet().stream().map(TopicPartition::topic).distinct().collect(Collectors.toList());
+            topics.forEach(topic -> {
+                ListOffsetsResponseData.ListOffsetsTopicResponse  listOffsetsTopicResponse = new ListOffsetsResponseData.ListOffsetsTopicResponse()
+                        .setName(topic);
+                topicsResponse.add(listOffsetsTopicResponse);
+                partitionToOffset.forEach((TopicPartition topicPartition, Pair<Errors, Long> errorsLongPair) ->  {
+                    if (topicPartition.topic().equals(topic)) {
+                        Errors errors = errorsLongPair.getKey();
+                        long offset = errorsLongPair.getValue() != null ? errorsLongPair.getValue() : 0L;
+                        listOffsetsTopicResponse.partitions().add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                                .setOffset(offset)
+                                 .setTimestamp(0)
+                                .setPartitionIndex(topicPartition.partition())
+                                .setErrorCode(errors.code()));
+                    }
+                });
+            });
+            return new ListOffsetsResponse(data);
         }
     }
 
     public static MetadataResponse newMetadata(List<Node> nodes,
                                                String clusterName,
                                                int controllerId,
-                                               List<MetadataResponse.TopicMetadata> topicMetadata) {
-        return new MetadataResponse(nodes, clusterName, controllerId, topicMetadata);
+                                               List<MetadataResponse.TopicMetadata> topicMetadata,
+                                               short apiVersion) {
+        MetadataResponseData data = new MetadataResponseData()
+        .setClusterId(clusterName)
+        .setControllerId(controllerId);
+
+        nodes.forEach(node -> {
+            data.brokers().add(new MetadataResponseData.MetadataResponseBroker()
+                    .setHost(node.host())
+                    .setNodeId(node.id())
+                    .setPort(node.port())
+                    .setRack(node.rack()));
+        });
+
+        topicMetadata.forEach(md -> {
+            MetadataResponseData.MetadataResponseTopic metadataResponseTopic = new MetadataResponseData.MetadataResponseTopic()
+                    .setErrorCode(md.error().code())
+                    .setName(md.topic())
+                    .setIsInternal(md.isInternal());
+            md.partitionMetadata().forEach(pd -> {
+                metadataResponseTopic.partitions().add(new MetadataResponseData.MetadataResponsePartition()
+                        .setPartitionIndex(pd.partition())
+                        .setErrorCode(pd.error.code())
+                        .setIsrNodes(pd.inSyncReplicaIds)
+                        .setLeaderEpoch(pd.leaderEpoch.orElse(-1))
+                        .setLeaderId(pd.leaderId.orElse(-1))
+                        .setOfflineReplicas(pd.offlineReplicaIds)
+                        .setReplicaNodes(pd.replicaIds));
+            });
+
+            data.topics().add(metadataResponseTopic);
+        });
+        return new MetadataResponse(data, apiVersion);
     }
 
     public static MetadataResponse.PartitionMetadata newMetadataPartition(int partition,
@@ -183,8 +331,8 @@ public class KafkaResponseUtils {
                 partition,
                 node, // leader
                 Optional.empty(), // leaderEpoch is unknown in Pulsar
-                Collections.singletonList(node), // replicas
-                Collections.singletonList(node), // isr
+                Collections.singletonList(node.id()), // replicas
+                Collections.singletonList(node.id()), // isr
                 Collections.emptyList() // offline replicas
         );
     }
