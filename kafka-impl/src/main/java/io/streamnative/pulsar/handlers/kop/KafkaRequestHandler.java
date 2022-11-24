@@ -102,7 +102,9 @@ import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteRecordsRequestData;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.message.SyncGroupRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -1244,11 +1246,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private void handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset,
                                                    CompletableFuture<AbstractResponse> resultFuture) {
-        ListOffsetsRequest request = (ListOffsetssRequest) listOffset.getRequest();
+        ListOffsetsRequest request = (ListOffsetsRequest) listOffset.getRequest();
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
         if (request.partitionTimestamps().size() == 0) {
-            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
+            resultFuture.complete(new ListOffsetsResponse(Collections.emptyMap()));
             return;
         }
         AtomicInteger partitions = new AtomicInteger(request.partitionTimestamps().size());
@@ -1617,7 +1619,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         resultFuture.complete(new ResponseCallbackWrapper(new FetchResponse<>(
                                 Errors.NONE,
                                 partitions,
-                                THROTTLE_TIME_MS),
+                                THROTTLE_TIME_MS,
                                 request.metadata().sessionId()), () ->
                                 resultMap.forEach((__, readRecordsResult) -> {
                                     readRecordsResult.recycle();
@@ -1712,19 +1714,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
+        SyncGroupRequestData data = request.data();
+        groupIds.add(data.groupId());
+        Map<String, byte[]> assignments = data.assignments()
+                .stream()
+                .collect(Collectors.toMap(
+                        SyncGroupRequestData.SyncGroupRequestAssignment::memberId,
+                        SyncGroupRequestData.SyncGroupRequestAssignment::assignment));
 
-        groupIds.add(request.groupId());
         getGroupCoordinator().handleSyncGroup(
-            request.groupId(),
-            request.generationId(),
-            request.memberId(),
-            CoreUtils.mapValue(
-                request.groupAssignment(), Utils::toArray
-            )
+                data.groupId(),
+                data.generationId(),
+                data.memberId(),
+                assignments
         ).thenAccept(syncGroupResult -> {
             SyncGroupResponse response = KafkaResponseUtils.newSyncGroup(
                 syncGroupResult.getKey(),
-                ByteBuffer.wrap(syncGroupResult.getValue())
+                data.protocolType(),
+                data.protocolName(),
+                syncGroupResult.getValue()
             );
 
             resultFuture.complete(response);
@@ -1774,7 +1782,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
 
         // let the coordinator to handle heartbeat
-        resultFuture.complete(KafkaResponseUtils.newDescribeGroups(request.groupIds().stream()
+        resultFuture.complete(KafkaResponseUtils.newDescribeGroups(request.data().groups().stream()
                 .map(groupId -> Pair.of(groupId, getGroupCoordinator().handleDescribeGroup(groupId)))
                 .collect(Collectors.toMap(Pair::getLeft, Pair::getRight))
         ));
@@ -2556,8 +2564,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
         }
-
-        return KafkaResponseUtils.newMetadataPartition(kafkaPartitionIndex, node);
+        TopicPartition topicPartition = new TopicPartition(topicName.toString(), kafkaPartitionIndex);
+        return KafkaResponseUtils.newMetadataPartition(topicPartition, node);
     }
 
     static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
@@ -2566,9 +2574,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         log.warn("Failed find Broker metadata, create PartitionMetadata with NOT_LEADER_FOR_PARTITION");
 
+        TopicPartition topicPartition = new TopicPartition(topicName.toString(), kafkaPartitionIndex);
         // most of this error happens when topic is in loading/unloading status,
         return KafkaResponseUtils.newMetadataPartition(
-                Errors.NOT_LEADER_OR_FOLLOWER, kafkaPartitionIndex);
+                Errors.NOT_LEADER_OR_FOLLOWER, topicPartition);
     }
 
     private void throwIfTransactionCoordinatorDisabled() {

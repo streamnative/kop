@@ -13,8 +13,6 @@
  */
 package org.apache.kafka.common.requests;
 
-import static org.apache.kafka.common.protocol.CommonFields.PARTITION_ID;
-import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
 import static org.apache.kafka.common.protocol.types.Type.INT32;
 import static org.apache.kafka.common.protocol.types.Type.INT64;
 import static org.apache.kafka.common.protocol.types.Type.INT8;
@@ -28,6 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -37,6 +37,10 @@ import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
 
 public class ListOffsetRequestV0 extends AbstractRequest {
+
+    public static final Field.Str TOPIC_NAME = new Field.Str("topic", "Name of topic");
+    public static final Field.Int32 PARTITION_ID = new Field.Int32("partition", "Topic partition id");
+
     public static final long EARLIEST_TIMESTAMP = -2L;
     public static final long LATEST_TIMESTAMP = -1L;
 
@@ -258,18 +262,18 @@ public class ListOffsetRequestV0 extends AbstractRequest {
     @Override
     @SuppressWarnings("deprecation")
     public AbstractResponse getErrorResponse(int throttleTimeMs, Throwable e) {
-        Map<TopicPartition, ListOffsetResponse.PartitionData> responseData = new HashMap<>();
+        Map<TopicPartition, ListOffsetsResponse.PartitionData> responseData = new HashMap<>();
 
         short versionId = version();
         if (versionId == 0) {
             for (Map.Entry<TopicPartition, ListOffsetRequestV0.PartitionData> entry : offsetData.entrySet()) {
-                ListOffsetResponse.PartitionData partitionResponse = new ListOffsetResponse.PartitionData(
+                ListOffsetsResponse.PartitionData partitionResponse = new ListOffsetsResponse.PartitionData(
                         Errors.forException(e), Collections.<Long>emptyList());
                 responseData.put(entry.getKey(), partitionResponse);
             }
         } else {
             for (Map.Entry<TopicPartition, Long> entry : partitionTimestamps.entrySet()) {
-                ListOffsetResponse.PartitionData partitionResponse = new ListOffsetResponse.PartitionData(
+                ListOffsetsResponse.PartitionData partitionResponse = new ListOffsetsResponse.PartitionData(
                         Errors.forException(e), -1L, -1L, Optional.empty());
                 responseData.put(entry.getKey(), partitionResponse);
             }
@@ -280,7 +284,7 @@ public class ListOffsetRequestV0 extends AbstractRequest {
             case 1:
             case 2:
             case 3:
-                return new ListOffsetResponse(throttleTimeMs, responseData);
+                return new ListOffsetsResponse(throttleTimeMs, responseData);
             default:
                 throw new IllegalArgumentException(
                         String.format("Version %d is not valid. Valid versions for %s are 0 to %d",

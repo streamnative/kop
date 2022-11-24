@@ -44,6 +44,8 @@ import org.apache.bookkeeper.util.MathUtils;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.IllegalSaslStateException;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
+import org.apache.kafka.common.message.ApiMessageType;
+import org.apache.kafka.common.message.ApiVersionsRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
@@ -73,7 +75,7 @@ public class SaslAuthenticator {
     public static final String AUTH_DATA_SOURCE_PROP = "authDataSource";
     public static final String AUTHENTICATION_SERVER_OBJ = "authenticationServerObj";
 
-    private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
+    private static final byte[] EMPTY_BUFFER = new byte[0];
 
     @Getter
     private final AuthenticationService authenticationService;
@@ -314,12 +316,12 @@ public class SaslAuthenticator {
 
     private AbstractRequest parseRequest(RequestHeader header, ByteBuffer nioBuffer) {
         if (isUnsupportedApiVersionsRequest(header)) {
-            return new ApiVersionsRequest((short) 0, header.apiVersion());
+            ApiVersionsRequestData data = new ApiVersionsRequestData();
+            return new ApiVersionsRequest(data, header.apiVersion());
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
-            Struct struct = apiKey.parseRequest(apiVersion, nioBuffer);
-            return AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+            return AbstractRequest.parseRequest(apiKey, apiVersion, nioBuffer).request;
         }
 
     }
@@ -472,8 +474,7 @@ public class SaslAuthenticator {
             RequestHeader header = RequestHeader.parse(nioBuffer);
             ApiKeys apiKey = header.apiKey();
             short version = header.apiVersion();
-            Struct struct = apiKey.parseRequest(version, nioBuffer);
-            AbstractRequest request = AbstractRequest.parseRequest(apiKey, version, struct);
+            AbstractRequest request = AbstractRequest.parseRequest(apiKey, version, nioBuffer).request;
             registerRequestParseLatency.accept(timeBeforeParse, null);
 
             final long startProcessTime = MathUtils.nowInNano();
@@ -492,8 +493,8 @@ public class SaslAuthenticator {
 
             try {
                 byte[] responseToken =
-                        saslServer.evaluateResponse(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
-                ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
+                        saslServer.evaluateResponse(saslAuthenticateRequest.data().authBytes());
+                byte[] responseBuf = (responseToken == null) ? EMPTY_BUFFER :responseToken;
                 if (saslServer.isComplete()) {
                     String pulsarRole = saslServer.getAuthorizationID();
                     this.session = new Session(
@@ -555,7 +556,7 @@ public class SaslAuthenticator {
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
-            ApiVersionsResponse versionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
+            ApiVersionsResponse versionsResponse = ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
             registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,
@@ -574,7 +575,7 @@ public class SaslAuthenticator {
                                                    BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
 
-        final String mechanism = request.mechanism();
+        final String mechanism = request.data().mechanism();
         if (mechanism == null) {
             AuthenticationException e = new AuthenticationException("client's mechanism is null");
             registerRequestLatency.accept(header.apiKey(), startProcessTime);

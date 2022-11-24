@@ -33,6 +33,7 @@ import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.DeleteGroupsResponseData;
 import org.apache.kafka.common.message.DeleteRecordsResponseData;
 import org.apache.kafka.common.message.DeleteTopicsResponseData;
+import org.apache.kafka.common.message.DescribeGroupsResponseData;
 import org.apache.kafka.common.message.FindCoordinatorResponseData;
 import org.apache.kafka.common.message.HeartbeatResponseData;
 import org.apache.kafka.common.message.JoinGroupResponseData;
@@ -40,6 +41,9 @@ import org.apache.kafka.common.message.LeaveGroupResponseData;
 import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.MetadataResponseData;
+import org.apache.kafka.common.message.SaslAuthenticateResponseData;
+import org.apache.kafka.common.message.SaslHandshakeResponseData;
+import org.apache.kafka.common.message.SyncGroupResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -153,29 +157,27 @@ public class KafkaResponseUtils {
 
     public static DescribeGroupsResponse newDescribeGroups(
             Map<String, KeyValue<Errors, GroupMetadata.GroupSummary>> groupToSummary) {
-        return new DescribeGroupsResponse(CoreUtils.mapValue(groupToSummary, pair -> {
+        DescribeGroupsResponseData data = new DescribeGroupsResponseData();
+        groupToSummary.forEach((String group,KeyValue<Errors, GroupMetadata.GroupSummary> pair ) -> {
             final Errors errors = pair.getKey();
             final GroupMetadata.GroupSummary summary = pair.getValue();
-            List<DescribeGroupsResponse.GroupMember> members = summary.members().stream()
-                    .map(member -> {
-                        ByteBuffer metadata = ByteBuffer.wrap(member.metadata());
-                        ByteBuffer assignment = ByteBuffer.wrap(member.assignment());
-                        return new DescribeGroupsResponse.GroupMember(
-                                member.memberId(),
-                                member.clientId(),
-                                member.clientHost(),
-                                metadata,
-                                assignment
-                        );
-                    }).collect(Collectors.toList());
-            return new DescribeGroupsResponse.GroupMetadata(
-                    errors,
-                    summary.state(),
-                    summary.protocolType(),
-                    summary.protocol(),
-                    members
-            );
-        }));
+            DescribeGroupsResponseData.DescribedGroup describedGroup = new DescribeGroupsResponseData.DescribedGroup()
+                    .setGroupId(group)
+                    .setErrorCode(errors.code())
+                    .setGroupState(summary.state())
+                    .setProtocolType(summary.protocolType())
+                    .setProtocolData(summary.protocol());
+            data.groups().add(describedGroup);
+            summary.members().forEach((member) -> {
+                describedGroup.members().add(new DescribeGroupsResponseData.DescribedGroupMember()
+                        .setClientHost(member.clientHost())
+                        .setMemberId(member.memberId())
+                        .setClientId(member.clientId())
+                        .setMemberMetadata(member.metadata())
+                        .setMemberAssignment(member.assignment()));
+                    });
+        });
+        return new DescribeGroupsResponse(data);
     }
 
     public static FindCoordinatorResponse newFindCoordinator(MetadataResponse.PartitionMetadata node) {
@@ -235,8 +237,7 @@ public class KafkaResponseUtils {
                 .setGroupId(overView.groupId())
                 .setProtocolType(overView.protocolType()))
                 .collect(Collectors.toList()));
-        return new ListGroupsResponse(data)
-        );
+        return new ListGroupsResponse(data);
     }
 
     public static ListOffsetsResponse newListOffset(
@@ -325,11 +326,11 @@ public class KafkaResponseUtils {
         return new MetadataResponse(data, apiVersion);
     }
 
-    public static MetadataResponse.PartitionMetadata newMetadataPartition(int partition,
+    public static MetadataResponse.PartitionMetadata newMetadataPartition(TopicPartition topicPartition,
                                                                           Node node) {
         return new MetadataResponse.PartitionMetadata(Errors.NONE,
-                partition,
-                node, // leader
+                topicPartition,
+                Optional.of(node.id()), // leader
                 Optional.empty(), // leaderEpoch is unknown in Pulsar
                 Collections.singletonList(node.id()), // replicas
                 Collections.singletonList(node.id()), // isr
@@ -338,13 +339,13 @@ public class KafkaResponseUtils {
     }
 
     public static MetadataResponse.PartitionMetadata newMetadataPartition(Errors errors,
-                                                                          int partition) {
+                                                                          TopicPartition topicPartition) {
         return new MetadataResponse.PartitionMetadata(errors,
-                partition,
-                Node.noNode(), // leader
+                topicPartition,
+                Optional.empty(), // leader
                 Optional.empty(), // leaderEpoch is unknown in Pulsar
-                Collections.singletonList(Node.noNode()), // replicas
-                Collections.singletonList(Node.noNode()), // isr
+                Collections.emptyList(), // replicas
+                Collections.emptyList(), // isr
                 Collections.emptyList() // offline replicas
         );
     }
@@ -369,23 +370,44 @@ public class KafkaResponseUtils {
         );
     }
 
-    public static SaslAuthenticateResponse newSaslAuthenticate(ByteBuffer saslAuthBytes) {
-        return new SaslAuthenticateResponse(Errors.NONE, "", saslAuthBytes);
+    public static SaslAuthenticateResponse newSaslAuthenticate(byte[] saslAuthBytes) {
+        SaslAuthenticateResponseData data = new SaslAuthenticateResponseData();
+        data.setErrorCode(Errors.NONE.code());
+        data.setErrorMessage(Errors.NONE.message());
+        data.setAuthBytes(saslAuthBytes);
+        return new SaslAuthenticateResponse(data);
     }
 
     public static SaslAuthenticateResponse newSaslAuthenticate(Errors errors, String message) {
-        return new SaslAuthenticateResponse(errors, message);
+        SaslAuthenticateResponseData data = new SaslAuthenticateResponseData();
+        data.setErrorCode(errors.code());
+        data.setErrorMessage(message);
+        return new SaslAuthenticateResponse(data);
     }
 
     public static SaslHandshakeResponse newSaslHandshake(Errors errors, Set<String> allowedMechanisms) {
-        return new SaslHandshakeResponse(errors, allowedMechanisms);
+        SaslHandshakeResponseData data = new SaslHandshakeResponseData();
+        data.setErrorCode(errors.code());
+        data.setMechanisms(new ArrayList<>(allowedMechanisms));
+        return new SaslHandshakeResponse(data);
     }
 
     public static SaslHandshakeResponse newSaslHandshake(Errors errors) {
-        return new SaslHandshakeResponse(errors, Collections.emptySet());
+        SaslHandshakeResponseData data = new SaslHandshakeResponseData();
+        data.setErrorCode(errors.code());
+        data.setMechanisms(Collections.emptyList());
+        return new SaslHandshakeResponse(data);
     }
 
-    public static SyncGroupResponse newSyncGroup(Errors errors, ByteBuffer memberState) {
-        return new SyncGroupResponse(errors, memberState);
+    public static SyncGroupResponse newSyncGroup(Errors errors,
+                                                 String protocolType,
+                                                 String protocolName,
+                                                 byte[] assignment) {
+        SyncGroupResponseData data = new SyncGroupResponseData();
+        data.setErrorCode(errors.code());
+        data.setProtocolType(protocolType);
+        data.setProtocolType(protocolName);
+        data.setAssignment(assignment);
+        return new SyncGroupResponse(data);
     }
 }
