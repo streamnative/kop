@@ -66,21 +66,6 @@ public class InternalServerCnx extends ServerCnx {
     }
 
     @Override
-    public void enableCnxAutoRead() {
-        // do nothing is this mock
-    }
-
-    @Override
-    public void disableCnxAutoRead() {
-        // do nothing is this mock
-    }
-
-    @Override
-    public void cancelPublishBufferLimiting() {
-        // do nothing is this mock
-    }
-
-    @Override
     public boolean equals(Object o) {
         return super.equals(o);
     }
