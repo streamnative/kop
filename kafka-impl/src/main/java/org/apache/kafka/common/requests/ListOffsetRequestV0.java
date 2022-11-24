@@ -17,6 +17,7 @@ import static org.apache.kafka.common.protocol.types.Type.INT32;
 import static org.apache.kafka.common.protocol.types.Type.INT64;
 import static org.apache.kafka.common.protocol.types.Type.INT8;
 
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,12 +25,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.Field;
@@ -103,6 +106,11 @@ public class ListOffsetRequestV0 extends AbstractRequest {
     private final Map<TopicPartition, ListOffsetRequestV0.PartitionData> offsetData;
     private final Map<TopicPartition, Long> partitionTimestamps;
     private final Set<TopicPartition> duplicatePartitions;
+
+    @Override
+    public ApiMessage data() {
+        throw new UnsupportedOperationException("not implemented");
+    }
 
     public static class Builder extends AbstractRequest.Builder<ListOffsetRequestV0> {
         private final int replicaId;
@@ -262,29 +270,50 @@ public class ListOffsetRequestV0 extends AbstractRequest {
     @Override
     @SuppressWarnings("deprecation")
     public AbstractResponse getErrorResponse(int throttleTimeMs, Throwable e) {
-        Map<TopicPartition, ListOffsetsResponse.PartitionData> responseData = new HashMap<>();
+        ListOffsetsResponseData responseData = new ListOffsetsResponseData();
+        responseData.setThrottleTimeMs(throttleTimeMs);
+        Errors errors = Errors.forException(e);
+
+        List<String> topics = offsetData.keySet()
+                .stream()
+                .map(TopicPartition::topic)
+                .distinct()
+                .collect(Collectors.toList());
 
         short versionId = version();
-        if (versionId == 0) {
+
+        topics.forEach(topic -> {
+            ListOffsetsResponseData.ListOffsetsTopicResponse topicData = new ListOffsetsResponseData.ListOffsetsTopicResponse()
+                    .setName(topic);
+            responseData.topics().add(topicData);
+
             for (Map.Entry<TopicPartition, ListOffsetRequestV0.PartitionData> entry : offsetData.entrySet()) {
-                ListOffsetsResponse.PartitionData partitionResponse = new ListOffsetsResponse.PartitionData(
-                        Errors.forException(e), Collections.<Long>emptyList());
-                responseData.put(entry.getKey(), partitionResponse);
+                TopicPartition topicPartition = entry.getKey();
+                if (topicPartition.topic().equals(topic)) {
+                    if (versionId == 0) {
+                        topicData.partitions().add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                                .setPartitionIndex(topicPartition.partition())
+                                .setErrorCode(errors.code())
+                                .setOldStyleOffsets(Collections.emptyList()));
+                    } else {
+                        topicData.partitions().add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                                .setPartitionIndex(topicPartition.partition())
+                                .setErrorCode(errors.code())
+                                .setOffset(-1)
+                                .setTimestamp(-1)
+                                .setLeaderEpoch(-1));
+                    }
+                }
             }
-        } else {
-            for (Map.Entry<TopicPartition, Long> entry : partitionTimestamps.entrySet()) {
-                ListOffsetsResponse.PartitionData partitionResponse = new ListOffsetsResponse.PartitionData(
-                        Errors.forException(e), -1L, -1L, Optional.empty());
-                responseData.put(entry.getKey(), partitionResponse);
-            }
-        }
+        });
+
 
         switch (versionId) {
             case 0:
             case 1:
             case 2:
             case 3:
-                return new ListOffsetsResponse(throttleTimeMs, responseData);
+                return new ListOffsetsResponse(responseData);
             default:
                 throw new IllegalArgumentException(
                         String.format("Version %d is not valid. Valid versions for %s are 0 to %d",
@@ -313,10 +342,26 @@ public class ListOffsetRequestV0 extends AbstractRequest {
         return duplicatePartitions;
     }
 
-    public static ListOffsetRequestV0 parse(ByteBuffer buffer, short version) {
-        return new ListOffsetRequestV0(ApiKeys.LIST_OFFSETS.parseRequest(version, buffer), version);
+    static Method toStruct;
+    static {
+        try {
+            toStruct = AbstractRequest.class.getDeclaredMethod("toStruct");
+            toStruct.setAccessible(true);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 
+    public static ListOffsetRequestV0 parse(ByteBuffer buffer, short version) {
+        AbstractRequest encodedRequest = AbstractRequest.parseRequest(ApiKeys.LIST_OFFSETS, version, buffer).request;
+        try {
+            Struct struct = (Struct) toStruct.invoke(encodedRequest);
+            return new ListOffsetRequestV0(struct, version);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+/*
     @Override
     protected Struct toStruct() {
         short version = version();
@@ -357,7 +402,7 @@ public class ListOffsetRequestV0 extends AbstractRequest {
         }
         struct.set(TOPICS_KEY_NAME, topicArray.toArray());
         return struct;
-    }
+    }*/
 
     public static Schema[] schemaVersions() {
         return new Schema[] {LIST_OFFSET_REQUEST_V0, LIST_OFFSET_REQUEST_V1, LIST_OFFSET_REQUEST_V2,
