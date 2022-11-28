@@ -73,6 +73,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.FindCoordinatorRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -614,10 +615,10 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         expectedPartitions.forEach(tp -> {
             FetchResponse.PartitionData partitionData = fetchResponse.responseData().get(tp);
-            assertEquals(Errors.NONE, partitionData.error);
-            assertTrue(partitionData.highWatermark > 0);
+            assertEquals(Errors.NONE, partitionData.error());
+            assertTrue(partitionData.highWatermark() > 0);
 
-            MemoryRecords records = (MemoryRecords) partitionData.records;
+            MemoryRecords records = (MemoryRecords) partitionData.records();
             AtomicInteger batchesSize = new AtomicInteger(0);
             responseBufferSize.addAndGet(records.sizeInBytes());
             List<MutableRecordBatch> batches = Lists.newArrayList();
@@ -919,7 +920,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error,
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+        assertEquals(listOffsetsPartitionResponse.errorCode(),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 
@@ -934,7 +936,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         doReturn(future).when(spyHandler).storeGroupId(eq(groupId), anyString());
 
         FindCoordinatorRequest.Builder builder =
-                new FindCoordinatorRequest.Builder(FindCoordinatorRequest.CoordinatorType.GROUP, groupId);
+                new FindCoordinatorRequest.Builder(new FindCoordinatorRequestData()
+                        .setKey(groupId)
+                        .setKeyType(FindCoordinatorRequest.CoordinatorType.GROUP.id()));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
