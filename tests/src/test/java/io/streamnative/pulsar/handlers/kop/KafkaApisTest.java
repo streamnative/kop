@@ -178,7 +178,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         builder.apiKey();
 
         ByteBuffer serializedRequest = request
-            .serialize(new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0));
+            .serialize();
 
         ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
 
@@ -186,8 +186,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         ApiKeys apiKey = header.apiKey();
         short apiVersion = header.apiVersion();
-        Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
         return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 
@@ -195,7 +194,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                               String topic,
                                                               int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
-        PartitionData partitionOffsetCommitData = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(15L, "");
+        PartitionData partitionOffsetCommitData = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(invalidTopicPartition,
+                15L, "");
         Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
         offsetData.put(invalidTopicPartition, partitionOffsetCommitData);
         KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder("groupId", offsetData));

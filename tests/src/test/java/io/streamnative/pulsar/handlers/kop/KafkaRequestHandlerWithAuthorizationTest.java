@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.getListOffsetsPartitionResponse;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -815,22 +816,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 log.error("Failed to handle group immigration.", e);
             }
         }
-    }
-
-    @NotNull
-    private static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp, ListOffsetsResponseData listOffsetResponse) {
-        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = listOffsetResponse
-                .topics()
-                .stream()
-                .filter(t -> t.name().equals(tp.topic()))
-                .findFirst()
-                .get()
-                .partitions()
-                .stream()
-                .filter(p -> p.partitionIndex() == tp.partition())
-                .findFirst()
-                .get();
-        return listOffsetsPartitionResponse;
     }
 
 }

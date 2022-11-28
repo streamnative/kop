@@ -19,10 +19,13 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
+import org.jetbrains.annotations.NotNull;
 
 public class KafkaCommonTestUtils {
 
@@ -56,12 +59,15 @@ public class KafkaCommonTestUtils {
         );
     }
 
-    public static OffsetCommitRequest.PartitionData newOffsetCommitRequestPartitionData(long offset,
-                                                                                        String metadata) {
-        return new OffsetCommitRequest.PartitionData(offset,
-                Optional.empty(),
-                metadata
-        );
+    public static OffsetCommitRequestData.OffsetCommitRequestTopic newOffsetCommitRequestPartitionData(TopicPartition tp,
+                                                                                                       long offset,
+                                                                                                       String metadata) {
+        return new OffsetCommitRequestData.OffsetCommitRequestTopic()
+                .setName(tp.topic())
+                .setPartitions(Collections.singletonList(new OffsetCommitRequestData.OffsetCommitRequestPartition()
+                        .setCommittedOffset(offset)
+                        .setPartitionIndex(tp.partition())
+                        .setCommittedMetadata(metadata)));
     }
 
 
@@ -73,5 +79,20 @@ public class KafkaCommonTestUtils {
 
     public static Map<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap(String topic, int totalCount) {
         return newPartitionsMap(Collections.singletonList(topic), totalCount);
+    }
+
+    public static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp, ListOffsetsResponseData listOffsetResponse) {
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = listOffsetResponse
+                .topics()
+                .stream()
+                .filter(t -> t.name().equals(tp.topic()))
+                .findFirst()
+                .get()
+                .partitions()
+                .stream()
+                .filter(p -> p.partitionIndex() == tp.partition())
+                .findFirst()
+                .get();
+        return listOffsetsPartitionResponse;
     }
 }
