@@ -100,10 +100,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
+    private ReplicaManager replicaManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private final Map<String, ReplicaManager> replicaManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -120,24 +120,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
     }
 
-    @Override
-    public ReplicaManager getReplicaManager(String tenant) {
-        return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            EntryFormatter entryFormatter;
-            try {
-                entryFormatter = EntryFormatterFactory.create(kafkaConfig);
-            } catch (IllegalArgumentException e) {
-                log.error("Failed to init create enter formatter {}", tenant, e);
-                throw new IllegalStateException(e);
-            }
-            return new ReplicaManager(
-                    kafkaConfig,
-                    requestStats,
-                    Time.SYSTEM,
-                    entryFormatter,
-                    producePurgatory,
-                    fetchPurgatory);
-        });
+    public ReplicaManager getReplicaManager() {
+        return replicaManager;
     }
 
     @Override
@@ -147,7 +131,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public boolean accept(String protocol) {
-        return PROTOCOL_NAME.equals(protocol.toLowerCase());
+        return PROTOCOL_NAME.equalsIgnoreCase(protocol);
     }
 
     @Override
@@ -239,6 +223,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             @Override
             public void whenUnload(TopicName topicName) {
                 invalidateBundleCache(topicName);
+                invalidatePartitionLog(topicName);
             }
 
             @Override
@@ -249,7 +234,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             private void invalidateBundleCache(TopicName topicName) {
                 kafkaTopicManagerSharedState.deReference(topicName.toString());
                 if (!topicName.isPartitioned()) {
-                    kafkaTopicManagerSharedState.deReference(topicName.getPartition(0).toString());
+                    String nonPartitionedTopicName = topicName.getPartition(0).toString();
+                    kafkaTopicManagerSharedState.deReference(nonPartitionedTopicName);
+                }
+            }
+
+            private void invalidatePartitionLog(TopicName topicName) {
+                getReplicaManager().removePartitionLog(topicName.toString());
+                if (!topicName.isPartitioned()) {
+                    getReplicaManager().removePartitionLog(topicName.getPartition(0).toString());
                 }
             }
         });
@@ -393,6 +386,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar(),
                 kafkaConfig,
                 this,
+                replicaManager,
                 kopBrokerLookupManager,
                 adminManager,
                 producePurgatory,
@@ -411,14 +405,30 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
 
-        producePurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        producePurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("produce")
                 .timeoutTimer(SystemTimer.builder().executorName("produce").build())
                 .build();
-        fetchPurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        fetchPurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
+
+        EntryFormatter entryFormatter;
+        try {
+            entryFormatter = EntryFormatterFactory.create(kafkaConfig);
+        } catch (IllegalArgumentException e) {
+            log.error("Failed to init create enter formatter.", e);
+            throw new IllegalStateException(e);
+        }
+
+        replicaManager = new ReplicaManager(
+                kafkaConfig,
+                requestStats,
+                Time.SYSTEM,
+                entryFormatter,
+                producePurgatory,
+                fetchPurgatory);
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =

@@ -25,7 +25,6 @@ import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
@@ -817,8 +816,6 @@ public abstract class KopProtocolHandlerTestBase {
         final GroupCoordinator groupCoordinator = handler.getGroupCoordinator(conf.getKafkaMetadataTenant());
         final TransactionCoordinator transactionCoordinator =
                 handler.getTransactionCoordinator(conf.getKafkaMetadataTenant());
-        final ReplicaManager replicaManager =
-                handler.getReplicaManager(conf.getKafkaMetadataTenant());
 
         return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
                 .newCnx(new TenantContextManager() {
@@ -830,11 +827,6 @@ public abstract class KopProtocolHandlerTestBase {
                     @Override
                     public TransactionCoordinator getTransactionCoordinator(String tenant) {
                         return transactionCoordinator;
-                    }
-
-                    @Override
-                    public ReplicaManager getReplicaManager(String tenant) {
-                        return replicaManager;
                     }
                 });
     }

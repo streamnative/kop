@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -69,6 +70,18 @@ public class ReplicaManager {
 
     public PartitionLog getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
+    }
+
+    public void removePartitionLog(String topicName) {
+        PartitionLog partitionLog = logManager.removeLog(topicName);
+        if (log.isDebugEnabled() && partitionLog != null) {
+            log.debug("PartitionLog: {} has bean removed.", partitionLog);
+        }
+    }
+
+    @VisibleForTesting
+    public int size() {
+        return logManager.size();
     }
 
     @AllArgsConstructor
