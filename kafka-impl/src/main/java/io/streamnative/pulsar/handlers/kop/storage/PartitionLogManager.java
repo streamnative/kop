@@ -55,5 +55,13 @@ public class PartitionLogManager {
                         new ProducerStateManager(kopTopic));
         });
     }
+
+    public PartitionLog removeLog(String topicName) {
+        return logMap.remove(topicName);
+    }
+
+    public int size() {
+        return logMap.size();
+    }
 }
 
