@@ -19,18 +19,25 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonTestUtils {
 
-    public static Map<TopicPartition, ListOffsetRequest.PartitionData> newListOffsetTargetTimes(
+    public static List<ListOffsetsRequestData.ListOffsetsTopic> newListOffsetTargetTimes(
             TopicPartition topicPartition,
             long timestamp) {
-        return Collections.singletonMap(topicPartition, new ListOffsetRequest.PartitionData(timestamp, 100));
+        return Collections.singletonList(new ListOffsetsRequestData.ListOffsetsTopic()
+                .setName(topicPartition.topic())
+                .setPartitions(Collections.singletonList(new ListOffsetsRequestData.ListOffsetsPartition()
+                        .setMaxNumOffsets(100)
+                        .setPartitionIndex(topicPartition.partition())
+                        .setTimestamp(timestamp))));
     }
 
     public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,

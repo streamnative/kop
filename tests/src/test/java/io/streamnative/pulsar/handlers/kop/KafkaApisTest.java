@@ -15,7 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_FETCH_MAX_BYTES;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_MAX_PARTITION_FETCH_BYTES;
-import static org.apache.kafka.common.requests.ListOffsetRequest.EARLIEST_TIMESTAMP;
+import static org.apache.kafka.common.requests.ListOffsetsRequest.EARLIEST_TIMESTAMP;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -69,6 +69,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -87,8 +88,10 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.IsolationLevel;
-import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
@@ -271,19 +274,19 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
-        kafkaRequestHandler.handleListOffsetRequest(request, responseFuture);
+        kafkaRequestHandler.handleListOffsetsRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
-        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
+        ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
     // these 2 test cases test Read Commit / UnCommit.
@@ -321,20 +324,20 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler
-            .handleListOffsetRequest(request, responseFuture);
+            .handleListOffsetsRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), (totalMsgs));
-        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
+        ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), (totalMsgs));
+        assertEquals(ListOffsetsResponse.responseData().get(tp).timestamp, Long.valueOf(0));
     }
 
     @Test(timeOut = 60000)
@@ -490,25 +493,25 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, test earliest
-        ListOffsetResponse listOffsetResponse = listOffset(EARLIEST_TIMESTAMP, tp);
-        System.out.println("offset for earliest " + listOffsetResponse.responseData().get(tp).offset.intValue());
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+        ListOffsetsResponse ListOffsetsResponse = listOffset(EARLIEST_TIMESTAMP, tp);
+        System.out.println("offset for earliest " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
 
-        listOffsetResponse = listOffset(ListOffsetRequest.LATEST_TIMESTAMP, tp);
-        System.out.println("offset for latest " + listOffsetResponse.responseData().get(tp).offset.intValue());
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), totalMsgs);
+        ListOffsetsResponse = listOffset(ListOffsetsRequest.LATEST_TIMESTAMP, tp);
+        System.out.println("offset for latest " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), totalMsgs);
 
-        listOffsetResponse = listOffset(0, tp);
-        System.out.println("offset for timestamp=0 " + listOffsetResponse.responseData().get(tp).offset.intValue());
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+        ListOffsetsResponse = listOffset(0, tp);
+        System.out.println("offset for timestamp=0 " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
 
-        listOffsetResponse = listOffset(1, tp);
-        System.out.println("offset for timestamp=1 " + listOffsetResponse.responseData().get(tp).offset.intValue());
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
+        ListOffsetsResponse = listOffset(1, tp);
+        System.out.println("offset for timestamp=1 " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
 
         // when handle listOffset, result should be like:
         //  timestamp        offset
@@ -535,28 +538,28 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         for (int i = 0; i < totalMsgs; i++) {
             long searchTime = timestamps[i];
-            listOffsetResponse = listOffset(searchTime, tp);
-            assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-            assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), i);
+            ListOffsetsResponse = listOffset(searchTime, tp);
+            assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
+            assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), i);
 
             searchTime++;
-            listOffsetResponse = listOffset(searchTime, tp);
-            assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), i + 1);
+            ListOffsetsResponse = listOffset(searchTime, tp);
+            assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), i + 1);
         }
     }
 
-    private ListOffsetResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+    private ListOffsetsResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
                 .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, timestamp));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler
-                .handleListOffsetRequest(request, responseFuture);
+                .handleListOffsetsRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        return (ListOffsetResponse) response;
+        return (ListOffsetsResponse) response;
     }
 
     /// Add test for FetchRequest
@@ -869,18 +872,18 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         String topicName = "kopTestGetOffsetsForUnknownTopic";
 
         TopicPartition tp = new TopicPartition(topicName, 0);
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(false, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetRequest.LATEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler
-            .handleListOffsetRequest(request, responseFuture);
+            .handleListOffsetsRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
-        assertEquals(listOffsetResponse.responseData().get(tp).error,
+        ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
+        assertEquals(ListOffsetsResponse.responseData().get(tp).error,
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 
