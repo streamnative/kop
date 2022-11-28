@@ -16,7 +16,10 @@ package org.apache.kafka.common.requests;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import java.nio.ByteBuffer;
+
+import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.types.Struct;
 
 /**
@@ -35,21 +38,7 @@ public class KopResponseUtils {
     public static ByteBuf serializeResponse(short version,
                                             ResponseHeader responseHeader,
                                             AbstractResponse response) {
-        return serialize(
-            responseHeader.toStruct(),
-            response.toStruct(version)
-        );
-    }
-
-    public static ByteBuf serialize(Struct headerStruct, Struct bodyStruct) {
-        int size = headerStruct.sizeOf() + bodyStruct.sizeOf();
-        ByteBuf buf = PooledByteBufAllocator.DEFAULT.buffer(size, size);
-        buf.writerIndex(buf.readerIndex() + size);
-        ByteBuffer buffer = buf.nioBuffer();
-        headerStruct.writeTo(buffer);
-        bodyStruct.writeTo(buffer);
-        buffer.rewind();
-        return buf;
+        return Unpooled.wrappedBuffer(response.serializeWithHeader(responseHeader, version));
     }
 
 }

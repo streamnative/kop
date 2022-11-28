@@ -18,10 +18,6 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.config.ConfigResource.Type.BROKER;
-import static org.apache.kafka.common.config.ConfigResource.Type.BROKER_LOGGER;
-import static org.apache.kafka.common.config.ConfigResource.Type.TOPIC;
-import static org.apache.kafka.common.config.ConfigResource.Type.UNKNOWN;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
@@ -56,7 +52,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -104,15 +99,21 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.message.AddOffsetsToTxnRequestData;
+import org.apache.kafka.common.message.AddOffsetsToTxnResponseData;
+import org.apache.kafka.common.message.AddPartitionsToTxnRequestData;
+import org.apache.kafka.common.message.AddPartitionsToTxnResponseData;
 import org.apache.kafka.common.message.AlterConfigsRequestData;
 import org.apache.kafka.common.message.AlterConfigsResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteGroupsRequestData;
 import org.apache.kafka.common.message.DeleteRecordsRequestData;
+import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
-import org.apache.kafka.common.message.FetchResponseData;
+import org.apache.kafka.common.message.EndTxnRequestData;
+import org.apache.kafka.common.message.EndTxnResponseData;
 import org.apache.kafka.common.message.InitProducerIdRequestData;
 import org.apache.kafka.common.message.InitProducerIdResponseData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -123,6 +124,7 @@ import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
 import org.apache.kafka.common.message.SyncGroupRequestData;
+import org.apache.kafka.common.message.TxnOffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -186,7 +188,6 @@ import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -2105,6 +2106,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
+        AddPartitionsToTxnRequestData data = request.data();
         List<TopicPartition> partitionsToAdd = request.partitions();
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
         Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
@@ -2123,13 +2125,31 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     }
                     response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
                 } else {
-                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                            request.producerId(), request.producerEpoch(), authorizedPartitions, (errors) -> {
+                    transactionCoordinator.handleAddPartitionsToTransaction(data.transactionalId(),
+                            data.producerId(), data.producerEpoch(), authorizedPartitions, (errors) -> {
+                                AddPartitionsToTxnResponseData responseData = new AddPartitionsToTxnResponseData();
                                 // TODO: handle PRODUCER_FENCED errors
                                 Map<TopicPartition, Errors> topicPartitionErrorsMap =
                                         addPartitionError(partitionsToAdd, errors);
+                                topicPartitionErrorsMap.keySet()
+                                        .stream()
+                                        .map(TopicPartition::topic)
+                                        .distinct()
+                                                .forEach(topicName -> {
+                                                    AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult topicResult = new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
+                                                            .setName(topicName);
+                                                    responseData.results().add(topicResult);
+                                                    topicPartitionErrorsMap.forEach((TopicPartition tp, Errors error) -> {
+                                                        if (tp.topic().equals(topicName)) {
+                                                            topicResult.results().add(new AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResult()
+                                                                    .setPartitionIndex(tp.partition())
+                                                                    .setErrorCode(error.code()));
+                                                        }
+                                                    });
+                                                });
+
                                 response.complete(
-                                        new AddPartitionsToTxnResponse(0, topicPartitionErrorsMap));
+                                        new AddPartitionsToTxnResponse(responseData));
                             });
                 }
             }
@@ -2165,19 +2185,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
+        AddOffsetsToTxnRequestData data = request.data();
+        int partition = getGroupCoordinator().partitionFor(data.groupId());
         String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().offsetsTopicName();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(
-                request.transactionalId(),
-                request.producerId(),
-                request.producerEpoch(),
+                data.transactionalId(),
+                data.producerId(),
+                data.producerEpoch(),
                 topicPartitions,
                 (errors) -> {
+                    AddOffsetsToTxnResponseData responseData = new AddOffsetsToTxnResponseData()
+                            .setErrorCode(errors.code());
                     // TODO: handle PRODUCER_FENCED errors
                     response.complete(
-                            new AddOffsetsToTxnResponse(0, errors));
+                            new AddOffsetsToTxnResponse(responseData));
                 });
     }
 
@@ -2193,8 +2216,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
-
-        if (request.offsets().isEmpty()) {
+        TxnOffsetCommitRequestData data = request.data();
+        if (data.topics().isEmpty()) {
             response.complete(new TxnOffsetCommitResponse(0, Maps.newHashMap()));
             return;
         }
@@ -2220,9 +2243,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 getGroupCoordinator().handleTxnCommitOffsets(
-                        request.consumerGroupId(),
-                        request.producerId(),
-                        request.producerEpoch(),
+                        data.groupId(),
+                        data.producerId(),
+                        data.producerEpoch(),
                         convertTxnOffsets(convertedOffsetData)).whenComplete((resultMap, throwable) -> {
 
                     // recover to original topic name
@@ -2286,13 +2309,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                 CompletableFuture<AbstractResponse> response) {
         EndTxnRequest request = (EndTxnRequest) kafkaHeaderAndRequest.getRequest();
+        EndTxnRequestData data = request.data();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleEndTransaction(
-                request.transactionalId(),
-                request.producerId(),
-                request.producerEpoch(),
-                request.command(),
-                errors -> response.complete(new EndTxnResponse(0, errors)));
+                data.transactionalId(),
+                data.producerId(),
+                data.producerEpoch(),
+                data.committed() ? TransactionResult.COMMIT : TransactionResult.ABORT,
+                errors -> {
+                    EndTxnResponseData responseData = new EndTxnResponseData()
+                            .setErrorCode(errors.code());
+                    response.complete(new EndTxnResponse(responseData));
+                });
     }
     @Override
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
@@ -2405,7 +2433,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
-        Set<String> topicsToDelete = request.topics();
+        DeleteTopicsRequestData data = request.data();
+        List<DeleteTopicsRequestData.DeleteTopicState> topicsToDelete = data.topics();
         if (topicsToDelete == null || topicsToDelete.isEmpty()) {
             resultFuture.complete(KafkaResponseUtils.newDeleteTopics(Maps.newHashMap()));
             return;
@@ -2427,7 +2456,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
         final String namespacePrefix = currentNamespacePrefix();
-        topicsToDelete.forEach(topic -> {
+        topicsToDelete.forEach((DeleteTopicsRequestData.DeleteTopicState topicState) -> {
+            String topic = topicState.name();
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(topic, namespacePrefix);

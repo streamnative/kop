@@ -41,12 +41,11 @@ public class PendingRequest {
     }
 
     public ByteBuffer serialize() {
-        return request.serialize(requestHeader);
+        return request.serialize();
     }
 
     public AbstractResponse parseResponse(final ByteBuffer buffer) {
-        return AbstractResponse.parseResponse(requestHeader.apiKey(),
-                requestHeader.apiKey().parseResponse(requestHeader.apiVersion(), buffer));
+        return AbstractResponse.parseResponse(buffer, requestHeader);
     }
 
     public short getApiVersion() {

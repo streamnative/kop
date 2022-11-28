@@ -29,6 +29,8 @@ import java.util.function.Consumer;
 import javax.security.sasl.SaslException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
+import org.apache.kafka.common.message.SaslAuthenticateRequestData;
+import org.apache.kafka.common.message.SaslHandshakeRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -122,7 +124,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
         ByteBuffer nio = ((ByteBuf) o).nioBuffer();
-        ResponseHeader responseHeader = ResponseHeader.parse(nio);
+        ResponseHeader responseHeader = ResponseHeader.parse(nio, (short) 0);
         PendingRequest pendingRequest = pendingRequestMap.remove(responseHeader.correlationId());
         if (pendingRequest != null) {
             pendingRequest.complete(responseContext.set(
@@ -255,14 +257,16 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     }
 
     private static SaslHandshakeRequest newSaslHandshake(final String mechanism) {
-        return new SaslHandshakeRequest.Builder(mechanism).build();
+        return new SaslHandshakeRequest.Builder(new SaslHandshakeRequestData()
+                .setMechanism(mechanism)).build();
     }
 
     private static SaslAuthenticateRequest newSaslAuthenticate(final byte[] saslAuthBytes) {
-        return new SaslAuthenticateRequest.Builder(ByteBuffer.wrap(saslAuthBytes)).build();
+        return new SaslAuthenticateRequest.Builder(new SaslAuthenticateRequestData()
+                .setAuthBytes(saslAuthBytes)).build();
     }
 
     private static WriteTxnMarkersRequest newWriteTxnMarkers(final List<TxnMarkerEntry> txnMarkerEntries) {
-        return new WriteTxnMarkersRequest.Builder(txnMarkerEntries).build();
+        return new WriteTxnMarkersRequest.Builder(ApiKeys.WRITE_TXN_MARKERS.latestVersion(), txnMarkerEntries).build();
     }
 }

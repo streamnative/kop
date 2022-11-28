@@ -37,6 +37,6 @@ public class ResponseContext {
     }
 
     public String getResponseDescription() {
-        return response.toString(apiVersion);
+        return response.toString();
     }
 }

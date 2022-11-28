@@ -37,6 +37,7 @@ import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.message.ApiVersionsRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -144,13 +145,13 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         ByteBuffer nio = msg.nioBuffer();
         RequestHeader header = RequestHeader.parse(nio);
         if (isUnsupportedApiVersionsRequest(header)) {
-            ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest((short) 0, header.apiVersion());
+            ApiVersionsRequestData data = new ApiVersionsRequestData();
+            ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest(data, header.apiVersion());
             return new KafkaHeaderAndRequest(header, apiVersionsRequest, msg, remoteAddress);
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
-            Struct struct = apiKey.parseRequest(apiVersion, nio);
-            AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+            AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, nio).request;
             return new KafkaHeaderAndRequest(header, body, msg, remoteAddress);
         }
     }
@@ -438,7 +439,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         log.debug("Write kafka cmd to client."
                                         + " request content: {}"
                                         + " responseAndRequest content: {}",
-                                request, response.toString(request.getRequest().version()));
+                                request, response);
                     }
 
                     final ByteBuf result = responseToByteBuf(response, request);
@@ -684,7 +685,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         @Override
         public String toString() {
             return String.format("KafkaHeaderAndResponse(header=%s,responseFuture=%s)",
-                this.header.toStruct().toString(), this.response.toString(this.getApiVersion()));
+                this.header, this.response);
         }
 
         @Override
