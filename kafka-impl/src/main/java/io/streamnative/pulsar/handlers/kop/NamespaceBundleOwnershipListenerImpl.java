@@ -46,11 +46,7 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
     @Override
     public void onLoad(NamespaceBundle bundle) {
         log.info("[{}] Load bundle: {}", brokerUrl, bundle);
-        getOwnedPersistentTopicList(bundle).whenComplete((topics, e) -> {
-            if (e != null) {
-                log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, e);
-                return;
-            }
+        getOwnedPersistentTopicList(bundle).thenAccept(topics -> {
             topicOwnershipListeners.forEach(listener -> {
                 if (!listener.test(bundle.getNamespaceObject())) {
                     return;
@@ -59,24 +55,19 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
                     if (log.isDebugEnabled()) {
                         log.debug("[{}][{}] Trigger load callback for {}", brokerUrl, listener.name(), topic);
                     }
-                    try {
-                        listener.whenLoad(TopicName.get(topic));
-                    } catch (Exception ex) {
-                        log.error("[{}][{}] Failed to do load for {}", brokerUrl, listener.name(), topic, ex);
-                    }
+                    listener.whenLoad(TopicName.get(topic));
                 });
             });
+        }).exceptionally(ex -> {
+            log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, ex);
+            return null;
         });
     }
 
     @Override
     public void unLoad(NamespaceBundle bundle) {
         log.info("[{}] Unload bundle: {}", brokerUrl, bundle);
-        getOwnedPersistentTopicList(bundle).whenComplete((topics, e) -> {
-            if (e != null) {
-                log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, e);
-                return;
-            }
+        getOwnedPersistentTopicList(bundle).thenAccept(topics -> {
             topicOwnershipListeners.forEach(listener -> {
                 if (!listener.test(bundle.getNamespaceObject())) {
                     return;
@@ -85,13 +76,12 @@ public class NamespaceBundleOwnershipListenerImpl implements NamespaceBundleOwne
                     if (log.isDebugEnabled()) {
                         log.debug("[{}][{}] Trigger unload callback for {}", brokerUrl, listener.name(), topic);
                     }
-                    try {
-                        listener.whenUnload(TopicName.get(topic));
-                    } catch (Exception ex) {
-                        log.error("[{}][{}] Failed to do unload for {}", brokerUrl, listener.name(), topic, ex);
-                    }
+                    listener.whenUnload(TopicName.get(topic));
                 });
             });
+        }).exceptionally(ex -> {
+            log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, ex);
+            return null;
         });
     }
 
