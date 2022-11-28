@@ -189,6 +189,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
+    private final ReplicaManager replicaManager;
     private final KopBrokerLookupManager kopBrokerLookupManager;
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
@@ -276,13 +277,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return tenantContextManager.getTransactionCoordinator(getCurrentTenant());
     }
 
-    public ReplicaManager getReplicaManager() {
-        return tenantContextManager.getReplicaManager(getCurrentTenant());
-    }
 
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                TenantContextManager tenantContextManager,
+                               ReplicaManager replicaManager,
                                KopBrokerLookupManager kopBrokerLookupManager,
                                AdminManager adminManager,
                                DelayedOperationPurgatory<DelayedOperation> producePurgatory,
@@ -296,6 +295,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
+        this.replicaManager = replicaManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
