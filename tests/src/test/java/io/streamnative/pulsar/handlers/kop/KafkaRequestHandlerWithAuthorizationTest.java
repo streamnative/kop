@@ -69,9 +69,6 @@ import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsResponse;
-import org.apache.kafka.common.requests.IsolationLevel;
-import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
@@ -823,7 +820,6 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @NotNull
     private static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp, ListOffsetsResponseData listOffsetResponse) {
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = listOffsetResponse
-                .data()
                 .topics()
                 .stream()
                 .filter(t -> t.name().equals(tp.topic()))
