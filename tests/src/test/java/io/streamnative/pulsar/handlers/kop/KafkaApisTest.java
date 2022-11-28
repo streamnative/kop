@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.getListOffsetsPartitionResponse;
+import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.newOffsetCommitRequestPartitionData;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_FETCH_MAX_BYTES;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_MAX_PARTITION_FETCH_BYTES;
 import static org.apache.kafka.common.requests.ListOffsetsRequest.EARLIEST_TIMESTAMP;
@@ -71,6 +73,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -194,11 +197,12 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                               String topic,
                                                               int invalidPartitionId) {
         TopicPartition invalidTopicPartition = new TopicPartition(topic, invalidPartitionId);
-        PartitionData partitionOffsetCommitData = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(invalidTopicPartition,
+        OffsetCommitRequestData.OffsetCommitRequestTopic partitionOffsetCommitData = newOffsetCommitRequestPartitionData(invalidTopicPartition,
                 15L, "");
-        Map<TopicPartition, PartitionData> offsetData = Maps.newHashMap();
-        offsetData.put(invalidTopicPartition, partitionOffsetCommitData);
-        KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder("groupId", offsetData));
+        KafkaHeaderAndRequest request = buildRequest(new OffsetCommitRequest.Builder(
+                new OffsetCommitRequestData()
+                        .setGroupId("groupId")
+                        .setTopics(Collections.singletonList(partitionOffsetCommitData))));
         kafkaRequestHandler.handleOffsetCommitRequest(request, future);
     }
 
@@ -212,7 +216,19 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         checkInvalidPartition(invalidResponse1, topicName, -1);
         AbstractResponse response1 = invalidResponse1.get();
         TopicPartition topicPartition1 = new TopicPartition(topicName, -1);
-        assertEquals(((OffsetCommitResponse) response1).responseData().get(topicPartition1),
+        assertEquals(((OffsetCommitResponse) response1)
+                        .data()
+                        .topics()
+                        .stream()
+                        .filter(t->t.name().equals(topicName))
+                        .findFirst()
+                        .get()
+                        .partitions()
+                        .stream()
+                        .filter(p -> p.partitionIndex() == topicPartition1.partition())
+                        .findFirst()
+                        .get()
+                        .errorCode(),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
 
         // invalid partition id 1.
@@ -220,7 +236,19 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         checkInvalidPartition(invalidResponse2, topicName, 1);
         TopicPartition topicPartition2 = new TopicPartition(topicName, 1);
         AbstractResponse response2 = invalidResponse2.get();
-        assertEquals(((OffsetCommitResponse) response2).responseData().get(topicPartition2),
+                assertEquals(((OffsetCommitResponse) response2)
+                                .data()
+                                .topics()
+                                .stream()
+                                .filter(t->t.name().equals(topicName))
+                                .findFirst()
+                                .get()
+                                .partitions()
+                                .stream()
+                                .filter(p -> p.partitionIndex() == topicPartition2.partition())
+                                .findFirst()
+                                .get()
+                                .errorCode(),
             Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 
@@ -279,13 +307,15 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
-        kafkaRequestHandler.handleListOffsetsRequest(request, responseFuture);
+        kafkaRequestHandler.handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).timestamp, Long.valueOf(0));
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
+        assertEquals(listOffsetsPartitionResponse.offset(), 0L);
+        assertEquals(listOffsetsPartitionResponse.timestamp(), 0L);
     }
 
     // these 2 test cases test Read Commit / UnCommit.
@@ -330,13 +360,14 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler
-            .handleListOffsetsRequest(request, responseFuture);
+            .handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), (totalMsgs));
-        assertEquals(ListOffsetsResponse.responseData().get(tp).timestamp, Long.valueOf(0));
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.offset(), (totalMsgs));
+        assertEquals(listOffsetsPartitionResponse.timestamp(), 0);
     }
 
     @Test(timeOut = 60000)
@@ -493,24 +524,28 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         // 2. real test, test earliest
         ListOffsetsResponse ListOffsetsResponse = listOffset(EARLIEST_TIMESTAMP, tp);
-        System.out.println("offset for earliest " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+        System.out.println("offset for earliest " + listOffsetsPartitionResponse.offset());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.offset(), 0);
 
         ListOffsetsResponse = listOffset(ListOffsetsRequest.LATEST_TIMESTAMP, tp);
-        System.out.println("offset for latest " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), totalMsgs);
+        listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+        System.out.println("offset for latest " + listOffsetsPartitionResponse.offset());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.offset(), totalMsgs);
 
         ListOffsetsResponse = listOffset(0, tp);
-        System.out.println("offset for timestamp=0 " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
+        listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+        System.out.println("offset for timestamp=0 " + listOffsetsPartitionResponse.offset());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.offset(), 0);
 
         ListOffsetsResponse = listOffset(1, tp);
-        System.out.println("offset for timestamp=1 " + ListOffsetsResponse.responseData().get(tp).offset.intValue());
-        assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), 0);
+        listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+        System.out.println("offset for timestamp=1 " + listOffsetsPartitionResponse.offset());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.offset(), 0);
 
         // when handle listOffset, result should be like:
         //  timestamp        offset
@@ -538,12 +573,14 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         for (int i = 0; i < totalMsgs; i++) {
             long searchTime = timestamps[i];
             ListOffsetsResponse = listOffset(searchTime, tp);
-            assertEquals(ListOffsetsResponse.responseData().get(tp).error, Errors.NONE);
-            assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), i);
+            listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+            assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+            assertEquals(listOffsetsPartitionResponse.offset(), i);
 
             searchTime++;
             ListOffsetsResponse = listOffset(searchTime, tp);
-            assertEquals(ListOffsetsResponse.responseData().get(tp).offset.intValue(), i + 1);
+            listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
+            assertEquals(listOffsetsPartitionResponse.offset(), i + 1);
         }
     }
 
@@ -555,7 +592,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler
-                .handleListOffsetsRequest(request, responseFuture);
+                .handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         return (ListOffsetsResponse) response;
@@ -878,7 +915,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         kafkaRequestHandler
-            .handleListOffsetsRequest(request, responseFuture);
+            .handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
@@ -1028,8 +1065,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         final PersistentTopic persistentTopic = (PersistentTopic) optionalTopic.get();
         persistentTopic.getManagedLedger().close();
         // Now, the managed ledger is closed
-        verifySendMessageToPartition(topicPartition, newNormalRecords(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
-        verifySendMessageToPartition(topicPartition, newAbortTxnMarker(), Errors.NOT_LEADER_FOR_PARTITION, -1L);
+        verifySendMessageToPartition(topicPartition, newNormalRecords(), Errors.NOT_LEADER_OR_FOLLOWER, -1L);
+        verifySendMessageToPartition(topicPartition, newAbortTxnMarker(), Errors.NOT_LEADER_OR_FOLLOWER, -1L);
     }
 
 
