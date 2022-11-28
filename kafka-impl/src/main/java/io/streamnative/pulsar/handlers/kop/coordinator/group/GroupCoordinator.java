@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgato
 import io.streamnative.pulsar.handlers.kop.utils.timer.Timer;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -580,7 +581,7 @@ public class GroupCoordinator {
         }));
     }
 
-    public Map<String, Errors> handleDeleteGroups(Set<String> groupIds) {
+    public Map<String, Errors> handleDeleteGroups(Collection<String> groupIds) {
         Map<String, Errors> groupErrors = Collections.synchronizedMap(new HashMap<>());
         List<GroupMetadata> groupsEligibleForDeletion = new ArrayList<>();
 
