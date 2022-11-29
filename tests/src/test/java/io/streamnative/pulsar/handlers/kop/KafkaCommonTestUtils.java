@@ -22,11 +22,8 @@ import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
-import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.FetchRequest;
-import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
-import org.jetbrains.annotations.NotNull;
 
 public class KafkaCommonTestUtils {
 
@@ -36,7 +33,7 @@ public class KafkaCommonTestUtils {
         return Collections.singletonList(new ListOffsetsRequestData.ListOffsetsTopic()
                 .setName(topicPartition.topic())
                 .setPartitions(Collections.singletonList(new ListOffsetsRequestData.ListOffsetsPartition()
-                        .setMaxNumOffsets(100)
+                        //.setMaxNumOffsets(100)   NOT VALID IN KAFKA 2.8?
                         .setPartitionIndex(topicPartition.partition())
                         .setTimestamp(timestamp))));
     }

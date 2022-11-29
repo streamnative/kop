@@ -180,7 +180,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
                                               SocketAddress serviceAddress) {
-        AbstractRequest request = builder.build();
+        AbstractRequest request = builder.build(builder.apiKey().latestVersion());
         RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
 
 
@@ -368,7 +368,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse ListOffsetsResponse = (ListOffsetsResponse) response;
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), (totalMsgs));
         assertEquals(listOffsetsPartitionResponse.timestamp(), 0);
     }
@@ -529,25 +529,25 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ListOffsetsResponse ListOffsetsResponse = listOffset(EARLIEST_TIMESTAMP, tp);
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
         System.out.println("offset for earliest " + listOffsetsPartitionResponse.offset());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), 0);
 
         ListOffsetsResponse = listOffset(ListOffsetsRequest.LATEST_TIMESTAMP, tp);
         listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
         System.out.println("offset for latest " + listOffsetsPartitionResponse.offset());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), totalMsgs);
 
         ListOffsetsResponse = listOffset(0, tp);
         listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
         System.out.println("offset for timestamp=0 " + listOffsetsPartitionResponse.offset());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), 0);
 
         ListOffsetsResponse = listOffset(1, tp);
         listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
         System.out.println("offset for timestamp=1 " + listOffsetsPartitionResponse.offset());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), 0);
 
         // when handle listOffset, result should be like:
@@ -577,7 +577,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             long searchTime = timestamps[i];
             ListOffsetsResponse = listOffset(searchTime, tp);
             listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, ListOffsetsResponse.data());
-            assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+            assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
             assertEquals(listOffsetsPartitionResponse.offset(), i);
 
             searchTime++;
