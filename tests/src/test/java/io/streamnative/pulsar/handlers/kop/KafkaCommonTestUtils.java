@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
@@ -71,13 +72,17 @@ public class KafkaCommonTestUtils {
     }
 
 
-    public static Map<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap(
-                                                                            List<String> topics, int totalCount) {
-        return topics.stream().collect(Collectors.toMap(topic -> topic,
-                __ -> new CreatePartitionsRequest.PartitionDetails(totalCount)));
+    public static CreatePartitionsRequestData newPartitionsMap(List<String> topics, int totalCount) {
+        CreatePartitionsRequestData data = new CreatePartitionsRequestData();
+        data.topics().addAll(topics.stream().map(topic ->
+                    new CreatePartitionsRequestData.CreatePartitionsTopic()
+                            .setName(topic)
+                            .setCount(totalCount)
+                ).collect(Collectors.toList()));
+        return  data;
     }
 
-    public static Map<String, CreatePartitionsRequest.PartitionDetails> newPartitionsMap(String topic, int totalCount) {
+    public static CreatePartitionsRequestData newPartitionsMap(String topic, int totalCount) {
         return newPartitionsMap(Collections.singletonList(topic), totalCount);
     }
 

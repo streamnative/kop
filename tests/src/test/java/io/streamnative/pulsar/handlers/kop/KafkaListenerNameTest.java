@@ -117,8 +117,9 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(partitionMetadataList.size(), numPartitions);
                 for (int i = 0; i < numPartitions; i++) {
                     final PartitionMetadata partitionMetadata = partitionMetadataList.get(i);
-                    Assert.assertEquals(partitionMetadata.error(), Errors.NONE);
-                    Assert.assertEquals(partitionMetadata.leader().host() + ":" + partitionMetadata.leader().port(),
+                    Assert.assertEquals(partitionMetadata.error, Errors.NONE);
+                    Node leader = metadataResponse.brokersById().get(partitionMetadata.leaderId.get());
+                    Assert.assertEquals(leader.host() + ":" + leader.port(),
                             expectedAddress);
                 }
             } catch (Exception e) {

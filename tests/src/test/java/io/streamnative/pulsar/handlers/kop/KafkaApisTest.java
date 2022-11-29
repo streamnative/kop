@@ -76,6 +76,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
+import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
@@ -990,8 +991,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                               final Errors expectedError,
                                               final long expectedOffset)
             throws ExecutionException, InterruptedException {
-        final KafkaHeaderAndRequest request = buildRequest(ProduceRequest.Builder.forCurrentMagic(
-                (short) -1, 30000, Collections.singletonMap(topicPartition, records)));
+        ProduceRequestData produceRequestData = new ProduceRequestData()
+                .setTimeoutMs(30000)
+                .setAcks((short) -1);
+        produceRequestData.topicData().add(new ProduceRequestData.TopicProduceData()
+                .setName(topicPartition.topic())
+                .setPartitionData(Collections.singletonList(new ProduceRequestData.PartitionProduceData()
+                        .setIndex(topicPartition.partition())
+                        .setRecords(records)))
+        );
+        final KafkaHeaderAndRequest request = buildRequest(new ProduceRequest.Builder(ApiKeys.PRODUCE.latestVersion(),
+                ApiKeys.PRODUCE.latestVersion(), produceRequestData));
         final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
         kafkaRequestHandler.handleProduceRequest(request, future);
         final ProduceResponse.PartitionResponse response =
