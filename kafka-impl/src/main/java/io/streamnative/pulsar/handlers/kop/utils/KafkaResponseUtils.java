@@ -14,18 +14,14 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.streamnative.pulsar.handlers.kop.ApiVersion;
-import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
-
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.apache.commons.lang3.tuple.Pair;
@@ -143,17 +139,17 @@ public class KafkaResponseUtils {
                 .map(TopicPartition::topic)
                 .distinct()
                 .forEach((String topic) -> {
-                    DeleteRecordsResponseData.DeleteRecordsTopicResult deleteRecordsTopicResult
-                            = new DeleteRecordsResponseData.DeleteRecordsTopicResult();
+                    DeleteRecordsResponseData.DeleteRecordsTopicResult deleteRecordsTopicResult =
+                            new DeleteRecordsResponseData.DeleteRecordsTopicResult();
                     deleteRecordsTopicResult.setName(topic);
                     data.topics().add(deleteRecordsTopicResult);
-                    DeleteRecordsResponseData.DeleteRecordsPartitionResultCollection partitionResults
-                            = deleteRecordsTopicResult.partitions();
+                    DeleteRecordsResponseData.DeleteRecordsPartitionResultCollection partitionResults =
+                            deleteRecordsTopicResult.partitions();
                     responseMap.entrySet().stream().filter(
                             entry -> entry.getKey().topic().equals(topic)
                     ).forEach(partitions -> {
-                        DeleteRecordsResponseData.DeleteRecordsPartitionResult result
-                                = new DeleteRecordsResponseData.DeleteRecordsPartitionResult()
+                        DeleteRecordsResponseData.DeleteRecordsPartitionResult result =
+                                new DeleteRecordsResponseData.DeleteRecordsPartitionResult()
                                 .setPartitionIndex(partitions.getKey().partition())
                                 .setErrorCode(partitions.getValue().code());
                         partitionResults.add(result);
@@ -166,7 +162,7 @@ public class KafkaResponseUtils {
     public static DescribeGroupsResponse newDescribeGroups(
             Map<String, KeyValue<Errors, GroupMetadata.GroupSummary>> groupToSummary) {
         DescribeGroupsResponseData data = new DescribeGroupsResponseData();
-        groupToSummary.forEach((String group,KeyValue<Errors, GroupMetadata.GroupSummary> pair ) -> {
+        groupToSummary.forEach((String group, KeyValue<Errors, GroupMetadata.GroupSummary> pair) -> {
             final Errors errors = pair.getKey();
             final GroupMetadata.GroupSummary summary = pair.getValue();
             DescribeGroupsResponseData.DescribedGroup describedGroup = new DescribeGroupsResponseData.DescribedGroup()
@@ -260,16 +256,19 @@ public class KafkaResponseUtils {
         if (legacy) {
             ListOffsetsResponseData data = new ListOffsetsResponseData();
             List<ListOffsetsResponseData.ListOffsetsTopicResponse> topicsResponse = data.topics();
-            List<String> topics = partitionToOffset.keySet().stream().map(TopicPartition::topic).distinct().collect(Collectors.toList());
+            List<String> topics = partitionToOffset.keySet().stream().map(TopicPartition::topic)
+                    .distinct().collect(Collectors.toList());
             topics.forEach(topic -> {
-                ListOffsetsResponseData.ListOffsetsTopicResponse  listOffsetsTopicResponse = new ListOffsetsResponseData.ListOffsetsTopicResponse()
+                ListOffsetsResponseData.ListOffsetsTopicResponse  listOffsetsTopicResponse =
+                        new ListOffsetsResponseData.ListOffsetsTopicResponse()
                         .setName(topic);
                 topicsResponse.add(listOffsetsTopicResponse);
                 partitionToOffset.forEach((TopicPartition topicPartition, Pair<Errors, Long> errorsLongPair) ->  {
                     if (topicPartition.topic().equals(topic)) {
                         Errors errors = errorsLongPair.getKey();
                         long offset = errorsLongPair.getValue() != null ? errorsLongPair.getValue() : 0L;
-                        listOffsetsTopicResponse.partitions().add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                        listOffsetsTopicResponse.partitions()
+                                .add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
                                 .setOldStyleOffsets(Collections.singletonList(offset))
                                 .setPartitionIndex(topicPartition.partition())
                                 .setErrorCode(errors.code()));
@@ -280,16 +279,19 @@ public class KafkaResponseUtils {
         } else {
             ListOffsetsResponseData data = new ListOffsetsResponseData();
             List<ListOffsetsResponseData.ListOffsetsTopicResponse> topicsResponse = data.topics();
-            List<String> topics = partitionToOffset.keySet().stream().map(TopicPartition::topic).distinct().collect(Collectors.toList());
+            List<String> topics = partitionToOffset.keySet().stream().map(TopicPartition::topic)
+                    .distinct().collect(Collectors.toList());
             topics.forEach(topic -> {
-                ListOffsetsResponseData.ListOffsetsTopicResponse  listOffsetsTopicResponse = new ListOffsetsResponseData.ListOffsetsTopicResponse()
+                ListOffsetsResponseData.ListOffsetsTopicResponse  listOffsetsTopicResponse =
+                        new ListOffsetsResponseData.ListOffsetsTopicResponse()
                         .setName(topic);
                 topicsResponse.add(listOffsetsTopicResponse);
                 partitionToOffset.forEach((TopicPartition topicPartition, Pair<Errors, Long> errorsLongPair) ->  {
                     if (topicPartition.topic().equals(topic)) {
                         Errors errors = errorsLongPair.getKey();
                         long offset = errorsLongPair.getValue() != null ? errorsLongPair.getValue() : 0L;
-                        listOffsetsTopicResponse.partitions().add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                        listOffsetsTopicResponse.partitions()
+                                .add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
                                 .setOffset(offset)
                                  .setTimestamp(0)
                                 .setPartitionIndex(topicPartition.partition())
@@ -319,7 +321,8 @@ public class KafkaResponseUtils {
         });
 
         topicMetadata.forEach(md -> {
-            MetadataResponseData.MetadataResponseTopic metadataResponseTopic = new MetadataResponseData.MetadataResponseTopic()
+            MetadataResponseData.MetadataResponseTopic metadataResponseTopic =
+                    new MetadataResponseData.MetadataResponseTopic()
                     .setErrorCode(md.error().code())
                     .setName(md.topic())
                     .setIsInternal(md.isInternal());

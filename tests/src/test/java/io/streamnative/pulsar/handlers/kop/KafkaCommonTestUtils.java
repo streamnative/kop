@@ -13,15 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
@@ -66,9 +65,10 @@ public class KafkaCommonTestUtils {
         );
     }
 
-    public static OffsetCommitRequestData.OffsetCommitRequestTopic newOffsetCommitRequestPartitionData(TopicPartition tp,
-                                                                                                       long offset,
-                                                                                                       String metadata) {
+    public static OffsetCommitRequestData.OffsetCommitRequestTopic newOffsetCommitRequestPartitionData(
+            TopicPartition tp,
+            long offset,
+            String metadata) {
         return new OffsetCommitRequestData.OffsetCommitRequestTopic()
                 .setName(tp.topic())
                 .setPartitions(Collections.singletonList(new OffsetCommitRequestData.OffsetCommitRequestPartition()
@@ -92,7 +92,8 @@ public class KafkaCommonTestUtils {
         return newPartitionsMap(Collections.singletonList(topic), totalCount);
     }
 
-    public static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp, ListOffsetsResponseData listOffsetResponse) {
+    public static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(
+            TopicPartition tp, ListOffsetsResponseData listOffsetResponse) {
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = listOffsetResponse
                 .topics()
                 .stream()

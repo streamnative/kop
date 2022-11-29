@@ -16,11 +16,8 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
-
-import io.netty.buffer.ByteBuf;
 import lombok.Getter;
 import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.KopResponseUtils;

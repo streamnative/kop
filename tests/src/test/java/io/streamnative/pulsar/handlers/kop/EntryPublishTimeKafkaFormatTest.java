@@ -37,7 +37,6 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.RequestHeader;
-import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
@@ -108,13 +107,14 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
-        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, listOffsetResponse);
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(tp, listOffsetResponse);
         assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
         assertEquals(listOffsetsPartitionResponse.offset(), 0);
     }
 
-    @NotNull
-    private static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp, ListOffsetsResponse listOffsetResponse) {
+    static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp,
+                                                                            ListOffsetsResponse listOffsetResponse) {
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = listOffsetResponse
                 .data()
                 .topics()

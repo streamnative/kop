@@ -59,7 +59,8 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
         txnIdAndMarkerEntries.forEach(txnIdAndMarker -> {
             String transactionalId = txnIdAndMarker.getTransactionalId();
             WriteTxnMarkersRequest.TxnMarkerEntry txnMarker = txnIdAndMarker.getEntry();
-            Map<TopicPartition, Errors> errors = writeTxnMarkerResponse.errorsByProducerId().get(txnMarker.producerId());
+            Map<TopicPartition, Errors> errors = writeTxnMarkerResponse
+                    .errorsByProducerId().get(txnMarker.producerId());
 
             if (errors == null) {
                 throw new IllegalStateException("WriteTxnMarkerResponse does not contain expected error map for "

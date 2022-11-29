@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
@@ -285,7 +284,8 @@ public class ListOffsetRequestV0 extends AbstractRequest {
         short versionId = version();
 
         topics.forEach(topic -> {
-            ListOffsetsResponseData.ListOffsetsTopicResponse topicData = new ListOffsetsResponseData.ListOffsetsTopicResponse()
+            ListOffsetsResponseData.ListOffsetsTopicResponse topicData =
+                    new ListOffsetsResponseData.ListOffsetsTopicResponse()
                     .setName(topic);
             responseData.topics().add(topicData);
 
@@ -346,7 +346,8 @@ public class ListOffsetRequestV0 extends AbstractRequest {
 
     public static ListOffsetRequestV0 parse(ByteBuffer buffer, short version) {
         try {
-            ListOffsetsRequest encodedRequest = (ListOffsetsRequest) AbstractRequest.parseRequest(ApiKeys.LIST_OFFSETS, version, buffer).request;
+            ListOffsetsRequest encodedRequest = (ListOffsetsRequest)
+                    AbstractRequest.parseRequest(ApiKeys.LIST_OFFSETS, version, buffer).request;
 
             int replicaId = encodedRequest.replicaId();
             IsolationLevel isolationLevel = encodedRequest.isolationLevel();
@@ -356,11 +357,13 @@ public class ListOffsetRequestV0 extends AbstractRequest {
             encodedRequest.topics().forEach(topic -> {
                 topic.partitions().forEach(partitionData -> {
                     targetTimes.put(new TopicPartition(topic.name(), partitionData.partitionIndex()),
-                            new ListOffsetRequestV0.PartitionData(partitionData.timestamp(), partitionData.maxNumOffsets()));
+                            new ListOffsetRequestV0.PartitionData(partitionData.timestamp(),
+                                    partitionData.maxNumOffsets()));
                 });
             });
 
-            return new ListOffsetRequestV0(replicaId, targetTimes, isolationLevel, requestVersion, encodedRequest.data());
+            return new ListOffsetRequestV0(replicaId, targetTimes,
+                    isolationLevel, requestVersion, encodedRequest.data());
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }

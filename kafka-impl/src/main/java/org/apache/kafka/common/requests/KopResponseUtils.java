@@ -14,13 +14,10 @@
 package org.apache.kafka.common.requests;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
-import java.nio.ByteBuffer;
-
 import io.netty.buffer.Unpooled;
+import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
-import org.apache.kafka.common.protocol.types.Struct;
 
 /**
  * Provide util classes to access protected fields in kafka structures.
@@ -43,10 +40,10 @@ public class KopResponseUtils {
 
     public static ByteBuffer serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
         ObjectSerializationCache cache = new ObjectSerializationCache();
-        ByteBuffer buffer = ByteBuffer.allocate(1024);
-        requestHeader.size(cache);
-        requestHeader.write(buffer, cache);
+        int size = requestHeader.size(cache);
         ByteBuffer serialize = request.serialize();
+        ByteBuffer buffer = ByteBuffer.allocate(size + serialize.remaining());
+        requestHeader.write(buffer, cache);
         buffer.put(serialize);
         buffer.flip();
         return buffer;

@@ -78,7 +78,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -90,11 +89,11 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
-import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
@@ -164,8 +163,8 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
-import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -766,7 +765,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
                 );
                 resultFuture.complete(
-                        KafkaResponseUtils.newMetadata(allNodes, clusterName, controllerId, topicMetadataList, request.version()));
+                        KafkaResponseUtils.newMetadata(allNodes, clusterName,
+                                controllerId, topicMetadataList, request.version()));
                 return null;
             }).exceptionally(lookupException -> {
                 log.error("[{}] Unexpected exception during lookup", ctx.channel(), lookupException);
@@ -1485,7 +1485,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> convertedOffsetData =
+                Maps.newConcurrentMap();
         Map<TopicPartition, TopicPartition> replacingIndex = Maps.newConcurrentMap();
         AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(
                 data.topics().stream().map(OffsetCommitRequestData.OffsetCommitRequestTopic::partitions)
@@ -1992,8 +1993,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // When complete one authorization or failed, will do the action first.
             action.run();
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
-                Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames
-                        = new HashMap<>();
+                Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames =
+                        new HashMap<>();
                 authorizedResources.forEach(configResource -> {
                     Optional<Set<String>> configNames = data
                             .resources()
@@ -2009,7 +2010,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ).thenApply(configResourceConfigMap -> {
                     DescribeConfigsResponseData responseData = new DescribeConfigsResponseData();
                     configResourceConfigMap.putAll(failedConfigResourceMap);
-                    configResourceConfigMap.forEach((ConfigResource resource, DescribeConfigsResponse.Config result) -> {
+                    configResourceConfigMap.forEach((ConfigResource resource,
+                                                     DescribeConfigsResponse.Config result) -> {
                         responseData.results().add(new DescribeConfigsResponseData.DescribeConfigsResult()
                                 .setResourceName(resource.name())
                                 .setResourceType(resource.type().id())
@@ -2138,18 +2140,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         .stream()
                                         .map(TopicPartition::topic)
                                         .distinct()
-                                                .forEach(topicName -> {
-                                                    AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult topicResult = new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
-                                                            .setName(topicName);
-                                                    responseData.results().add(topicResult);
-                                                    topicPartitionErrorsMap.forEach((TopicPartition tp, Errors error) -> {
-                                                        if (tp.topic().equals(topicName)) {
-                                                            topicResult.results().add(new AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResult()
-                                                                    .setPartitionIndex(tp.partition())
-                                                                    .setErrorCode(error.code()));
-                                                        }
-                                                    });
-                                                });
+                                        .forEach(topicName -> {
+                                            AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult topicResult =
+                                                    new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
+                                                    .setName(topicName);
+                                            responseData.results().add(topicResult);
+                                            topicPartitionErrorsMap.forEach((TopicPartition tp, Errors error) -> {
+                                                if (tp.topic().equals(topicName)) {
+                                                    topicResult.results()
+                                                        .add(new AddPartitionsToTxnResponseData
+                                                                .AddPartitionsToTxnPartitionResult()
+                                                        .setPartitionIndex(tp.partition())
+                                                        .setErrorCode(error.code()));
+                                                }
+                                            });
+                                        });
 
                                 response.complete(
                                         new AddPartitionsToTxnResponse(responseData));
@@ -2592,7 +2597,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, CreatePartitionsRequestData.CreatePartitionsTopic> completeOneTopic = (topic, newPartitions) -> {
+        BiConsumer<String, CreatePartitionsRequestData.CreatePartitionsTopic> completeOneTopic =
+                (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createPartitionsAsync.run();

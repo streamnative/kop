@@ -63,7 +63,6 @@ import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
@@ -96,7 +95,6 @@ import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
-import org.jetbrains.annotations.NotNull;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -388,7 +386,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
-        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
         assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
         assertEquals(listOffsetsPartitionResponse.offset(), 0L);
         assertEquals(listOffsetsPartitionResponse.timestamp(), 0L);
@@ -415,7 +414,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         AbstractResponse response = responseFuture.get();
         ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
-        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
         assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
@@ -496,7 +496,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Build input params
         OffsetCommitRequestData offsetData = new OffsetCommitRequestData()
                 .setGroupId(group).setMemberId(memberId);
-        offsetData.topics().add(KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition,1L, ""));
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition, 1L, ""));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -511,7 +512,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertFalse(offsetCommitResponse.errorCounts().isEmpty());
         offsetCommitResponse.data().topics().forEach(topic -> {
             topic.partitions()
-                .forEach((partitionResult) -> assertEquals(partitionResult.errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code()));
+                .forEach((partitionResult) -> assertEquals(partitionResult.errorCode(),
+                        Errors.TOPIC_AUTHORIZATION_FAILED.code()));
         });
     }
 
@@ -526,9 +528,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Build input params
         OffsetCommitRequestData offsetData = new OffsetCommitRequestData()
                 .setGroupId(group).setMemberId(memberId);
-        offsetData.topics().add(KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition1, 1L, ""));
-        offsetData.topics().add(KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition2,2L, ""));
-        offsetData.topics().add(KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition3,3L, ""));
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition1, 1L, ""));
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition2, 2L, ""));
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition3, 3L, ""));
         offsetData.setGroupId(group);
 
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(offsetData);
@@ -552,10 +557,16 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
         assertEquals(offsetCommitResponse.data().topics().size(), 3);
         assertEquals(offsetCommitResponse.errorCounts().size(), 2);
-        assertEquals(offsetCommitResponse.data().topics().stream().filter(t->t.name().equals(topicPartition2.topic())).findFirst().get()
-                .partitions().stream().filter(p->p.partitionIndex() == topicPartition2.partition()).findFirst().get(), Errors.TOPIC_AUTHORIZATION_FAILED);
-        assertEquals(offsetCommitResponse.data().topics().stream().filter(t->t.name().equals(topicPartition3.topic())).findFirst().get()
-                .partitions().stream().filter(p->p.partitionIndex() == topicPartition3.partition()).findFirst().get(), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(offsetCommitResponse.data().topics().stream()
+                .filter(t->t.name().equals(topicPartition2.topic())).findFirst().get()
+                .partitions().stream()
+                .filter(p->p.partitionIndex() == topicPartition2.partition())
+                .findFirst().get(), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(offsetCommitResponse.data().topics().stream()
+                .filter(t->t.name().equals(topicPartition3.topic())).findFirst().get()
+                .partitions().stream()
+                .filter(p->p.partitionIndex() == topicPartition3.partition())
+                .findFirst().get(), Errors.TOPIC_AUTHORIZATION_FAILED);
 
     }
 
@@ -703,7 +714,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertTrue(response instanceof CreatePartitionsResponse);
         CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
         assertEquals(createPartitionsResponse.errorCounts().size(), 1);
-        Map<String, CreatePartitionsResponseData.CreatePartitionsTopicResult> errors = createPartitionsResponse.data().results().stream()
+        Map<String, CreatePartitionsResponseData.CreatePartitionsTopicResult> errors =
+                createPartitionsResponse.data().results().stream()
                 .collect(Collectors.toMap(r -> r.name(), r -> r));
         assertTrue(errors.containsKey(fullTopic));
         assertEquals(errors.get(fullTopic).errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
@@ -746,7 +758,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertTrue(response instanceof CreatePartitionsResponse);
         CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
         assertEquals(createPartitionsResponse.errorCounts().size(), 2);
-        Map<String, CreatePartitionsResponseData.CreatePartitionsTopicResult> errors = createPartitionsResponse.data().results().stream()
+        Map<String, CreatePartitionsResponseData.CreatePartitionsTopicResult> errors =
+                createPartitionsResponse.data().results().stream()
                 .collect(Collectors.toMap(r -> r.name(), r -> r));
         assertEquals(errors.size(), 3);
         assertEquals(errors.get(fullTopic1).errorCode(), Errors.NONE.code());

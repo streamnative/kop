@@ -219,7 +219,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             Unpooled.buffer(20),
             null);
 
-        ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
+        ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse
+                .defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
             kopRequest, apiVersionsResponse);
 
@@ -630,7 +631,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicPartition topicPartition = new TopicPartition("test", 1);
 
         // build input params
-        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
+        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic =
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
 
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(new OffsetCommitRequestData()
                 .setGenerationId(generationId)
@@ -669,7 +671,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> offsetData = new HashMap<>();
-        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
+        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic =
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
         offsetData.put(topicPartition, offsetCommitRequestTopic.partitions().get(0));
 
         // convert
@@ -700,7 +703,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // build input params
         Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> offsetData = new HashMap<>();
-        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic = KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
+        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic =
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
         offsetData.put(topicPartition, offsetCommitRequestTopic.partitions().get(0));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(new OffsetCommitRequestData()
                 .setGenerationId(generationId)
@@ -760,7 +764,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
                 responseFuture);
         final ListOffsetsResponse response = (ListOffsetsResponse) responseFuture.get();
-        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = getListOffsetsPartitionResponse(topicPartition, response.data());
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(topicPartition, response.data());
         assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.UNKNOWN_TOPIC_OR_PARTITION);
     }
 
@@ -770,7 +775,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         admin.topics().createNonPartitionedTopic(topic);
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request = new MetadataRequest.Builder(Collections.singletonList(topic), false, version).build();
+        final MetadataRequest request = new MetadataRequest
+                .Builder(Collections.singletonList(topic), false, version).build();
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
@@ -1024,7 +1030,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             String expected = "Kop server currently doesn't support manual assignment replica sets '"
                     + newPartitions.assignments() + "' the number of partitions must be specified ";
             assertTrue(e.getMessage()
-                    .contains(expected), "Message '"+e.getMessage()+"' does not contain '"+expected+"'");
+                    .contains(expected), "Message '" + e.getMessage() + "' does not contain '" + expected + "'");
         }
 
     }

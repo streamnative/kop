@@ -17,7 +17,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
-
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.utils.Time;
 
@@ -73,8 +72,9 @@ public class MockTime implements Time {
     }
 
     private void maybeSleep(long ms) {
-        if (ms != 0)
+        if (ms != 0) {
             sleep(ms);
+        }
     }
 
     @Override
@@ -97,8 +97,9 @@ public class MockTime implements Time {
                 while (milliseconds() < deadlineMs && !condition.get()) {
                     obj.wait();
                 }
-                if (!condition.get())
+                if (!condition.get()) {
                     throw new TimeoutException("Condition not satisfied before deadline");
+                }
             }
         } finally {
             listeners.remove(listener);
@@ -109,9 +110,10 @@ public class MockTime implements Time {
         long oldMs = timeMs.getAndSet(newMs);
 
         // does not allow to set to an older timestamp
-        if (oldMs > newMs)
-            throw new IllegalArgumentException("Setting the time to " + newMs + " while current time " + oldMs + " is newer; this is not allowed");
-
+        if (oldMs > newMs) {
+            throw new IllegalArgumentException("Setting the time to " + newMs
+                    + " while current time " + oldMs + " is newer; this is not allowed");
+        }
         highResTimeNs.set(TimeUnit.MILLISECONDS.toNanos(newMs));
         tick();
     }

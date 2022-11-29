@@ -83,9 +83,10 @@ public class AdminManager {
         topicPurgatory.shutdown();
     }
 
-    public CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, CreateTopicsRequestData.CreatableTopic> createInfo,
-                                                                      int timeoutMs,
-                                                                      String namespacePrefix) {
+    public CompletableFuture<Map<String, ApiError>> createTopicsAsync(
+            Map<String, CreateTopicsRequestData.CreatableTopic> createInfo,
+            int timeoutMs,
+            String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();

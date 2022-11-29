@@ -48,7 +48,6 @@ import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ApiVersionsRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -59,7 +58,6 @@ import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
@@ -494,7 +492,7 @@ public class SaslAuthenticator {
             try {
                 byte[] responseToken =
                         saslServer.evaluateResponse(saslAuthenticateRequest.data().authBytes());
-                byte[] responseBuf = (responseToken == null) ? EMPTY_BUFFER :responseToken;
+                byte[] responseBuf = (responseToken == null) ? EMPTY_BUFFER : responseToken;
                 if (saslServer.isComplete()) {
                     String pulsarRole = saslServer.getAuthorizationID();
                     this.session = new Session(
@@ -556,7 +554,8 @@ public class SaslAuthenticator {
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
-            ApiVersionsResponse versionsResponse = ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
+            ApiVersionsResponse versionsResponse =
+                    ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
             registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,

@@ -22,22 +22,22 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
-import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaRequestUtils {
 
     public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
-                                                      BiConsumer<String, CreatePartitionsRequestData.CreatePartitionsTopic> consumer) {
+                                      BiConsumer<String, CreatePartitionsRequestData.CreatePartitionsTopic> consumer) {
         request.data().topics().forEach(tp -> {
                 consumer.accept(tp.name(), tp);
         });
     }
 
     public static void forEachListOffsetRequest(ListOffsetsRequest request,
-                                                BiConsumer<TopicPartition, ListOffsetsRequestData.ListOffsetsPartition> consumer) {
+                            BiConsumer<TopicPartition, ListOffsetsRequestData.ListOffsetsPartition> consumer) {
         request.data().topics().forEach(listOffsetsTopic -> {
             String name = listOffsetsTopic.name();
             listOffsetsTopic.partitions().forEach(listOffsetsPartition -> {

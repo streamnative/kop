@@ -116,7 +116,8 @@ public class DelayAuthorizationFailedCloseTest extends KopProtocolHandlerTestBas
         Metrics metrics = new Metrics(time);
         ProducerConfiguration producerConfiguration = producerConfiguration();
         ChannelBuilder channelBuilder =
-                ClientUtils.createChannelBuilder(new ProducerConfig(producerConfiguration.toProperties()), time, new LogContext());
+                ClientUtils.createChannelBuilder(
+                        new ProducerConfig(producerConfiguration.toProperties()), time, new LogContext());
         String clientId = "clientId";
         selector = new Selector(
                 DEFAULT_CONNECTION_MAX_IDLE_MS,
