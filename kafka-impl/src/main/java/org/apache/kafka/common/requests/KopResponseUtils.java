@@ -41,4 +41,15 @@ public class KopResponseUtils {
         return Unpooled.wrappedBuffer(response.serializeWithHeader(responseHeader, version));
     }
 
+    public static ByteBuffer serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
+        ObjectSerializationCache cache = new ObjectSerializationCache();
+        ByteBuffer buffer = ByteBuffer.allocate(1024);
+        requestHeader.size(cache);
+        requestHeader.write(buffer, cache);
+        ByteBuffer serialize = request.serialize();
+        buffer.put(serialize);
+        buffer.flip();
+        return buffer;
+    }
+
 }

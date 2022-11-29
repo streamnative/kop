@@ -93,6 +93,7 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
@@ -180,10 +181,10 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
                                               SocketAddress serviceAddress) {
         AbstractRequest request = builder.build();
-        builder.apiKey();
+        RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
 
-        ByteBuffer serializedRequest = request
-            .serialize();
+
+        ByteBuffer serializedRequest = KopResponseUtils.serializeRequest(mockHeader, request);
 
         ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
 
