@@ -368,6 +368,7 @@ public class GroupCoordinator {
                                     memberId,
                                     group.generationId(),
                                     group.protocolOrNull(),
+                                    group.protocolTypeOrNull(),
                                     group.leaderOrNull(),
                                     Errors.NONE
                                 )
@@ -409,6 +410,7 @@ public class GroupCoordinator {
                                 memberId,
                                 group.generationId(),
                                 group.protocolOrNull(),
+                                group.protocolTypeOrNull(),
                                 group.leaderOrNull(),
                                 Errors.NONE));
                         }
@@ -1013,7 +1015,8 @@ public class GroupCoordinator {
             Collections.emptyMap(),
             memberId,
             0,
-            GroupCoordinator.NoProtocol,
+            NoProtocol,
+            NoProtocolType,
             GroupCoordinator.NoLeader,
             error);
     }
@@ -1213,6 +1216,7 @@ public class GroupCoordinator {
                             member.memberId(),
                             group.generationId(),
                             group.protocolOrNull(),
+                            group.protocolTypeOrNull(),
                             group.leaderOrNull(),
                             Errors.NONE);
 

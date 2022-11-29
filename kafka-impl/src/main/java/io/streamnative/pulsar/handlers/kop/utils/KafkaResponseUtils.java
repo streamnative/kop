@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.streamnative.pulsar.handlers.kop.ApiVersion;
+import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -24,6 +25,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -180,9 +184,11 @@ public class KafkaResponseUtils {
         return new DescribeGroupsResponse(data);
     }
 
-    public static FindCoordinatorResponse newFindCoordinator(MetadataResponse.PartitionMetadata node) {
+    public static FindCoordinatorResponse newFindCoordinator(Node node) {
         FindCoordinatorResponseData data = new FindCoordinatorResponseData();
-        data.setNodeId(node.leaderId.get());
+        data.setNodeId(node.id());
+        data.setHost(node.host());
+        data.setPort(node.port());
         data.setErrorCode(Errors.NONE.code());
         return new FindCoordinatorResponse(data);
     }
@@ -203,6 +209,7 @@ public class KafkaResponseUtils {
     public static JoinGroupResponse newJoinGroup(Errors errors,
                                                  int generationId,
                                                  String groupProtocol,
+                                                 String groupProtocolType,
                                                  String memberId,
                                                  String leaderId,
                                                  Map<String, byte[]> groupMembers) {
@@ -211,6 +218,8 @@ public class KafkaResponseUtils {
                 .setLeader(leaderId)
                 .setGenerationId(generationId)
                 .setMemberId(memberId)
+                .setProtocolType(groupProtocolType)
+                .setProtocolName(groupProtocol)
                 .setMembers(groupMembers
                         .entrySet()
                         .stream()
@@ -326,28 +335,32 @@ public class KafkaResponseUtils {
         return new MetadataResponse(data, apiVersion);
     }
 
-    public static MetadataResponse.PartitionMetadata newMetadataPartition(TopicPartition topicPartition,
-                                                                          Node node) {
-        return new MetadataResponse.PartitionMetadata(Errors.NONE,
-                topicPartition,
-                Optional.of(node.id()), // leader
-                Optional.empty(), // leaderEpoch is unknown in Pulsar
-                Collections.singletonList(node.id()), // replicas
-                Collections.singletonList(node.id()), // isr
-                Collections.emptyList() // offline replicas
-        );
+    @Getter
+    @AllArgsConstructor
+    public static class BrokerLookupResult {
+        public final TopicPartition topicPartition;
+        public final Errors error;
+        public final Node node;
+
+        public MetadataResponse.PartitionMetadata toPartitionMetadata() {
+            return new MetadataResponse.PartitionMetadata(error, topicPartition,
+                    Optional.ofNullable(node).map(Node::id),
+                    Optional.empty(),
+                    node != null ? Collections.singletonList(node.id()) : Collections.emptyList(),
+                    node != null ? Collections.singletonList(node.id()) : Collections.emptyList(),
+                    Collections.emptyList()
+                    );
+        }
     }
 
-    public static MetadataResponse.PartitionMetadata newMetadataPartition(Errors errors,
+    public static BrokerLookupResult newMetadataPartition(TopicPartition topicPartition,
+                                                                              Node node) {
+        return new BrokerLookupResult(topicPartition, Errors.NONE, node);
+    }
+
+    public static BrokerLookupResult newMetadataPartition(Errors errors,
                                                                           TopicPartition topicPartition) {
-        return new MetadataResponse.PartitionMetadata(errors,
-                topicPartition,
-                Optional.empty(), // leader
-                Optional.empty(), // leaderEpoch is unknown in Pulsar
-                Collections.emptyList(), // replicas
-                Collections.emptyList(), // isr
-                Collections.emptyList() // offline replicas
-        );
+        return new BrokerLookupResult(topicPartition, errors, null);
     }
 
     public static OffsetCommitResponse newOffsetCommit(Map<TopicPartition, Errors> responseData) {
@@ -406,7 +419,7 @@ public class KafkaResponseUtils {
         SyncGroupResponseData data = new SyncGroupResponseData();
         data.setErrorCode(errors.code());
         data.setProtocolType(protocolType);
-        data.setProtocolType(protocolName);
+        data.setProtocolName(protocolName);
         data.setAssignment(assignment);
         return new SyncGroupResponse(data);
     }

@@ -17,6 +17,7 @@ import static org.apache.kafka.common.requests.MetadataResponse.PartitionMetadat
 import static org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;

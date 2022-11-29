@@ -38,6 +38,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -259,23 +260,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicName topicNamePartition =
             TopicName.get("persistent://test-tenants/test-ns/topic" + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
 
-        PartitionMetadata metadata = KafkaRequestHandler.newPartitionMetadata(topicName, node);
+        KafkaResponseUtils.BrokerLookupResult metadata = KafkaRequestHandler.newPartitionMetadata(topicName, node);
         assertEquals(metadata.error, Errors.NONE);
-        assertEquals(metadata.partition(), 0);
+        assertEquals(metadata.getTopicPartition().partition(), 0);
 
 
         metadata = KafkaRequestHandler.newPartitionMetadata(topicNamePartition, node);
         assertEquals(metadata.error, Errors.NONE);
-        assertEquals(metadata.partition(), partitionIndex);
+        assertEquals(metadata.getTopicPartition().partition(), partitionIndex);
 
         metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicName);
         assertEquals(metadata.error, Errors.NOT_LEADER_OR_FOLLOWER);
-        assertEquals(metadata.partition(), 0);
+        assertEquals(metadata.getTopicPartition().partition(), 0);
 
 
         metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicNamePartition);
         assertEquals(metadata.error, Errors.NOT_LEADER_OR_FOLLOWER);
-        assertEquals(metadata.partition(), partitionIndex);
+        assertEquals(metadata.getTopicPartition().partition(), partitionIndex);
     }
 
     @Test

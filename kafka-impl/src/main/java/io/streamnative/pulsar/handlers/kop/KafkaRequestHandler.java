@@ -759,7 +759,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     ListPair.split(topicAndMetadataList.stream(), TopicAndMetadata::hasNoError);
             CoreUtils.waitForAll(listPair.getSuccessfulList().stream()
                     .map(topicAndMetadata ->
-                            topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
+                            topicAndMetadata.lookupAsync(this::lookup, getOriginalTopic, metadataNamespace)
                     ).collect(Collectors.toList()), successfulTopicMetadataList -> {
                 final List<TopicMetadata> topicMetadataList = ListUtils.union(successfulTopicMetadataList,
                         CoreUtils.listToList(listPair.getFailedList(),
@@ -982,8 +982,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.warn("Store groupId failed, the groupId might already stored.", ex);
                     }
                     findBroker(TopicName.get(pulsarTopicName))
-                            .whenComplete((PartitionMetadata node, Throwable throwable) -> {
-                                if (node.error != Errors.NONE || throwable != null) {
+                            .whenComplete((KafkaResponseUtils.BrokerLookupResult result, Throwable throwable) -> {
+                                if (result.error != Errors.NONE || throwable != null) {
                                     log.error("[{}] Request {}: Error while find coordinator.",
                                             ctx.channel(), findCoordinator.getHeader(), throwable);
 
@@ -994,10 +994,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                            ctx.channel(), node.leaderId, request.data().key(), partition);
+                                            ctx.channel(), result.node, request.data().key(), partition);
                                 }
-
-                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node));
+                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
                             });
                 });
     }
@@ -1726,7 +1725,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             JoinGroupResponse response = KafkaResponseUtils.newJoinGroup(
                 joinGroupResult.getError(),
                 joinGroupResult.getGenerationId(),
-                joinGroupResult.getSubProtocol(),
+                joinGroupResult.getProtocolName(),
+                joinGroupResult.getProtocolType(),
                 joinGroupResult.getMemberId(),
                 joinGroupResult.getLeaderId(),
                 members
@@ -2633,12 +2633,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.close();
     }
 
+    public CompletableFuture<PartitionMetadata> lookup(TopicName topic) {
+        return findBroker(topic).thenApply(KafkaResponseUtils.BrokerLookupResult::toPartitionMetadata);
+    }
+
     // The returned future never completes exceptionally
-    public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
+    public CompletableFuture<KafkaResponseUtils.BrokerLookupResult> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        final CompletableFuture<PartitionMetadata> future = new CompletableFuture<>();
+        final CompletableFuture<KafkaResponseUtils.BrokerLookupResult> future = new CompletableFuture<>();
         kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
                 .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
@@ -2664,7 +2668,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             address.getPort());
     }
 
-    static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
+    static KafkaResponseUtils.BrokerLookupResult newPartitionMetadata(TopicName topicName, Node node) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
@@ -2675,7 +2679,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return KafkaResponseUtils.newMetadataPartition(topicPartition, node);
     }
 
-    static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
+    static KafkaResponseUtils.BrokerLookupResult newFailedPartitionMetadata(TopicName topicName) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
