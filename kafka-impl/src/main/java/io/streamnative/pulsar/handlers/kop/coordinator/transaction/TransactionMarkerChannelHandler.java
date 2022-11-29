@@ -17,6 +17,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -74,6 +75,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     private void enqueueRequest(ChannelHandlerContext channel, PendingRequest pendingRequest) {
         final long correlationId = pendingRequest.getCorrelationId();
         pendingRequestMap.put(correlationId, pendingRequest);
+        log.info("enqueueRequest correlationId {}", correlationId);
         channel.writeAndFlush(Unpooled.wrappedBuffer(pendingRequest.serialize())).addListener(writeFuture -> {
             if (!writeFuture.isSuccess()) {
                 pendingRequest.completeExceptionally(writeFuture.cause());
@@ -124,17 +126,22 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
         ByteBuffer nio = ((ByteBuf) o).nioBuffer();
-        ResponseHeader responseHeader = ResponseHeader.parse(nio, (short) 0);
-        PendingRequest pendingRequest = pendingRequestMap.remove(responseHeader.correlationId());
+        if (nio.remaining() < 4) {
+            log.error("Short read from channel {}", channelHandlerContext.channel());
+            channelHandlerContext.close();
+            return;
+        }
+        int correlationId = nio.getInt(0);
+        PendingRequest pendingRequest = pendingRequestMap.remove(correlationId);
         if (pendingRequest != null) {
             pendingRequest.complete(responseContext.set(
                     channelHandlerContext.channel().remoteAddress(),
                     pendingRequest.getApiVersion(),
-                    responseHeader.correlationId(),
+                    correlationId,
                     pendingRequest.parseResponse(nio)
             ));
         } else {
-            log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
+            log.error("Miss the inFlightRequest with correlationId {}.", correlationId);
         }
     }
 

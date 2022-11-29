@@ -17,7 +17,7 @@ public class CorrelationIdGenerator {
 
     private static final int MAX_RESERVED_CORRELATION_ID = Integer.MAX_VALUE;
     private static final int MIN_RESERVED_CORRELATION_ID = MAX_RESERVED_CORRELATION_ID - 7;
-    private int correlationId = 0;
+    private int correlationId = 999;
 
     /**
      * See <a href="https://github.com/apache/kafka/pull/8471" /> for the reserved correlation id design.
