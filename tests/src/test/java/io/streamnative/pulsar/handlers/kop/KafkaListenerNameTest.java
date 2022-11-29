@@ -94,7 +94,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
                 final String expectedAddress = bindPortToAdvertisedAddress.get(inetSocketAddress.getPort());
 
-                final KafkaHeaderAndRequest metadataRequest = KafkaApisTest.buildRequest(
+                final KafkaHeaderAndRequest metadataRequest = KafkaCommonTestUtils.buildRequest(
                         new MetadataRequest.Builder(Collections.singletonList(topic), true),
                         inetSocketAddress);
                 final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();

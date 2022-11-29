@@ -143,13 +143,17 @@ public class KafkaResponseUtils {
                 .map(TopicPartition::topic)
                 .distinct()
                 .forEach((String topic) -> {
-                    DeleteRecordsResponseData.DeleteRecordsTopicResult deleteRecordsTopicResult = new DeleteRecordsResponseData.DeleteRecordsTopicResult();
+                    DeleteRecordsResponseData.DeleteRecordsTopicResult deleteRecordsTopicResult
+                            = new DeleteRecordsResponseData.DeleteRecordsTopicResult();
                     deleteRecordsTopicResult.setName(topic);
-                    DeleteRecordsResponseData.DeleteRecordsPartitionResultCollection partitionResults = deleteRecordsTopicResult.partitions();
+                    data.topics().add(deleteRecordsTopicResult);
+                    DeleteRecordsResponseData.DeleteRecordsPartitionResultCollection partitionResults
+                            = deleteRecordsTopicResult.partitions();
                     responseMap.entrySet().stream().filter(
                             entry -> entry.getKey().topic().equals(topic)
                     ).forEach(partitions -> {
-                        DeleteRecordsResponseData.DeleteRecordsPartitionResult result = new DeleteRecordsResponseData.DeleteRecordsPartitionResult()
+                        DeleteRecordsResponseData.DeleteRecordsPartitionResult result
+                                = new DeleteRecordsResponseData.DeleteRecordsPartitionResult()
                                 .setPartitionIndex(partitions.getKey().partition())
                                 .setErrorCode(partitions.getValue().code());
                         partitionResults.add(result);

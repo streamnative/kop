@@ -2018,6 +2018,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 .setConfigs(result.entries().stream().map(c -> {
                                     return new DescribeConfigsResponseData.DescribeConfigsResourceResult()
                                             .setName(c.name())
+                                            .setConfigSource(c.source().id())
+                                            .setReadOnly(c.isReadOnly())
+                                            .setConfigType(c.type().id())
                                             .setValue(c.value())
                                             .setDocumentation("");
                                 }).collect(Collectors.toList())));

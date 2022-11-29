@@ -94,17 +94,16 @@ import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
-import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -188,7 +187,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             correlationId);
 
         // 1. serialize request into ByteBuf
-        ByteBuffer serializedRequest = apiVersionsRequest.serialize();
+        ByteBuffer serializedRequest = KopResponseUtils.serializeRequest(header, apiVersionsRequest);
         int size = serializedRequest.remaining();
         ByteBuf inputBuf = Unpooled.buffer(size);
         inputBuf.writeBytes(serializedRequest);
@@ -1020,10 +1019,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
         } catch (ExecutionException e) {
+            log.error("Error is", e);
             assertTrue((e.getCause() instanceof InvalidRequestException));
+            String expected = "Kop server currently doesn't support manual assignment replica sets '"
+                    + newPartitions.assignments() + "' the number of partitions must be specified ";
             assertTrue(e.getMessage()
-                    .contains("Kop server currently doesn't support manual assignment replica sets '"
-                    + newPartitions.assignments() + "' the number of partitions must be specified "));
+                    .contains(expected), "Message '"+e.getMessage()+"' does not contain '"+expected+"'");
         }
 
     }
@@ -1261,25 +1262,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
         SocketAddress serviceAddress = InetSocketAddress.createUnresolved("localhost", 1111);
-        return buildRequest(builder, serviceAddress);
-    }
-
-    public static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
-                                                     SocketAddress serviceAddress) {
-        AbstractRequest request = builder.build();
-        builder.apiKey();
-
-        ByteBuffer serializedRequest = request
-                .serialize();
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
-        return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
 }

@@ -175,26 +175,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
-        return buildRequest(builder, serviceAddress);
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
-    static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
-                                              SocketAddress serviceAddress) {
-        AbstractRequest request = builder.build(builder.apiKey().latestVersion());
-        RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
-
-
-        ByteBuffer serializedRequest = KopResponseUtils.serializeRequest(mockHeader, request);
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
-        return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
-    }
 
     void checkInvalidPartition(CompletableFuture<AbstractResponse> future,
                                                               String topic,

@@ -338,7 +338,12 @@ public class AdminManager {
                     errorFuture.complete(ApiError.fromThrowable(
                             new InvalidRequestException(
                                     "Kop server currently doesn't support manual assignment replica sets '"
-                                            + newPartitions.assignments() + "' the number of partitions must be specified ")
+                                            + newPartitions
+                                            .assignments()
+                                            .stream()
+                                            .map(CreatePartitionsRequestData.CreatePartitionsAssignment::brokerIds)
+                                            .map(String::valueOf).collect(Collectors.joining(", ", "[", "]"))
+                                            + "' the number of partitions must be specified ")
                     ));
 
                     if (numTopics.decrementAndGet() == 0) {

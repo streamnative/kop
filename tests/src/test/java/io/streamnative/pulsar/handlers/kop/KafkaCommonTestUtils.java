@@ -13,16 +13,25 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
+import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.KopResponseUtils;
+import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonTestUtils {
@@ -96,5 +105,24 @@ public class KafkaCommonTestUtils {
                 .findFirst()
                 .get();
         return listOffsetsPartitionResponse;
+    }
+
+
+    public static KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                                                  SocketAddress serviceAddress) {
+        AbstractRequest request = builder.build(builder.apiKey().latestVersion());
+        RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
+
+
+        ByteBuffer serializedRequest = KopResponseUtils.serializeRequest(mockHeader, request);
+
+        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
+
+        RequestHeader header = RequestHeader.parse(serializedRequest);
+
+        ApiKeys apiKey = header.apiKey();
+        short apiVersion = header.apiVersion();
+        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
+        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 }
