@@ -1948,7 +1948,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AlterConfigsRequest request = (AlterConfigsRequest) describeConfigs.getRequest();
 
         if (request.configs().isEmpty()) {
-            AlterConfigsResponseData data = new AlterConfigsResponseData();
             resultFuture.complete(new AlterConfigsResponse(new AlterConfigsResponseData()));
             return;
         }

@@ -141,8 +141,8 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
             final Consumer<String, String> consumer = kafkaClientFactories.get(version)
                     .createConsumer(consumerConfiguration(version));
             consumer.subscribe(topic);
-            final List<ConsumerRecord<String, String>> records = consumer.receiveUntil(values.size(), 6000);
-            Assert.assertEquals(records.stream().map(ConsumerRecord::getValue).collect(Collectors.toList()), values);
+            final List<ConsumerRecord<String, String>> records = consumer.receiveUntil(values.size(), 20000);
+            Assert.assertEquals(records.stream().map(ConsumerRecord::getValue).collect(Collectors.toList()), values, "error with client " + version);
             if (conf.getEntryFormat().equals("pulsar")) {
                 // NOTE: PulsarEntryFormatter will encode an empty String as key if key doesn't exist
                 Assert.assertEquals(records.stream()
