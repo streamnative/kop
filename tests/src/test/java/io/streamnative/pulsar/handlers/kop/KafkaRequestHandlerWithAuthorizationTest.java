@@ -385,7 +385,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
                 getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), 0L);
         assertEquals(listOffsetsPartitionResponse.timestamp(), 0L);
     }
@@ -413,7 +413,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
                 getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
     }
 
 
@@ -558,12 +558,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 .filter(t->t.name().equals(topicPartition2.topic())).findFirst().get()
                 .partitions().stream()
                 .filter(p->p.partitionIndex() == topicPartition2.partition())
-                .findFirst().get(), Errors.TOPIC_AUTHORIZATION_FAILED);
+                .findFirst().get().errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
         assertEquals(offsetCommitResponse.data().topics().stream()
                 .filter(t->t.name().equals(topicPartition3.topic())).findFirst().get()
                 .partitions().stream()
                 .filter(p->p.partitionIndex() == topicPartition3.partition())
-                .findFirst().get(), Errors.TOPIC_AUTHORIZATION_FAILED);
+                .findFirst().get().errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
 
     }
 

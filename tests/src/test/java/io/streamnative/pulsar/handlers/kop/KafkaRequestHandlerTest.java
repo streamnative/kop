@@ -766,7 +766,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final ListOffsetsResponse response = (ListOffsetsResponse) responseFuture.get();
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
                 getListOffsetsPartitionResponse(topicPartition, response.data());
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.UNKNOWN_TOPIC_OR_PARTITION);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.UNKNOWN_TOPIC_OR_PARTITION.code());
     }
 
     @Test(timeOut = 10000, dataProvider = "metadataVersions")
