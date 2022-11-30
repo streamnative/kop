@@ -67,6 +67,7 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     messagingProtocols=kafka
     protocolHandlerDirectory=./protocols
     allowAutoTopicCreationType=partitioned
+    narExtractionDirectory=/path/to/nar
     ```
 
     | Property | Default value | Proposed value |
@@ -74,8 +75,11 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     | `messagingProtocols` |  | kafka |
     | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
     | `allowAutoTopicCreationType`| non-partitioned | partitioned |
+    | `narExtractionDirectory` | `/tmp/pulsar-nar` | Location of unpacked KoP NAR file |
 
     By default, `allowAutoTopicCreationType` is set to `non-partitioned`. Since topics are partitioned by default in Kafka, it's better to avoid creating non-partitioned topics for Kafka clients unless Kafka clients need to interact with existing non-partitioned topics.
+
+    It's also recommended to configure `narExtractionDirectory` to another path because the KoP NAR file will be unpacked under this directory. However, the `/tmp/` directory could be automatically deleted by the system and `ClassNotFoundException` or `NoClassDefFoundError` could be raised.
 
 2. Set Kafka listeners.
 
