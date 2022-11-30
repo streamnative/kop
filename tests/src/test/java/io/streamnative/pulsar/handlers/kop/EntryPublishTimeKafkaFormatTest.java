@@ -16,10 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
-
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
@@ -30,13 +26,11 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
-import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
-import org.apache.kafka.common.requests.RequestHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
