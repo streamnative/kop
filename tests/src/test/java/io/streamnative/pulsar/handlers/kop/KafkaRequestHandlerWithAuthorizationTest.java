@@ -803,21 +803,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                         && r.errorCode() == Errors.NONE.code()));
 
     }
-
-    KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
-        AbstractRequest request = builder.build();
-        builder.apiKey();
-
-        ByteBuffer serializedRequest = request.serialize();
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+    private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
     private void handleGroupImmigration() {

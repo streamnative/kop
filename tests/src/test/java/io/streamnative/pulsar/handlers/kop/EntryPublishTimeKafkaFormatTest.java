@@ -109,7 +109,7 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
                 getListOffsetsPartitionResponse(tp, listOffsetResponse);
-        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
         assertEquals(listOffsetsPartitionResponse.offset(), 0);
     }
 
@@ -129,22 +129,8 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
                 .get();
         return listOffsetsPartitionResponse;
     }
-
-    KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
-        AbstractRequest request = builder.build();
-        builder.apiKey();
-
-        ByteBuffer serializedRequest = request
-                .serialize();
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+    private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
 }
