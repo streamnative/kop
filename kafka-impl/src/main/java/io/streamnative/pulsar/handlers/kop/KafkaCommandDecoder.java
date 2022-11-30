@@ -144,8 +144,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         ByteBuffer nio = msg.nioBuffer();
         RequestHeader header = RequestHeader.parse(nio);
         if (isUnsupportedApiVersionsRequest(header)) {
-            ApiVersionsRequestData data = new ApiVersionsRequestData();
-            ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest(data, header.apiVersion());
+            ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest.Builder(header.apiVersion()).build();
             return new KafkaHeaderAndRequest(header, apiVersionsRequest, msg, remoteAddress);
         } else {
             ApiKeys apiKey = header.apiKey();
