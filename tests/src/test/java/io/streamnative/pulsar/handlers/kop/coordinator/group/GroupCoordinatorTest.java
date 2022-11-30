@@ -1085,7 +1085,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(Errors.NONE, joinGroupError);
 
         // and leaves
-        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, Collections.singleton(assignedMemberId)).get();
+        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId,
+                Collections.singleton(assignedMemberId)).get();
         assertEquals(Errors.NONE, leaveGroupResult);
 
         TopicPartition tp = new TopicPartition("topic", 0);
