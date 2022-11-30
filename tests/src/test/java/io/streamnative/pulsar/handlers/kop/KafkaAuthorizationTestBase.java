@@ -193,7 +193,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
         }
         KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
-                TENANT + "/" + NAMESPACE, "token:" + userToken, "testAuthorizationSuccess");
+                TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
 
         int i = 0;
@@ -237,7 +237,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
         }
         KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
-                TENANT + "/" + NAMESPACE, "token:" + adminToken, "testAuthorizationSuccessByAdmin");
+                TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
 
         int i = 0;
@@ -330,7 +330,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
         KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
-                TENANT + "/" + NAMESPACE, "token:" + userToken, "testListTopic");
+                TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
         assertFalse(result.containsKey(newTopic));
@@ -377,7 +377,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
         KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
-            TENANT + "/" + NAMESPACE, "token:" + userToken, "testCannotAccessAnotherTenant");
+            TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         // ensure that topic does not exist
         assertFalse(result.containsKey(newTopic));
@@ -409,7 +409,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // authentication pass because username (tenant) is for an existing tenant,
             // and the user cannot access that tenant
             KConsumer kConsumer2 = new KConsumer(newTenantTopic, "localhost", getKafkaBrokerPort(), false,
-                TENANT + "/" + NAMESPACE, "token:" + userToken, "testCannotAccessAnotherTenant");
+                TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
 
             result = kConsumer2.getConsumer().listTopics(Duration.ofSeconds(1));
             // ensure that the consumer cannot see the new topic
@@ -487,7 +487,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // Ensure can consume message.
             @Cleanup
             KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
-                    newTenant + "/" + NAMESPACE, "token:" + adminToken, "testProduceFailed");
+                    newTenant + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
 
             int i = 0;
@@ -547,7 +547,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // Consume should be failed.
             @Cleanup
             KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
-                    newTenant + "/" + NAMESPACE, "token:" + userToken, "testConsumeFailed");
+                    newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
             try {
                 kConsumer.getConsumer().poll(Duration.ofSeconds(10));
