@@ -1801,11 +1801,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(leaveGroup.getRequest() instanceof LeaveGroupRequest);
         LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
         LeaveGroupRequestData data = request.data();
+        Set<String> members = new HashSet<>();
+        if (!data.memberId().isEmpty()) {
+            // old clients
+            members.add(data.memberId());
+        }
+        data.members().forEach(memberIdentity -> {
+            members.add(memberIdentity.memberId());
+        });
 
         // let the coordinator to handle heartbeat
         getGroupCoordinator().handleLeaveGroup(
                 data.groupId(),
-                data.memberId()
+                members
         ).thenAccept(errors -> resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors)));
     }
 

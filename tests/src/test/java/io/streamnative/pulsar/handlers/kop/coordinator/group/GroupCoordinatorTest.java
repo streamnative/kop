@@ -1085,7 +1085,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(Errors.NONE, joinGroupError);
 
         // and leaves
-        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, assignedMemberId).get();
+        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, Collections.singleton(assignedMemberId)).get();
         assertEquals(Errors.NONE, leaveGroupResult);
 
         TopicPartition tp = new TopicPartition("topic", 0);
@@ -1644,7 +1644,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test
     public void testLeaveGroupWrongCoordinator() throws Exception {
         Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(
-            otherGroupId, JoinGroupRequest.UNKNOWN_MEMBER_ID
+            otherGroupId,  Collections.singleton(JoinGroupRequest.UNKNOWN_MEMBER_ID)
         ).get();
         assertEquals(Errors.NOT_COORDINATOR, leaveGroupResult);
     }
@@ -1652,7 +1652,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     @Test
     public void testLeaveGroupUnknownGroup() throws Exception {
         Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(
-            groupId, memberId
+            groupId,  Collections.singleton(memberId)
         ).get();
         assertEquals(Errors.UNKNOWN_MEMBER_ID, leaveGroupResult);
     }
@@ -1667,7 +1667,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         );
         assertEquals(Errors.NONE, joinGroupResult.getError());
 
-        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, otherMemberId).get();
+        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId,
+                Collections.singleton(otherMemberId)).get();
         assertEquals(Errors.UNKNOWN_MEMBER_ID, leaveGroupResult);
     }
 
@@ -1681,7 +1682,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         String assignedMemberId = joinGroupResult.getMemberId();
         assertEquals(Errors.NONE, joinGroupResult.getError());
 
-        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, assignedMemberId).get();
+        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId,
+                Collections.singleton(assignedMemberId)).get();
         assertEquals(Errors.NONE, leaveGroupResult);
     }
 
@@ -1846,7 +1848,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             groupId, memberId, protocolType, newProtocols()
         );
 
-        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, joinGroupResult.getMemberId()).get();
+        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId,
+                Collections.singleton(joinGroupResult.getMemberId())).get();
         assertEquals(Errors.NONE, leaveGroupResult);
 
         Map<String, Errors> deleteResult = groupCoordinator.handleDeleteGroups(Sets.newHashSet(groupId));
@@ -1888,7 +1891,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(GroupState.Stable.toString(), describeGroupResult.getValue().state());
         assertEquals(assignedMemberId, describeGroupResult.getValue().members().get(0).memberId());
 
-        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId, assignedMemberId).get();
+        Errors leaveGroupResult = groupCoordinator.handleLeaveGroup(groupId,
+                Collections.singleton(assignedMemberId)).get();
         assertEquals(Errors.NONE, leaveGroupResult);
 
         Map<String, Errors> deleteResult = groupCoordinator.handleDeleteGroups(Sets.newHashSet(groupId));

@@ -558,20 +558,24 @@ public class GroupCoordinator {
 
     public CompletableFuture<Errors> handleLeaveGroup(
         String groupId,
-        String memberId
+        Set<String> members
     ) {
         return validateGroupStatus(groupId, ApiKeys.LEAVE_GROUP).map(CompletableFuture::completedFuture
         ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> group.inLock(() -> {
-            if (group.is(Dead) || !group.has(memberId)) {
+            if (group.is(Dead)) {
+                return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
+            } else if (!members.stream().allMatch((memberId) -> group.has(memberId))) {
                 return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
             } else {
-                MemberMetadata member = group.get(memberId);
-                removeHeartbeatForLeavingMember(member);
-                if (log.isDebugEnabled()) {
-                    log.debug("Member {} in group {} has left, removing it from the group",
-                        member.memberId(), group.groupId());
+                for (String memberId : members) {
+                    MemberMetadata member = group.get(memberId);
+                    removeHeartbeatForLeavingMember(member);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Member {} in group {} has left, removing it from the group",
+                                member.memberId(), group.groupId());
+                    }
+                    removeMemberAndUpdateGroup(group, member);
                 }
-                removeMemberAndUpdateGroup(group, member);
                 return CompletableFuture.completedFuture(Errors.NONE);
             }
         })).orElseGet(() -> {
@@ -1119,13 +1123,14 @@ public class GroupCoordinator {
             delayedRebalance = new DelayedJoin(this, group, group.rebalanceTimeoutMs());
         }
 
-        group.transitionTo(PreparingRebalance);
-
-        log.info("Preparing to rebalance group {} with old generation {} ({}-{})",
+        log.info("Preparing to rebalance group {} ({}) with old generation {} ({}-{})",
             group.groupId(),
+            group.currentState().name(),
             group.generationId(),
             Topic.GROUP_METADATA_TOPIC_NAME,
             groupManager.partitionFor(group.groupId()));
+
+        group.transitionTo(PreparingRebalance);
 
         GroupKey groupKey = new GroupKey(group.groupId());
         joinPurgatory.tryCompleteElseWatch(delayedRebalance, Lists.newArrayList(groupKey));
