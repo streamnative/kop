@@ -63,7 +63,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         // Clean up in the test method
     }
 
-    @Test
+    @Test(timeOut = 30000)
     public void testMetadataRequestForMultiListeners() throws Exception {
         final Map<Integer, String> bindPortToAdvertisedAddress = new HashMap<>();
         final int anotherKafkaPort = PortManager.nextFreePort();
@@ -123,7 +123,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                             expectedAddress);
                 }
             } catch (Exception e) {
-                log.error("Error", e);
+                log.error("Error", e + "");
                 Assert.fail(e.getMessage());
             }
         });
