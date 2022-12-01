@@ -56,6 +56,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.message.CreatePartitionsResponseData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -207,9 +208,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createNonPartitionedTopic("persistent://" + TENANT + "/" + NAMESPACE + "/" + topic);
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest.Builder(Collections.singletonList(topic), false, version)
-                        .build();
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.singletonList(new MetadataRequestData.MetadataRequestTopic()
+                        .setName(topic)))
+                .setAllowAutoTopicCreation(false);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
@@ -229,8 +233,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 .when(spyHandler)
                 .authorize(eq(AclOperation.DESCRIBE), eq(Resource.of(ResourceType.TOPIC, topic)));
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest.Builder(Collections.singletonList(topic), true, version).build();
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.singletonList(new MetadataRequestData.MetadataRequestTopic()
+                        .setName(topic)))
+                .setAllowAutoTopicCreation(true);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(

@@ -91,6 +91,7 @@ import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -775,8 +776,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         admin.topics().createNonPartitionedTopic(topic);
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request = new MetadataRequest
-                .Builder(Collections.singletonList(topic), false, version).build();
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.singletonList(new MetadataRequestData.MetadataRequestTopic()
+                        .setName(topic)))
+                .setAllowAutoTopicCreation(false);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
