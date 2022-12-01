@@ -262,8 +262,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         }
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, (short) 1, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest.Builder(Collections.emptyList(), true, (short) 0).build();
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.emptyList())
+                .setAllowAutoTopicCreation(true);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, (short) 0);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
