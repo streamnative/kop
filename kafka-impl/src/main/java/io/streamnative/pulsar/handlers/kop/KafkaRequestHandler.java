@@ -2010,7 +2010,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 )),
                         namespacePrefix
                 ).thenApply(configResourceConfigMap -> {
-                ).thenApply(configResourceConfigMap -> {
                     DescribeConfigsResponseData responseData = new DescribeConfigsResponseData();
                     configResourceConfigMap.putAll(failedConfigResourceMap);
                     configResourceConfigMap.forEach((ConfigResource resource,
