@@ -1719,9 +1719,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             protocols
         ).thenAccept(joinGroupResult -> {
 
-            Map<String, byte[]> members = new HashMap<>();
-            joinGroupResult.getMembers().forEach((memberId, protocol) ->
-                members.put(memberId, protocol));
+            Map<String, byte[]> members = new HashMap<>(joinGroupResult.getMembers());
 
             JoinGroupResponse response = KafkaResponseUtils.newJoinGroup(
                 joinGroupResult.getError(),
@@ -1984,8 +1982,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeConfigsRequestData data = request.data();
 
         if (data.resources().isEmpty()) {
-            DescribeConfigsResponseData responseData = new DescribeConfigsResponseData();
-            resultFuture.complete(new DescribeConfigsResponse(responseData));
+            resultFuture.complete(new DescribeConfigsResponse(new DescribeConfigsResponseData()));
             return;
         }
 
@@ -2101,10 +2098,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         transactionCoordinator.handleInitProducerId(
                 data.transactionalId(), data.transactionTimeoutMs(), Optional.empty(),
                 (resp) -> {
-                    InitProducerIdResponseData responseData = new InitProducerIdResponseData();
-                    responseData.setErrorCode(resp.getError().code());
-                    responseData.setProducerId(resp.getProducerId());
-                    responseData.setProducerEpoch(resp.getProducerEpoch());
+                    InitProducerIdResponseData responseData = new InitProducerIdResponseData()
+                            .setErrorCode(resp.getError().code())
+                            .setProducerId(resp.getProducerId())
+                            .setProducerEpoch(resp.getProducerEpoch());
                     response.complete(new InitProducerIdResponse(responseData));
                 });
     }

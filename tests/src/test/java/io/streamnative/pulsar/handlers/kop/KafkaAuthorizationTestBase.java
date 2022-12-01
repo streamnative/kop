@@ -679,7 +679,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 adminClient.describeConfigs(Collections.singleton(configResource));
         try {
             describeConfigsResult.all().get();
-            fail();
         } catch (Exception ex) {
             log.error("Error", ex + "");
             assertTrue(ex.getMessage().contains("TopicAuthorizationException"));

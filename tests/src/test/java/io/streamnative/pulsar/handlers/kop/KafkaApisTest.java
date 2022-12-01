@@ -209,27 +209,27 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                         .findFirst()
                         .get()
                         .errorCode(),
-            Errors.UNKNOWN_TOPIC_OR_PARTITION);
+            Errors.UNKNOWN_TOPIC_OR_PARTITION.code());
 
         // invalid partition id 1.
         CompletableFuture<AbstractResponse> invalidResponse2 = new CompletableFuture<>();
         checkInvalidPartition(invalidResponse2, topicName, 1);
         TopicPartition topicPartition2 = new TopicPartition(topicName, 1);
         AbstractResponse response2 = invalidResponse2.get();
-                assertEquals(((OffsetCommitResponse) response2)
-                                .data()
-                                .topics()
-                                .stream()
-                                .filter(t->t.name().equals(topicName))
-                                .findFirst()
-                                .get()
-                                .partitions()
-                                .stream()
-                                .filter(p -> p.partitionIndex() == topicPartition2.partition())
-                                .findFirst()
-                                .get()
-                                .errorCode(),
-            Errors.UNKNOWN_TOPIC_OR_PARTITION);
+        assertEquals(((OffsetCommitResponse) response2)
+                        .data()
+                        .topics()
+                        .stream()
+                        .filter(t->t.name().equals(topicName))
+                        .findFirst()
+                        .get()
+                        .partitions()
+                        .stream()
+                        .filter(p -> p.partitionIndex() == topicPartition2.partition())
+                        .findFirst()
+                        .get()
+                        .errorCode(),
+            Errors.UNKNOWN_TOPIC_OR_PARTITION.code());
     }
 
     // TODO: Add transaction support https://github.com/streamnative/kop/issues/39
@@ -905,7 +905,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
                 getListOffsetsPartitionResponse(tp, listOffsetsResponse.data());
         assertEquals(listOffsetsPartitionResponse.errorCode(),
-            Errors.UNKNOWN_TOPIC_OR_PARTITION);
+            Errors.UNKNOWN_TOPIC_OR_PARTITION.code());
     }
 
     @Test(timeOut = 20000)

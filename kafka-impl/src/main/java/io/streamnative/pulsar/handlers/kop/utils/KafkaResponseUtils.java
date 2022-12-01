@@ -82,14 +82,14 @@ public class KafkaResponseUtils {
     }
 
     public static ApiVersionsResponse newApiVersions(Errors errors) {
-        ApiVersionsResponseData data = new ApiVersionsResponseData();
-        data.setErrorCode(errors.code());
+        ApiVersionsResponseData data = new ApiVersionsResponseData()
+                .setErrorCode(errors.code());
         return new ApiVersionsResponse(data);
     }
 
     public static CreatePartitionsResponse newCreatePartitions(Map<String, ApiError> topicToErrors) {
-        CreatePartitionsResponseData data = new CreatePartitionsResponseData();
-        data.setThrottleTimeMs(AbstractResponse.DEFAULT_THROTTLE_TIME);
+        CreatePartitionsResponseData data = new CreatePartitionsResponseData()
+                .setThrottleTimeMs(AbstractResponse.DEFAULT_THROTTLE_TIME);
         topicToErrors.forEach((topic, errors) -> {
             data.results().add(new CreatePartitionsResponseData.CreatePartitionsTopicResult()
                     .setName(topic)
@@ -105,7 +105,7 @@ public class KafkaResponseUtils {
             data.topics().add(new CreateTopicsResponseData.CreatableTopicResult()
                             .setName(topic)
                             .setErrorMessage(errors.messageWithFallback())
-                    .setErrorCode(errors.error().code()));
+                            .setErrorCode(errors.error().code()));
         });
         return new CreateTopicsResponse(data);
     }

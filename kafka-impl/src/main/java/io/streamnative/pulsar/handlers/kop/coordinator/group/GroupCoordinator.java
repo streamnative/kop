@@ -564,7 +564,7 @@ public class GroupCoordinator {
         ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> group.inLock(() -> {
             if (group.is(Dead)) {
                 return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
-            } else if (!members.stream().allMatch((memberId) -> group.has(memberId))) {
+            } else if (!members.stream().allMatch(group::has)) {
                 return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
             } else {
                 for (String memberId : members) {
