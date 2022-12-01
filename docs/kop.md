@@ -79,7 +79,7 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
 
     By default, `allowAutoTopicCreationType` is set to `non-partitioned`. Since topics are partitioned by default in Kafka, it's better to avoid creating non-partitioned topics for Kafka clients unless Kafka clients need to interact with existing non-partitioned topics.
 
-    It's also recommended to configure `narExtractionDirectory` to another path because the KoP NAR file will be unpacked under this directory. However, the default `/tmp/pulsar-nar` directory is under the `/tmp` directory so some classes could be automatically deleted by the system. In this case, `ClassNotFoundException` or `NoClassDefFoundError` could be raised.
+    It is recommended to configure the `narExtractionDirectory` option to another path because the KoP NAR file will be unpacked under this directory. However, the default `/tmp/pulsar-nar` directory is under the `/tmp` directory so some classes could be automatically deleted by the system. In this case, a`ClassNotFoundException` or `NoClassDefFoundError` error could be raised.
 
 2. Set Kafka listeners.
 
