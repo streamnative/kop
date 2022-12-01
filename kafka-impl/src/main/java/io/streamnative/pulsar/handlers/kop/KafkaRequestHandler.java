@@ -1853,10 +1853,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleSaslAuthenticate(KafkaHeaderAndRequest saslAuthenticate,
                                           CompletableFuture<AbstractResponse> resultFuture) {
-        SaslAuthenticateResponseData data = new SaslAuthenticateResponseData();
-        data.setErrorCode(Errors.ILLEGAL_SASL_STATE.code());
-        data.setErrorMessage("SaslAuthenticate request received after successful authentication");
-        resultFuture.complete(new SaslAuthenticateResponse(data));
+        resultFuture.complete(new SaslAuthenticateResponse(
+                new SaslAuthenticateResponseData()
+                        .setErrorCode(Errors.ILLEGAL_SASL_STATE.code())
+                        .setErrorMessage("SaslAuthenticate request received after successful authentication")));
     }
 
     @Override
@@ -2000,20 +2000,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // When complete one authorization or failed, will do the action first.
             action.run();
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
-                Map<ConfigResource, Optional<Set<String>>> resourceToConfigNames =
-                        new HashMap<>();
-                authorizedResources.forEach(configResource -> {
-                    Optional<Set<String>> configNames = data
-                            .resources()
-                            .stream()
-                            .filter(r->r.resourceName().equals(configResource.name())
-                                    && r.resourceType() == configResource.type().id())
-                            .findAny()
-                            .map(__ -> new HashSet<>());
-                    resourceToConfigNames.put(configResource, configNames);
-                });
-
-                adminManager.describeConfigsAsync(resourceToConfigNames, namespacePrefix
+                adminManager.describeConfigsAsync(authorizedResources.stream()
+                                .collect(Collectors.toMap(
+                                        configResource -> configResource,
+                                        configResource -> data.resources().stream()
+                                                .filter(r -> r.resourceName().equals(configResource.name())
+                                                        && r.resourceType() == configResource.type().id())
+                                                .findAny()
+                                                .map(__ -> new HashSet<>())
+                                )),
+                        namespacePrefix
+                ).thenApply(configResourceConfigMap -> {
                 ).thenApply(configResourceConfigMap -> {
                     DescribeConfigsResponseData responseData = new DescribeConfigsResponseData();
                     configResourceConfigMap.putAll(failedConfigResourceMap);
@@ -2331,11 +2328,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 data.producerId(),
                 data.producerEpoch(),
                 data.committed() ? TransactionResult.COMMIT : TransactionResult.ABORT,
-                errors -> {
-                    EndTxnResponseData responseData = new EndTxnResponseData()
-                            .setErrorCode(errors.code());
-                    response.complete(new EndTxnResponse(responseData));
-                });
+                errors -> response.complete(new EndTxnResponse(new EndTxnResponseData().setErrorCode(errors.code()))));
     }
     @Override
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
@@ -2514,7 +2507,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 partitionOffsets.put(topicPartition, partition.offset());
             });
         });
-        if (partitionOffsets == null || partitionOffsets.isEmpty()) {
+        if (partitionOffsets.isEmpty()) {
             resultFuture.complete(KafkaResponseUtils.newDeleteRecords(Maps.newHashMap()));
             return;
         }
