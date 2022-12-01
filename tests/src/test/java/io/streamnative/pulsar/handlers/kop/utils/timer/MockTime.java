@@ -25,10 +25,6 @@ import org.apache.kafka.common.utils.Time;
  */
 public class MockTime implements Time {
 
-    public interface Listener {
-        void onTimeUpdated();
-    }
-
     /**
      * Listeners which are waiting for time changes.
      */
@@ -40,6 +36,10 @@ public class MockTime implements Time {
     // using this class to detect bugs where this is incorrectly assumed to be true
     private final AtomicLong timeMs;
     private final AtomicLong highResTimeNs;
+
+    public interface Listener {
+        void onTimeUpdated();
+    }
 
     public MockTime() {
         this(0);

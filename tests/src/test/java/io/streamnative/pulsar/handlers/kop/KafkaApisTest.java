@@ -283,7 +283,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
-            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
+            .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();

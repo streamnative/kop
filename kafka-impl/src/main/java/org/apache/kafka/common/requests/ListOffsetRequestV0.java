@@ -365,7 +365,7 @@ public class ListOffsetRequestV0 extends AbstractRequest {
             return new ListOffsetRequestV0(replicaId, targetTimes,
                     isolationLevel, requestVersion, encodedRequest.data());
         } catch (Throwable t) {
-            throw new RuntimeException(t);
+            throw new IllegalStateException(t);
         }
     }
     public static Schema[] schemaVersions() {
