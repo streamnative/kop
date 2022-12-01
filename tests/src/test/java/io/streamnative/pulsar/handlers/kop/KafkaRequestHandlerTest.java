@@ -229,7 +229,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // 2. verify responseToByteBuf works well.
         ByteBuffer byteBuffer = serializedResponse.nioBuffer();
-        ResponseHeader responseHeader = ResponseHeader.parse(byteBuffer, requestHeader.headerVersion());
+        ResponseHeader responseHeader = ResponseHeader.parse(byteBuffer, kopResponse.getHeader().headerVersion());
         assertEquals(responseHeader.correlationId(), correlationId);
 
         ApiVersionsResponse parsedResponse = ApiVersionsResponse.parse(
