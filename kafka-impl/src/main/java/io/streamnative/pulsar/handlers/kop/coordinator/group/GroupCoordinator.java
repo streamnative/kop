@@ -563,7 +563,7 @@ public class GroupCoordinator {
         return validateGroupStatus(groupId, ApiKeys.LEAVE_GROUP).map(CompletableFuture::completedFuture
         ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> group.inLock(() -> {
             if (group.is(Dead)) {
-                return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
+                return CompletableFuture.completedFuture(Errors.COORDINATOR_NOT_AVAILABLE);
             } else if (!members.stream().allMatch(group::has)) {
                 return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
             } else {
