@@ -448,8 +448,8 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         @Cleanup final KafkaConsumer<String, String> kafkaConsumer2 = newKafkaConsumer(topic, "the-group");
         kafkaReceives = receiveMessages(kafkaConsumer2, expectValues.size());
         assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues,
-                "Expected " + expectValues +
-                        " but received " + kafkaReceives.stream().sorted().collect(Collectors.toList()));
+                "Expected " + expectValues
+                        + " but received " + kafkaReceives.stream().sorted().collect(Collectors.toList()));
 
         pulsar.getAdminClient().topics().deletePartitionedTopic(topic);
     }
