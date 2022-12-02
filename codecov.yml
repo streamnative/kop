@@ -22,13 +22,5 @@ comment:
   require_base: no
   require_head: yes
 
-coverage:
-  status:
-    patch:
-      default:
-        target: auto
-        informational: true
-    project:
-      default:
-        target: auto
-        informational: true
+github_checks:
+  annotations: false
