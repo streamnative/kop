@@ -507,18 +507,18 @@ public class TransactionMarkerChannelManager {
         }
 
         for (TxnMarkerQueue txnMarkerQueue : markersQueuePerBroker.values()) {
-            txnIdAndMarkerEntries.clear();
-            txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntries));
-            if (!txnIdAndMarkerEntries.isEmpty()) {
+            List<TxnIdAndMarkerEntry> txnIdAndMarkerEntriesForMarker = new ArrayList<>();
+            txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntriesForMarker));
+            if (!txnIdAndMarkerEntriesForMarker.isEmpty()) {
                 getChannel(txnMarkerQueue.address).whenComplete((channelHandler, throwable) -> {
 
                     List<TxnMarkerEntry> sendEntries = new ArrayList<>();
-                    for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntries) {
+                    for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntriesForMarker) {
                         sendEntries.add(txnIdAndMarkerEntry.entry);
                     }
                     channelHandler.enqueueWriteTxnMarkers(sendEntries,
                             new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
-                                    txnIdAndMarkerEntries, namespacePrefixForUserTopics));
+                                    txnIdAndMarkerEntriesForMarker, namespacePrefixForUserTopics));
                 });
             }
         }
