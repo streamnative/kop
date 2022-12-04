@@ -26,7 +26,8 @@ public class JoinGroupResult {
     private final Map<String, byte[]> members;
     private final String memberId;
     private final int generationId;
-    private final String subProtocol;
+    private final String protocolName;
+    private final String protocolType;
     private final String leaderId;
     private final Errors error;
 

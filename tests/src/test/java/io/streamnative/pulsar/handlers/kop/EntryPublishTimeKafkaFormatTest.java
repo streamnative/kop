@@ -16,10 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
-
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
@@ -27,16 +23,14 @@ import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.IsolationLevel;
-import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetResponse;
-import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
@@ -97,7 +91,7 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         }
 
         // time before first message
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
                 .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, startTime));
 
@@ -106,27 +100,31 @@ public class EntryPublishTimeKafkaFormatTest extends EntryPublishTimeTest {
         kafkaRequestHandler.handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals((long) listOffsetResponse.responseData().get(tp).offset, 0);
+        ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(tp, listOffsetResponse);
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
+        assertEquals(listOffsetsPartitionResponse.offset(), 0);
     }
 
-    KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
-        AbstractRequest request = builder.build();
-        builder.apiKey();
-
-        ByteBuffer serializedRequest = request
-                .serialize(new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0));
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+    static ListOffsetsResponseData.ListOffsetsPartitionResponse getListOffsetsPartitionResponse(TopicPartition tp,
+                                                                            ListOffsetsResponse listOffsetResponse) {
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse = listOffsetResponse
+                .data()
+                .topics()
+                .stream()
+                .filter(t -> t.name().equals(tp.topic()))
+                .findFirst()
+                .get()
+                .partitions()
+                .stream()
+                .filter(p -> p.partitionIndex() == tp.partition())
+                .findFirst()
+                .get();
+        return listOffsetsPartitionResponse;
+    }
+    private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
 }

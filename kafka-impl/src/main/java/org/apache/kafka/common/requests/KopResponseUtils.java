@@ -14,10 +14,9 @@
 package org.apache.kafka.common.requests;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.protocol.types.Struct;
 
 /**
  * Provide util classes to access protected fields in kafka structures.
@@ -35,21 +34,12 @@ public class KopResponseUtils {
     public static ByteBuf serializeResponse(short version,
                                             ResponseHeader responseHeader,
                                             AbstractResponse response) {
-        return serialize(
-            responseHeader.toStruct(),
-            response.toStruct(version)
-        );
+        return Unpooled.wrappedBuffer(response.serializeWithHeader(responseHeader, version));
     }
 
-    public static ByteBuf serialize(Struct headerStruct, Struct bodyStruct) {
-        int size = headerStruct.sizeOf() + bodyStruct.sizeOf();
-        ByteBuf buf = PooledByteBufAllocator.DEFAULT.buffer(size, size);
-        buf.writerIndex(buf.readerIndex() + size);
-        ByteBuffer buffer = buf.nioBuffer();
-        headerStruct.writeTo(buffer);
-        bodyStruct.writeTo(buffer);
-        buffer.rewind();
-        return buf;
+    public static ByteBuffer serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
+        return RequestUtils.serialize(requestHeader.data(), requestHeader.headerVersion(),
+                request.data(), request.version());
     }
 
 }

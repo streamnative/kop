@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
-import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -46,9 +45,10 @@ import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.message.CreatePartitionsRequestData;
+import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
-import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
@@ -83,9 +83,10 @@ public class AdminManager {
         topicPurgatory.shutdown();
     }
 
-    public CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo,
-                                                                      int timeoutMs,
-                                                                      String namespacePrefix) {
+    public CompletableFuture<Map<String, ApiError>> createTopicsAsync(
+            Map<String, CreateTopicsRequestData.CreatableTopic> createInfo,
+            int timeoutMs,
+            String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -119,7 +120,7 @@ public class AdminManager {
                 }
                 return;
             }
-            int numPartitions = detail.numPartitions;
+            int numPartitions = detail.numPartitions();
             if (numPartitions == CreateTopicsRequest.NO_NUM_PARTITIONS) {
                 numPartitions = defaultNumPartitions;
             }
@@ -296,7 +297,7 @@ public class AdminManager {
     }
 
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(
-            Map<String, CreatePartitionsRequest.PartitionDetails> createInfo,
+            Map<String, CreatePartitionsRequestData.CreatePartitionsTopic> createInfo,
             int timeoutMs,
             String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
@@ -325,7 +326,7 @@ public class AdminManager {
             try {
                 KopTopic kopTopic = new KopTopic(topic, namespacePrefix);
 
-                int numPartitions = newPartitions.totalCount();
+                int numPartitions = newPartitions.count();
                 if (numPartitions < 0) {
                     errorFuture.complete(ApiError.fromThrowable(
                             new InvalidPartitionsException("The partition '" + numPartitions + "' is negative")));
@@ -333,12 +334,17 @@ public class AdminManager {
                     if (numTopics.decrementAndGet() == 0) {
                         complete.run();
                     }
-                } else if (newPartitions.newAssignments() != null
-                        && !newPartitions.newAssignments().isEmpty()) {
+                } else if (newPartitions.assignments() != null
+                        && !newPartitions.assignments().isEmpty()) {
                     errorFuture.complete(ApiError.fromThrowable(
                             new InvalidRequestException(
                                     "Kop server currently doesn't support manual assignment replica sets '"
-                                    + newPartitions.newAssignments() + "' the number of partitions must be specified ")
+                                            + newPartitions
+                                            .assignments()
+                                            .stream()
+                                            .map(CreatePartitionsRequestData.CreatePartitionsAssignment::brokerIds)
+                                            .map(String::valueOf).collect(Collectors.joining(", ", "[", "]"))
+                                            + "' the number of partitions must be specified ")
                     ));
 
                     if (numTopics.decrementAndGet() == 0) {
@@ -360,6 +366,7 @@ public class AdminManager {
                 }
             }
         });
+
 
         if (timeoutMs <= 0) {
             complete.run();

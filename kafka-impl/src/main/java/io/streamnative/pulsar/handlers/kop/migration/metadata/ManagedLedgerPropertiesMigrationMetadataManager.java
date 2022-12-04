@@ -39,8 +39,8 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.requests.ApiError;
-import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.serialization.ByteBufferDeserializer;
 import org.apache.kafka.common.serialization.ByteBufferSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -213,7 +213,9 @@ public class ManagedLedgerPropertiesMigrationMetadataManager implements Migratio
             int numPartitions = topicDescription.partitions().size();
             int replicationFactor = topicDescription.partitions().get(0).replicas().size();
             adminManager.createTopicsAsync(ImmutableMap.of(topic,
-                                    new CreateTopicsRequest.TopicDetails(numPartitions, (short) replicationFactor)),
+                                    new CreateTopicsRequestData.CreatableTopic()
+                                            .setNumPartitions(numPartitions)
+                                            .setReplicationFactor((short) replicationFactor)),
                             1000,
                             namespacePrefix)
                     .thenCompose(validResult -> CompletableFuture.allOf(validResult.entrySet().stream().map(entry -> {

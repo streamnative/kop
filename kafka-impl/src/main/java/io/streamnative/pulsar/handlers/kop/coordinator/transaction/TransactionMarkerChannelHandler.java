@@ -29,9 +29,10 @@ import java.util.function.Consumer;
 import javax.security.sasl.SaslException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
+import org.apache.kafka.common.message.SaslAuthenticateRequestData;
+import org.apache.kafka.common.message.SaslHandshakeRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
@@ -122,17 +123,22 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
         ByteBuffer nio = ((ByteBuf) o).nioBuffer();
-        ResponseHeader responseHeader = ResponseHeader.parse(nio);
-        PendingRequest pendingRequest = pendingRequestMap.remove(responseHeader.correlationId());
+        if (nio.remaining() < 4) {
+            log.error("Short read from channel {}", channelHandlerContext.channel());
+            channelHandlerContext.close();
+            return;
+        }
+        int correlationId = nio.getInt(0);
+        PendingRequest pendingRequest = pendingRequestMap.remove(correlationId);
         if (pendingRequest != null) {
             pendingRequest.complete(responseContext.set(
                     channelHandlerContext.channel().remoteAddress(),
                     pendingRequest.getApiVersion(),
-                    responseHeader.correlationId(),
+                    correlationId,
                     pendingRequest.parseResponse(nio)
             ));
         } else {
-            log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
+            log.error("Miss the inFlightRequest with correlationId {}.", correlationId);
         }
     }
 
@@ -255,14 +261,16 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     }
 
     private static SaslHandshakeRequest newSaslHandshake(final String mechanism) {
-        return new SaslHandshakeRequest.Builder(mechanism).build();
+        return new SaslHandshakeRequest.Builder(new SaslHandshakeRequestData()
+                .setMechanism(mechanism)).build();
     }
 
     private static SaslAuthenticateRequest newSaslAuthenticate(final byte[] saslAuthBytes) {
-        return new SaslAuthenticateRequest.Builder(ByteBuffer.wrap(saslAuthBytes)).build();
+        return new SaslAuthenticateRequest.Builder(new SaslAuthenticateRequestData()
+                .setAuthBytes(saslAuthBytes)).build();
     }
 
     private static WriteTxnMarkersRequest newWriteTxnMarkers(final List<TxnMarkerEntry> txnMarkerEntries) {
-        return new WriteTxnMarkersRequest.Builder(txnMarkerEntries).build();
+        return new WriteTxnMarkersRequest.Builder(ApiKeys.WRITE_TXN_MARKERS.latestVersion(), txnMarkerEntries).build();
     }
 }

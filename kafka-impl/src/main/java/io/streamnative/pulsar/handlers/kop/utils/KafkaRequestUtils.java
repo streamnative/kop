@@ -19,22 +19,32 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.CreatePartitionsRequestData;
+import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
-import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaRequestUtils {
 
     public static void forEachCreatePartitionsRequest(CreatePartitionsRequest request,
-                                        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> consumer) {
-        request.newPartitions().forEach(consumer);
+                                      BiConsumer<String, CreatePartitionsRequestData.CreatePartitionsTopic> consumer) {
+        request.data().topics().forEach(tp -> {
+                consumer.accept(tp.name(), tp);
+        });
     }
 
-    public static void forEachListOffsetRequest(ListOffsetRequest request,
-                                        BiConsumer<TopicPartition, ListOffsetRequest.PartitionData> consumer) {
-        request.partitionTimestamps().forEach(consumer);
+    public static void forEachListOffsetRequest(ListOffsetsRequest request,
+                            BiConsumer<TopicPartition, ListOffsetsRequestData.ListOffsetsPartition> consumer) {
+        request.data().topics().forEach(listOffsetsTopic -> {
+            String name = listOffsetsTopic.name();
+            listOffsetsTopic.partitions().forEach(listOffsetsPartition -> {
+                TopicPartition topicPartition = new TopicPartition(name, listOffsetsPartition.partitionIndex());
+                consumer.accept(topicPartition, listOffsetsPartition);
+            });
+        });
     }
 
     public static String getMetadata(TxnOffsetCommitRequest.CommittedOffset committedOffset) {
@@ -57,7 +67,7 @@ public class KafkaRequestUtils {
 
         // V2 adds retention time to the request and V5 removes retention time
         public static long getRetentionTime(OffsetCommitRequest request) {
-            return request.retentionTime();
+            return request.data().retentionTimeMs();
         }
     }
 }

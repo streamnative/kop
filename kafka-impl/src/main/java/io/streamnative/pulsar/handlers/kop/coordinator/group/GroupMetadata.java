@@ -274,6 +274,9 @@ public class GroupMetadata {
     public String protocolOrNull() {
         return protocol.orElse(null);
     }
+    public String protocolTypeOrNull() {
+        return protocolType.orElse(null);
+    }
 
     public List<MemberMetadata> notYetRejoinedMembers() {
         return members.values()

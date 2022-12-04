@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.getListOffsetsPartitionResponse;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
@@ -24,6 +25,7 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -36,6 +38,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -74,6 +77,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -85,20 +89,22 @@ import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.message.ApiMessageType;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.MetadataRequestData;
+import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
-import org.apache.kafka.common.requests.IsolationLevel;
-import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.KopResponseUtils;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
-import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -182,7 +188,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             correlationId);
 
         // 1. serialize request into ByteBuf
-        ByteBuffer serializedRequest = apiVersionsRequest.serialize(header);
+        ByteBuffer serializedRequest = KopResponseUtils.serializeRequest(header, apiVersionsRequest);
         int size = serializedRequest.remaining();
         ByteBuf inputBuf = Unpooled.buffer(size);
         inputBuf.writeBytes(serializedRequest);
@@ -191,7 +197,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         KafkaHeaderAndRequest request = handler.byteBufToRequest(inputBuf);
 
         // 3. verify byteBufToRequest works well.
-        assertEquals(request.getHeader().toStruct(), header.toStruct());
+        assertEquals(request.getHeader().data(), header.data());
         assertTrue(request.getRequest() instanceof ApiVersionsRequest);
     }
 
@@ -214,7 +220,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             Unpooled.buffer(20),
             null);
 
-        ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
+        ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse
+                .defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
             kopRequest, apiVersionsResponse);
 
@@ -223,13 +230,13 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         // 2. verify responseToByteBuf works well.
         ByteBuffer byteBuffer = serializedResponse.nioBuffer();
-        ResponseHeader responseHeader = ResponseHeader.parse(byteBuffer);
+        ResponseHeader responseHeader = ResponseHeader.parse(byteBuffer, kopResponse.getHeader().headerVersion());
         assertEquals(responseHeader.correlationId(), correlationId);
 
         ApiVersionsResponse parsedResponse = ApiVersionsResponse.parse(
             byteBuffer, kopResponse.getApiVersion());
 
-        assertEquals(parsedResponse.apiVersions().size(), apiVersionsResponse.apiVersions().size());
+        assertEquals(parsedResponse.data().apiKeys().size(), apiVersionsResponse.data().apiKeys().size());
     }
 
     @Test
@@ -254,23 +261,23 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicName topicNamePartition =
             TopicName.get("persistent://test-tenants/test-ns/topic" + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
 
-        PartitionMetadata metadata = KafkaRequestHandler.newPartitionMetadata(topicName, node);
-        assertEquals(metadata.error(), Errors.NONE);
-        assertEquals(metadata.partition(), 0);
+        KafkaResponseUtils.BrokerLookupResult metadata = KafkaRequestHandler.newPartitionMetadata(topicName, node);
+        assertEquals(metadata.error, Errors.NONE);
+        assertEquals(metadata.getTopicPartition().partition(), 0);
 
 
         metadata = KafkaRequestHandler.newPartitionMetadata(topicNamePartition, node);
-        assertEquals(metadata.error(), Errors.NONE);
-        assertEquals(metadata.partition(), partitionIndex);
+        assertEquals(metadata.error, Errors.NONE);
+        assertEquals(metadata.getTopicPartition().partition(), partitionIndex);
 
         metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicName);
-        assertEquals(metadata.error(), Errors.NOT_LEADER_FOR_PARTITION);
-        assertEquals(metadata.partition(), 0);
+        assertEquals(metadata.error, Errors.NOT_LEADER_OR_FOLLOWER);
+        assertEquals(metadata.getTopicPartition().partition(), 0);
 
 
         metadata = KafkaRequestHandler.newFailedPartitionMetadata(topicNamePartition);
-        assertEquals(metadata.error(), Errors.NOT_LEADER_FOR_PARTITION);
-        assertEquals(metadata.partition(), partitionIndex);
+        assertEquals(metadata.error, Errors.NOT_LEADER_OR_FOLLOWER);
+        assertEquals(metadata.getTopicPartition().partition(), partitionIndex);
     }
 
     @Test
@@ -625,18 +632,24 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicPartition topicPartition = new TopicPartition("test", 1);
 
         // build input params
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
-        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
+        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic =
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
+
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(new OffsetCommitRequestData()
                 .setGenerationId(generationId)
-                .setMemberId(memberId);
+                .setMemberId(memberId)
+                .setGroupId("test-groupId")
+                .setTopics(Collections.singletonList(offsetCommitRequestTopic)));
+
         OffsetCommitRequest offsetCommitRequest = builder.build();
 
+        Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> offsetData =
+                ImmutableMap.of(topicPartition, offsetCommitRequestTopic.partitions().get(0));
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
                 handler.convertOffsetCommitRequestRetentionMs(offsetData,
-                        offsetCommitRequest.retentionTime(),
+                        offsetCommitRequest.data().retentionTimeMs(),
                         builder.latestAllowedVersion(),
                         currentTime,
                         configRetentionMs);
@@ -658,8 +671,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicPartition topicPartition = new TopicPartition("test", 1);
 
         // build input params
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
+        Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> offsetData = new HashMap<>();
+        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic =
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
+        offsetData.put(topicPartition, offsetCommitRequestTopic.partitions().get(0));
 
         // convert
         Map<TopicPartition, OffsetAndMetadata> converted =
@@ -688,11 +703,15 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicPartition topicPartition = new TopicPartition("test", 1);
 
         // build input params
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>();
-        offsetData.put(topicPartition, KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
-        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder("test-groupId", offsetData)
+        Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> offsetData = new HashMap<>();
+        OffsetCommitRequestData.OffsetCommitRequestTopic offsetCommitRequestTopic =
+                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
+        offsetData.put(topicPartition, offsetCommitRequestTopic.partitions().get(0));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(new OffsetCommitRequestData()
                 .setGenerationId(generationId)
-                .setMemberId(memberId);
+                .setMemberId(memberId)
+                .setGroupId("test-groupId")
+                .setTopics(Collections.singletonList(offsetCommitRequestTopic)));
         OffsetCommitRequest offsetCommitRequest = builder.build();
 
         RequestHeader header = new RequestHeader(ApiKeys.OFFSET_COMMIT, offsetCommitRequest.version(),
@@ -737,17 +756,18 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         final RequestHeader header =
                 new RequestHeader(ApiKeys.LIST_OFFSETS, ApiKeys.LIST_OFFSETS.latestVersion(), "client", 0);
-        final ListOffsetRequest request =
-                ListOffsetRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+        final ListOffsetsRequest request =
+                ListOffsetsRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
                         .setTargetTimes(KafkaCommonTestUtils
-                                .newListOffsetTargetTimes(topicPartition, ListOffsetRequest.EARLIEST_TIMESTAMP))
+                                .newListOffsetTargetTimes(topicPartition, ListOffsetsRequest.EARLIEST_TIMESTAMP))
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());
         handler.handleListOffsetRequest(
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
                 responseFuture);
-        final ListOffsetResponse response = (ListOffsetResponse) responseFuture.get();
-        assertTrue(response.responseData().containsKey(topicPartition));
-        assertEquals(response.responseData().get(topicPartition).error, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+        final ListOffsetsResponse response = (ListOffsetsResponse) responseFuture.get();
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(topicPartition, response.data());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.UNKNOWN_TOPIC_OR_PARTITION.code());
     }
 
     @Test(timeOut = 10000, dataProvider = "metadataVersions")
@@ -756,7 +776,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         admin.topics().createNonPartitionedTopic(topic);
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request = new MetadataRequest(Collections.singletonList(topic), false, version);
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.singletonList(new MetadataRequestData.MetadataRequestTopic()
+                        .setName(topic)))
+                .setAllowAutoTopicCreation(false);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaHeaderAndRequest(header, request, PulsarByteBufAllocator.DEFAULT.heapBuffer(), null),
@@ -1005,10 +1030,12 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kafkaAdmin.createPartitions(newPartitionsMap).all().get();
             fail("should have failed");
         } catch (ExecutionException e) {
+            log.error("Error is", e);
             assertTrue((e.getCause() instanceof InvalidRequestException));
+            String expected = "Kop server currently doesn't support manual assignment replica sets '"
+                    + newPartitions.assignments() + "' the number of partitions must be specified ";
             assertTrue(e.getMessage()
-                    .contains("Kop server currently doesn't support manual assignment replica sets '"
-                    + newPartitions.assignments() + "' the number of partitions must be specified "));
+                    .contains(expected), "Message '" + e.getMessage() + "' does not contain '" + expected + "'");
         }
 
     }
@@ -1246,26 +1273,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
         SocketAddress serviceAddress = InetSocketAddress.createUnresolved("localhost", 1111);
-        return buildRequest(builder, serviceAddress);
-    }
-
-    public static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
-                                                     SocketAddress serviceAddress) {
-        AbstractRequest request = builder.build();
-        builder.apiKey();
-
-        ByteBuffer serializedRequest = request
-                .serialize(new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0));
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-        return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
 }

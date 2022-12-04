@@ -15,8 +15,8 @@ package org.apache.kafka.common.requests;
 
 import com.google.common.annotations.VisibleForTesting;
 import java.util.Map;
+import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 
 /**
  * A wrapper for {@link org.apache.kafka.common.requests.AbstractResponse} that
@@ -28,6 +28,7 @@ public class ResponseCallbackWrapper extends AbstractResponse {
     private ResponseCallback responseCallback;
 
     public ResponseCallbackWrapper(AbstractResponse abstractResponse, ResponseCallback responseCallback) {
+        super(abstractResponse.apiKey());
         this.abstractResponse = abstractResponse;
         this.responseCallback = responseCallback;
     }
@@ -42,12 +43,17 @@ public class ResponseCallbackWrapper extends AbstractResponse {
         return abstractResponse.errorCounts();
     }
 
-    @Override
-    protected Struct toStruct(short i) {
-        return abstractResponse.toStruct(i);
-    }
-
     public void responseComplete() {
         responseCallback.responseComplete();
+    }
+
+    @Override
+    public int throttleTimeMs() {
+        return abstractResponse.throttleTimeMs();
+    }
+
+    @Override
+    public ApiMessage data() {
+        return abstractResponse.data();
     }
 }
