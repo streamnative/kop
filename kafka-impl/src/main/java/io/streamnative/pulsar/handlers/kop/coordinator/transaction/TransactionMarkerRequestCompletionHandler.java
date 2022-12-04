@@ -59,7 +59,8 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
         txnIdAndMarkerEntries.forEach(txnIdAndMarker -> {
             String transactionalId = txnIdAndMarker.getTransactionalId();
             WriteTxnMarkersRequest.TxnMarkerEntry txnMarker = txnIdAndMarker.getEntry();
-            Map<TopicPartition, Errors> errors = writeTxnMarkerResponse.errors(txnMarker.producerId());
+            Map<TopicPartition, Errors> errors = writeTxnMarkerResponse
+                    .errorsByProducerId().get(txnMarker.producerId());
 
             if (errors == null) {
                 throw new IllegalStateException("WriteTxnMarkerResponse does not contain expected error map for "
@@ -175,7 +176,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case LEADER_NOT_AVAILABLE:
-                        case NOT_LEADER_FOR_PARTITION:
+                        case NOT_LEADER_OR_FOLLOWER:
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
                                             + "retrying with current coordinator epoch {} and invalidating cache",
                                     transactionalId, topicPartition,

@@ -22,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.KafkaStorageException;
-import org.apache.kafka.common.errors.NotLeaderForPartitionException;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
@@ -90,7 +90,7 @@ public final class MessagePublishContext implements PublishContext {
                     || exception instanceof BrokerServiceException.TopicTerminatedException
                     || exception instanceof BrokerServiceException.TopicFencedException) {
                 log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
-                offsetFuture.completeExceptionally(new NotLeaderForPartitionException());
+                offsetFuture.completeExceptionally(new NotLeaderOrFollowerException());
             } else if (exception instanceof MessageDeduplication.MessageDupUnknownException) {
                 log.warn("[{}] Failed to publish message: {}", topic.getName(), exception.getMessage());
                 offsetFuture.completeExceptionally(Errors.OUT_OF_ORDER_SEQUENCE_NUMBER.exception());

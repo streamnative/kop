@@ -60,7 +60,8 @@ public class KafkaIdleConnectionTest extends KopProtocolHandlerTestBase {
                 .valueSerializer(KafkaVersion.DEFAULT.getStringSerializer())
                 .build();
         ChannelBuilder channelBuilder =
-                ClientUtils.createChannelBuilder(new ProducerConfig(producerConfiguration.toProperties()));
+                ClientUtils.createChannelBuilder(
+                        new ProducerConfig(producerConfiguration.toProperties()), time, new LogContext());
         String clientId = "clientId";
         selector = new Selector(
                 DEFAULT_CONNECTION_MAX_IDLE_MS,

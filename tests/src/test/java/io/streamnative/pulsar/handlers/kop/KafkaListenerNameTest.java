@@ -94,7 +94,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
                 final String expectedAddress = bindPortToAdvertisedAddress.get(inetSocketAddress.getPort());
 
-                final KafkaHeaderAndRequest metadataRequest = KafkaApisTest.buildRequest(
+                final KafkaHeaderAndRequest metadataRequest = KafkaCommonTestUtils.buildRequest(
                         new MetadataRequest.Builder(Collections.singletonList(topic), true),
                         inetSocketAddress);
                 final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
@@ -117,11 +117,13 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(partitionMetadataList.size(), numPartitions);
                 for (int i = 0; i < numPartitions; i++) {
                     final PartitionMetadata partitionMetadata = partitionMetadataList.get(i);
-                    Assert.assertEquals(partitionMetadata.error(), Errors.NONE);
-                    Assert.assertEquals(partitionMetadata.leader().host() + ":" + partitionMetadata.leader().port(),
+                    Assert.assertEquals(partitionMetadata.error, Errors.NONE);
+                    Node leader = metadataResponse.brokersById().get(partitionMetadata.leaderId.get());
+                    Assert.assertEquals(leader.host() + ":" + leader.port(),
                             expectedAddress);
                 }
             } catch (Exception e) {
+                log.error("Error", e + "");
                 Assert.fail(e.getMessage());
             }
         });

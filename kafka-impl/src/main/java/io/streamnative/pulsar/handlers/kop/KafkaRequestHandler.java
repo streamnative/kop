@@ -18,8 +18,6 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
-import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
@@ -54,7 +52,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -92,6 +89,8 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.common.InvalidRecordException;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -99,11 +98,36 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.message.AddOffsetsToTxnRequestData;
+import org.apache.kafka.common.message.AddOffsetsToTxnResponseData;
+import org.apache.kafka.common.message.AddPartitionsToTxnRequestData;
+import org.apache.kafka.common.message.AddPartitionsToTxnResponseData;
+import org.apache.kafka.common.message.AlterConfigsRequestData;
+import org.apache.kafka.common.message.AlterConfigsResponseData;
+import org.apache.kafka.common.message.CreatePartitionsRequestData;
+import org.apache.kafka.common.message.CreateTopicsRequestData;
+import org.apache.kafka.common.message.DeleteGroupsRequestData;
+import org.apache.kafka.common.message.DeleteRecordsRequestData;
+import org.apache.kafka.common.message.DeleteTopicsRequestData;
+import org.apache.kafka.common.message.DescribeConfigsRequestData;
+import org.apache.kafka.common.message.DescribeConfigsResponseData;
+import org.apache.kafka.common.message.EndTxnRequestData;
+import org.apache.kafka.common.message.EndTxnResponseData;
+import org.apache.kafka.common.message.InitProducerIdRequestData;
+import org.apache.kafka.common.message.InitProducerIdResponseData;
+import org.apache.kafka.common.message.JoinGroupRequestData;
+import org.apache.kafka.common.message.LeaveGroupRequestData;
+import org.apache.kafka.common.message.ListOffsetsRequestData;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.OffsetCommitRequestData;
+import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.message.SaslAuthenticateResponseData;
+import org.apache.kafka.common.message.SyncGroupRequestData;
+import org.apache.kafka.common.message.TxnOffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
-import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
@@ -122,7 +146,6 @@ import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
 import org.apache.kafka.common.requests.DeleteRecordsRequest;
-import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
@@ -136,14 +159,13 @@ import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
 import org.apache.kafka.common.requests.InitProducerIdResponse;
-import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
-import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
-import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
@@ -165,7 +187,6 @@ import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -184,6 +205,7 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Slf4j
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
+    private static final int THROTTLE_TIME_MS = 10;
     private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
@@ -736,14 +758,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     ListPair.split(topicAndMetadataList.stream(), TopicAndMetadata::hasNoError);
             CoreUtils.waitForAll(listPair.getSuccessfulList().stream()
                     .map(topicAndMetadata ->
-                            topicAndMetadata.lookupAsync(this::findBroker, getOriginalTopic, metadataNamespace)
+                            topicAndMetadata.lookupAsync(this::lookup, getOriginalTopic, metadataNamespace)
                     ).collect(Collectors.toList()), successfulTopicMetadataList -> {
                 final List<TopicMetadata> topicMetadataList = ListUtils.union(successfulTopicMetadataList,
                         CoreUtils.listToList(listPair.getFailedList(),
                                 metadata -> metadata.toTopicMetadata(getOriginalTopic, metadataNamespace))
                 );
                 resultFuture.complete(
-                        KafkaResponseUtils.newMetadata(allNodes, clusterName, controllerId, topicMetadataList));
+                        KafkaResponseUtils.newMetadata(allNodes, clusterName,
+                                controllerId, topicMetadataList, request.version()));
                 return null;
             }).exceptionally(lookupException -> {
                 log.error("[{}] Unexpected exception during lookup", ctx.channel(), lookupException);
@@ -807,7 +830,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
-        final int numPartitions = produceRequest.partitionRecordsOrFail().size();
+        final int numPartitions = produceRequest.data().topicData().size();
         if (numPartitions == 0) {
             resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
             return;
@@ -856,35 +879,42 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
 
-        produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-            try {
-                validateRecords(produceHar.getRequest().version(), records);
-            } catch (ApiException ex) {
-                invalidRequestResponses.put(topicPartition,
-                        new ProduceResponse.PartitionResponse(Errors.forException(ex)));
-                completeOne.run();
-                return;
-            }
-            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
-                    .whenCompleteAsync((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Write topic authorize failed, topic - {}. {}",
-                                    fullPartitionName, ex.getMessage());
-                            unauthorizedTopicResponsesMap.put(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+        produceRequest.data().topicData().forEach((ProduceRequestData.TopicProduceData topicProduceData) -> {
+            topicProduceData.partitionData().forEach(partitionProduceData -> {
+                MemoryRecords records = (MemoryRecords) partitionProduceData.records();
+                int index = partitionProduceData.index();
+                String name = topicProduceData.name();
+                TopicPartition topicPartition = new TopicPartition(name, index);
+                try {
+                    validateRecords(produceHar.getRequest().version(), records);
+                } catch (ApiException ex) {
+                    invalidRequestResponses.put(topicPartition,
+                            new ProduceResponse.PartitionResponse(Errors.forException(ex)));
+                    completeOne.run();
+                    return;
+                }
+
+                final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+                authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                        .whenCompleteAsync((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("Write topic authorize failed, topic - {}. {}",
+                                        fullPartitionName, ex.getMessage());
+                                unauthorizedTopicResponsesMap.put(topicPartition,
+                                        new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                                completeOne.run();
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                unauthorizedTopicResponsesMap.put(topicPartition,
+                                        new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                                completeOne.run();
+                                return;
+                            }
+                            authorizedRequestInfo.put(topicPartition, records);
                             completeOne.run();
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            unauthorizedTopicResponsesMap.put(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
-                            completeOne.run();
-                            return;
-                        }
-                        authorizedRequestInfo.put(topicPartition, records);
-                        completeOne.run();
-                    }, ctx.executor());
+                        }, ctx.executor());
+            });
         });
 
 
@@ -920,16 +950,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String pulsarTopicName;
         int partition;
         CompletableFuture<Void> storeGroupIdFuture;
-        if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
+        if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION.id()) {
             TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-            partition = transactionCoordinator.partitionFor(request.coordinatorKey());
+            partition = transactionCoordinator.partitionFor(request.data().key());
             pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
             storeGroupIdFuture = CompletableFuture.completedFuture(null);
-        } else if (request.coordinatorType() == FindCoordinatorRequest.CoordinatorType.GROUP) {
-            partition = getGroupCoordinator().partitionFor(request.coordinatorKey());
+        } else if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.GROUP.id()) {
+            partition = getGroupCoordinator().partitionFor(request.data().key());
             pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
             if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
-                String groupId = request.coordinatorKey();
+                String groupId = request.data().key();
                 String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                         findCoordinator.getHeader().clientId());
                 currentConnectedClientId.add(findCoordinator.getHeader().clientId());
@@ -942,7 +972,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support unknown type "
-                + request.coordinatorType());
+                + request.data().keyType());
         }
 
         // Store group name to metadata store for current client, use to collect consumer metrics.
@@ -952,8 +982,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         log.warn("Store groupId failed, the groupId might already stored.", ex);
                     }
                     findBroker(TopicName.get(pulsarTopicName))
-                            .whenComplete((node, throwable) -> {
-                                if (node.error() != Errors.NONE || throwable != null) {
+                            .whenComplete((KafkaResponseUtils.BrokerLookupResult result, Throwable throwable) -> {
+                                if (result.error != Errors.NONE || throwable != null) {
                                     log.error("[{}] Request {}: Error while find coordinator.",
                                             ctx.channel(), findCoordinator.getHeader(), throwable);
 
@@ -964,10 +994,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                            ctx.channel(), node.leader(), request.coordinatorKey(), partition);
+                                            ctx.channel(), result.node, request.data().key(), partition);
                                 }
-
-                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(node.leader()));
+                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
                             });
                 });
     }
@@ -1111,7 +1140,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
                 return;
             }
-            if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
+            if (timestamp == ListOffsetsRequest.LATEST_TIMESTAMP) {
                 PositionImpl position = (PositionImpl) managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
                     log.debug("Get latest position for topic {} time {}. result: {}",
@@ -1120,7 +1149,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 long offset = MessageMetadataUtils.getLogEndOffset(managedLedger);
                 partitionData.complete(Pair.of(Errors.NONE, offset));
 
-            } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
+            } else if (timestamp == ListOffsetsRequest.EARLIEST_TIMESTAMP) {
                 PositionImpl position = OffsetFinder.getFirstValidPosition(managedLedger);
                 if (position == null) {
                     log.error("[{}] Failed to find first valid position for topic {}", ctx, perTopic.getName());
@@ -1227,7 +1256,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CompletableFuture
                 .allOf(responseData.values().toArray(new CompletableFuture<?>[0]))
                 .whenComplete((ignore, ex) -> {
-                    ListOffsetResponse response = KafkaResponseUtils.newListOffset(
+                    ListOffsetsResponse response = KafkaResponseUtils.newListOffset(
                             CoreUtils.mapValue(responseData, CompletableFuture::join), legacy);
                     resultFuture.complete(response);
                 });
@@ -1235,14 +1264,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private void handleListOffsetRequestV1AndAbove(KafkaHeaderAndRequest listOffset,
                                                    CompletableFuture<AbstractResponse> resultFuture) {
-        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
+        ListOffsetsRequest request = (ListOffsetsRequest) listOffset.getRequest();
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
-        if (request.partitionTimestamps().size() == 0) {
-            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
+        ListOffsetsRequestData data = request.data();
+
+        if (data.topics().size() == 0) {
+            resultFuture.complete(new ListOffsetsResponse(new ListOffsetsResponseData()));
             return;
         }
-        AtomicInteger partitions = new AtomicInteger(request.partitionTimestamps().size());
+        AtomicInteger partitions = new AtomicInteger(
+                data.topics().stream().map(ListOffsetsRequestData.ListOffsetsTopic::partitions)
+                        .mapToInt(Collection::size).sum()
+        );
         Runnable completeOne = () -> {
             if (partitions.decrementAndGet() == 0) {
                 waitResponseDataComplete(resultFuture, responseData, false);
@@ -1269,7 +1303,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     completeOne.run();
                                     return;
                                 }
-                                responseData.put(topic, fetchOffset(fullPartitionName, times.timestamp));
+                                responseData.put(topic, fetchOffset(fullPartitionName, times.timestamp()));
                                 completeOne.run();
                             }
                     );
@@ -1288,7 +1322,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
         if (request.offsetData().size() == 0) {
-            resultFuture.complete(new ListOffsetResponse(Collections.emptyMap()));
+            resultFuture.complete(new ListOffsetsResponse(new ListOffsetsResponseData()));
             return;
         }
         AtomicInteger partitions = new AtomicInteger(request.offsetData().size());
@@ -1344,7 +1378,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+        checkArgument(listOffset.getRequest() instanceof ListOffsetsRequest);
         // the only difference between v0 and v1 is the `max_num_offsets => INT32`
         // v0 is required because it is used by librdkafka
         if (listOffset.getHeader().apiVersion() == 0) {
@@ -1377,7 +1411,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(
-            Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData,
+            Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> convertedOffsetData,
             long retentionTime,
             short apiVersion,
             long currentTimeStamp,
@@ -1409,21 +1443,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return CoreUtils.mapValue(convertedOffsetData, (partitionData) -> {
 
             String metadata;
-            if (partitionData.metadata == null) {
+            if (partitionData.committedMetadata() == null) {
                 metadata = OffsetMetadata.NO_METADATA;
             } else {
-                metadata = partitionData.metadata;
+                metadata = partitionData.committedMetadata();
             }
 
             long expireTimeStamp;
-            if (partitionData.timestamp == OffsetCommitRequest.DEFAULT_TIMESTAMP) {
+            if (partitionData.commitTimestamp() == OffsetCommitRequest.DEFAULT_TIMESTAMP) {
                 expireTimeStamp = defaultExpireTimestamp;
             } else {
-                expireTimeStamp = finalOffsetRetention + partitionData.timestamp;
+                expireTimeStamp = finalOffsetRetention + partitionData.commitTimestamp();
             }
 
             return OffsetAndMetadata.apply(
-                    partitionData.offset,
+                    partitionData.committedOffset(),
                     metadata,
                     currentTimeStamp,
                     expireTimeStamp);
@@ -1439,20 +1473,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 "Group Coordinator not started");
 
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
+        OffsetCommitRequestData data = request.data();
 
         // TODO not process nonExistingTopic at this time.
         Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors(request);
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
-        if (request.offsetData().isEmpty()) {
+        if (data.topics().isEmpty()) {
             resultFuture.complete(KafkaResponseUtils.newOffsetCommit(Maps.newHashMap()));
             return;
         }
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, OffsetCommitRequestData.OffsetCommitRequestPartition> convertedOffsetData =
+                Maps.newConcurrentMap();
         Map<TopicPartition, TopicPartition> replacingIndex = Maps.newConcurrentMap();
-        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.offsetData().size());
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(
+                data.topics().stream().map(OffsetCommitRequestData.OffsetCommitRequestTopic::partitions)
+                        .mapToInt(Collection::size).sum());
+
 
         Consumer<Runnable> completeOne = (action) -> {
             // When complete one authorization or failed, will do the action first.
@@ -1484,9 +1523,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             );
 
                     getGroupCoordinator().handleCommitOffsets(
-                            request.groupId(),
-                            request.memberId(),
-                            request.generationId(),
+                            data.groupId(),
+                            data.memberId(),
+                            data.generationId(),
                             convertedPartitionData
                     ).thenAccept(offsetCommitResult -> {
                         // recover to original topic name
@@ -1503,38 +1542,41 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
         final String namespacePrefix = currentNamespacePrefix();
-        request.offsetData().forEach((tp, partitionData) -> {
-            KopTopic kopTopic;
-            try {
-                kopTopic = new KopTopic(tp.topic(), namespacePrefix);
-            } catch (KoPTopicException e) {
-                log.warn("Invalid topic name: {}", tp.topic(), e);
-                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
-                return;
-            }
-            String fullTopicName = kopTopic.getFullName();
-            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .whenComplete((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("OffsetCommit authorize failed, topic - {}. {}",
-                                    fullTopicName, ex.getMessage());
-                            completeOne.accept(
-                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            completeOne.accept(
-                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
-                            return;
-                        }
-                        completeOne.accept(() -> {
-                            TopicPartition newTopicPartition = new TopicPartition(
-                                    new KopTopic(tp.topic(), namespacePrefix).getFullName(), tp.partition());
+        data.topics().forEach((OffsetCommitRequestData.OffsetCommitRequestTopic topicData) -> {
+            topicData.partitions().forEach((OffsetCommitRequestData.OffsetCommitRequestPartition partitionData) -> {
+                TopicPartition tp = new TopicPartition(topicData.name(), partitionData.partitionIndex());
+                KopTopic kopTopic;
+                try {
+                    kopTopic = new KopTopic(tp.topic(), namespacePrefix);
+                } catch (KoPTopicException e) {
+                    log.warn("Invalid topic name: {}", tp.topic(), e);
+                    completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                    return;
+                }
+                String fullTopicName = kopTopic.getFullName();
+                authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("OffsetCommit authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                completeOne.accept(
+                                        () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                completeOne.accept(
+                                        () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                                return;
+                            }
+                            completeOne.accept(() -> {
+                                TopicPartition newTopicPartition = new TopicPartition(
+                                        new KopTopic(tp.topic(), namespacePrefix).getFullName(), tp.partition());
 
-                            convertedOffsetData.put(newTopicPartition, partitionData);
-                            replacingIndex.put(newTopicPartition, tp);
+                                convertedOffsetData.put(newTopicPartition, partitionData);
+                                replacingIndex.put(newTopicPartition, tp);
+                            });
                         });
-                    });
+            });
         });
     }
 
@@ -1557,7 +1599,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             resultFuture.complete(new FetchResponse<>(
                     Errors.NONE,
                     new LinkedHashMap<>(),
-                    ((Integer) THROTTLE_TIME_MS.defaultValue),
+                    THROTTLE_TIME_MS,
                     request.metadata().sessionId()));
             return;
         }
@@ -1585,7 +1627,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     resultFuture.complete(new FetchResponse<>(
                             Errors.NONE,
                             new LinkedHashMap<>(erroneous),
-                            ((Integer) THROTTLE_TIME_MS.defaultValue),
+                            THROTTLE_TIME_MS,
                             request.metadata().sessionId()));
                 } else {
                     MessageFetchContext context = MessageFetchContext
@@ -1608,7 +1650,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         resultFuture.complete(new ResponseCallbackWrapper(new FetchResponse<>(
                                 Errors.NONE,
                                 partitions,
-                                ((Integer) THROTTLE_TIME_MS.defaultValue),
+                                THROTTLE_TIME_MS,
                                 request.metadata().sessionId()), () ->
                                 resultMap.forEach((__, readRecordsResult) -> {
                                     readRecordsResult.recycle();
@@ -1661,29 +1703,29 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             "Group Coordinator not started");
 
         JoinGroupRequest request = (JoinGroupRequest) joinGroup.getRequest();
+        JoinGroupRequestData data = request.data();
 
         Map<String, byte[]> protocols = new HashMap<>();
-        request.groupProtocols()
-            .forEach(protocol -> protocols.put(protocol.name(), Utils.toArray(protocol.metadata())));
+        data.protocols()
+            .forEach(protocol -> protocols.put(protocol.name(), protocol.metadata()));
         getGroupCoordinator().handleJoinGroup(
-            request.groupId(),
-            request.memberId(),
-            joinGroup.getHeader().clientId(),
-            joinGroup.getClientHost(),
-            request.rebalanceTimeout(),
-            request.sessionTimeout(),
-            request.protocolType(),
+                data.groupId(),
+                data.memberId(),
+                joinGroup.getHeader().clientId(),
+                joinGroup.getClientHost(),
+                data.rebalanceTimeoutMs(),
+                data.sessionTimeoutMs(),
+                data.protocolType(),
             protocols
         ).thenAccept(joinGroupResult -> {
 
-            Map<String, ByteBuffer> members = new HashMap<>();
-            joinGroupResult.getMembers().forEach((memberId, protocol) ->
-                members.put(memberId, ByteBuffer.wrap(protocol)));
+            Map<String, byte[]> members = new HashMap<>(joinGroupResult.getMembers());
 
             JoinGroupResponse response = KafkaResponseUtils.newJoinGroup(
                 joinGroupResult.getError(),
                 joinGroupResult.getGenerationId(),
-                joinGroupResult.getSubProtocol(),
+                joinGroupResult.getProtocolName(),
+                joinGroupResult.getProtocolType(),
                 joinGroupResult.getMemberId(),
                 joinGroupResult.getLeaderId(),
                 members
@@ -1703,19 +1745,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
         SyncGroupRequest request = (SyncGroupRequest) syncGroup.getRequest();
+        SyncGroupRequestData data = request.data();
+        groupIds.add(data.groupId());
+        Map<String, byte[]> assignments = data.assignments()
+                .stream()
+                .collect(Collectors.toMap(
+                        SyncGroupRequestData.SyncGroupRequestAssignment::memberId,
+                        SyncGroupRequestData.SyncGroupRequestAssignment::assignment));
 
-        groupIds.add(request.groupId());
         getGroupCoordinator().handleSyncGroup(
-            request.groupId(),
-            request.generationId(),
-            request.memberId(),
-            CoreUtils.mapValue(
-                request.groupAssignment(), Utils::toArray
-            )
+                data.groupId(),
+                data.generationId(),
+                data.memberId(),
+                assignments
         ).thenAccept(syncGroupResult -> {
             SyncGroupResponse response = KafkaResponseUtils.newSyncGroup(
                 syncGroupResult.getKey(),
-                ByteBuffer.wrap(syncGroupResult.getValue())
+                data.protocolType(),
+                data.protocolName(),
+                syncGroupResult.getValue()
             );
 
             resultFuture.complete(response);
@@ -1730,9 +1778,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // let the coordinator to handle heartbeat
         getGroupCoordinator().handleHeartbeat(
-            request.groupId(),
-            request.memberId(),
-            request.groupGenerationId()
+            request.data().groupId(),
+            request.data().memberId(),
+            request.data().generationId()
         ).thenAccept(errors -> {
             HeartbeatResponse response = KafkaResponseUtils.newHeartbeat(errors);
 
@@ -1750,11 +1798,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(leaveGroup.getRequest() instanceof LeaveGroupRequest);
         LeaveGroupRequest request = (LeaveGroupRequest) leaveGroup.getRequest();
+        LeaveGroupRequestData data = request.data();
+        Set<String> members = data.members().stream()
+                .map(LeaveGroupRequestData.MemberIdentity::memberId)
+                .collect(Collectors.toSet());
+        if (!data.memberId().isEmpty()) {
+            // old clients
+            members.add(data.memberId());
+        }
 
         // let the coordinator to handle heartbeat
         getGroupCoordinator().handleLeaveGroup(
-            request.groupId(),
-            request.memberId()
+                data.groupId(),
+                members
         ).thenAccept(errors -> resultFuture.complete(KafkaResponseUtils.newLeaveGroup(errors)));
     }
 
@@ -1765,7 +1821,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         DescribeGroupsRequest request = (DescribeGroupsRequest) describeGroup.getRequest();
 
         // let the coordinator to handle heartbeat
-        resultFuture.complete(KafkaResponseUtils.newDescribeGroups(request.groupIds().stream()
+        resultFuture.complete(KafkaResponseUtils.newDescribeGroups(request.data().groups().stream()
                 .map(groupId -> Pair.of(groupId, getGroupCoordinator().handleDescribeGroup(groupId)))
                 .collect(Collectors.toMap(Pair::getLeft, Pair::getRight))
         ));
@@ -1784,17 +1840,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                              CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(deleteGroups.getRequest() instanceof DeleteGroupsRequest);
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
+        DeleteGroupsRequestData data = request.data();
 
         resultFuture.complete(KafkaResponseUtils.newDeleteGroups(
-                getGroupCoordinator().handleDeleteGroups(request.groups())
+                getGroupCoordinator().handleDeleteGroups(data.groupsNames())
         ));
     }
 
     @Override
     protected void handleSaslAuthenticate(KafkaHeaderAndRequest saslAuthenticate,
                                           CompletableFuture<AbstractResponse> resultFuture) {
-        resultFuture.complete(new SaslAuthenticateResponse(Errors.ILLEGAL_SASL_STATE,
-                "SaslAuthenticate request received after successful authentication"));
+        resultFuture.complete(new SaslAuthenticateResponse(
+                new SaslAuthenticateResponseData()
+                        .setErrorCode(Errors.ILLEGAL_SASL_STATE.code())
+                        .setErrorMessage("SaslAuthenticate request received after successful authentication")));
     }
 
     @Override
@@ -1810,15 +1869,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CreateTopicsRequest request = (CreateTopicsRequest) createTopics.getRequest();
 
         final Map<String, ApiError> result = Maps.newConcurrentMap();
-        final Map<String, TopicDetails> validTopics = Maps.newHashMap();
-        final Set<String> duplicateTopics = request.duplicateTopics();
-        request.topics().forEach((topic, details) -> {
-            if (!duplicateTopics.contains(topic)) {
-                validTopics.put(topic, details);
+        final Map<String, CreateTopicsRequestData.CreatableTopic> validTopics = Maps.newHashMap();
+        final Set<String> duplicateTopics = new HashSet<>();
+        request.data().topics().forEach((CreateTopicsRequestData.CreatableTopic topic) -> {
+            if (duplicateTopics.add(topic.name())) {
+                validTopics.put(topic.name(), topic);
             } else {
                 final String errorMessage = "Create topics request from client `" + createTopics.getHeader().clientId()
                         + "` contains multiple entries for the following topics: " + duplicateTopics;
-                result.put(topic, new ApiError(Errors.INVALID_REQUEST, errorMessage));
+                result.put(topic.name(), new ApiError(Errors.INVALID_REQUEST, errorMessage));
             }
         });
 
@@ -1829,14 +1888,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
-        final Map<String, TopicDetails> authorizedTopics = Maps.newConcurrentMap();
+        final Map<String, CreateTopicsRequestData.CreatableTopic> authorizedTopics = Maps.newConcurrentMap();
         Runnable createTopicsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
                 return;
             }
             // TODO: handle request.validateOnly()
-            adminManager.createTopicsAsync(authorizedTopics, request.timeout(), namespacePrefix)
+            adminManager.createTopicsAsync(authorizedTopics, request.data().timeoutMs(), namespacePrefix)
                     .thenApply(validResult -> {
                 result.putAll(validResult);
                 resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
@@ -1844,7 +1903,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, TopicDetails> completeOneTopic = (topic, topicDetails) -> {
+        BiConsumer<String, CreateTopicsRequestData.CreatableTopic> completeOneTopic = (topic, topicDetails) -> {
             authorizedTopics.put(topic, topicDetails);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createTopicsAsync.run();
@@ -1894,18 +1953,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AlterConfigsRequest request = (AlterConfigsRequest) describeConfigs.getRequest();
 
         if (request.configs().isEmpty()) {
-            resultFuture.complete(new AlterConfigsResponse(0, Maps.newHashMap()));
+            resultFuture.complete(new AlterConfigsResponse(new AlterConfigsResponseData()));
             return;
         }
 
-        Map<ConfigResource, ApiError> results = new HashMap<>();
-        request.configs().forEach((ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
-            newConfig.entries().forEach(
-                    entry -> log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(),
-                            entry.value()));
-            results.put(configResource, ApiError.NONE);
+        AlterConfigsResponseData data = new AlterConfigsResponseData();
+        request.data().resources().forEach((AlterConfigsRequestData.AlterConfigsResource resource) -> {
+            byte resourceType = resource.resourceType();
+            String resourceName = resource.resourceName();
+            resource.configs().forEach((AlterConfigsRequestData.AlterableConfig entry) -> {
+                log.info("Ignoring ALTER_CONFIG for {} (type {}) {} = {}", resourceName, resourceType,
+                            entry.name(), entry.value());
+            });
+            data.responses().add(new AlterConfigsResponseData.AlterConfigsResourceResponse()
+                    .setErrorCode(ApiError.NONE.error().code())
+                    .setErrorMessage(ApiError.NONE.error().message())
+                    .setResourceName(resourceName)
+                    .setResourceType(resourceType));
         });
-        resultFuture.complete(new AlterConfigsResponse(0, results));
+        resultFuture.complete(new AlterConfigsResponse(data));
     }
 
     @Override
@@ -1913,16 +1979,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
         DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
+        DescribeConfigsRequestData data = request.data();
 
-        if (request.resources().isEmpty()) {
-            resultFuture.complete(new DescribeConfigsResponse(0, Maps.newHashMap()));
+        if (data.resources().isEmpty()) {
+            resultFuture.complete(new DescribeConfigsResponse(new DescribeConfigsResponseData()));
             return;
         }
 
         Collection<ConfigResource> authorizedResources = Collections.synchronizedList(new ArrayList<>());
         Map<ConfigResource, DescribeConfigsResponse.Config> failedConfigResourceMap =
                 Maps.newConcurrentMap();
-        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.resources().size());
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(data.resources().size());
 
         String namespacePrefix = currentNamespacePrefix();
         Consumer<Runnable> completeOne = (action) -> {
@@ -1930,20 +1997,46 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             action.run();
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
                 adminManager.describeConfigsAsync(authorizedResources.stream()
-                        .collect(Collectors.toMap(
-                                resource -> resource,
-                                resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
-                        )), namespacePrefix
+                                .collect(Collectors.toMap(
+                                        configResource -> configResource,
+                                        configResource -> data.resources().stream()
+                                                .filter(r -> r.resourceName().equals(configResource.name())
+                                                        && r.resourceType() == configResource.type().id())
+                                                .findAny()
+                                                .map(__ -> new HashSet<>())
+                                )),
+                        namespacePrefix
                 ).thenApply(configResourceConfigMap -> {
+                    DescribeConfigsResponseData responseData = new DescribeConfigsResponseData();
                     configResourceConfigMap.putAll(failedConfigResourceMap);
-                    resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+                    configResourceConfigMap.forEach((ConfigResource resource,
+                                                     DescribeConfigsResponse.Config result) -> {
+                        responseData.results().add(new DescribeConfigsResponseData.DescribeConfigsResult()
+                                .setResourceName(resource.name())
+                                .setResourceType(resource.type().id())
+                                .setErrorCode(result.error().error().code())
+                                .setErrorMessage(result.error().messageWithFallback())
+                                .setConfigs(result.entries().stream().map(c -> {
+                                    return new DescribeConfigsResponseData.DescribeConfigsResourceResult()
+                                            .setName(c.name())
+                                            .setConfigSource(c.source().id())
+                                            .setReadOnly(c.isReadOnly())
+                                            .setConfigType(c.type().id())
+                                            .setValue(c.value())
+                                            .setDocumentation("");
+                                }).collect(Collectors.toList())));
+
+                    });
+                    resultFuture.complete(new DescribeConfigsResponse(responseData));
                     return null;
                 });
             }
         };
 
         // Do authorization for each of resource
-        request.resources().forEach(configResource -> {
+        data.resources().forEach((DescribeConfigsRequestData.DescribeConfigsResource configRes) -> {
+            ConfigResource configResource = new ConfigResource(ConfigResource.Type.forId(configRes.resourceType()),
+                    configRes.resourceName());
             switch (configResource.type()) {
                 case TOPIC:
                     KopTopic kopTopic;
@@ -1987,6 +2080,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     completeOne.accept(() -> authorizedResources.add(configResource));
                     break;
                 case UNKNOWN:
+                case BROKER_LOGGER:
                 default:
                     completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));
                     break;
@@ -1999,18 +2093,24 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                         CompletableFuture<AbstractResponse> response) {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
+        InitProducerIdRequestData data = request.data();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(),
-                (resp) -> response.complete(
-                        new InitProducerIdResponse(0, resp.getError(), resp.getProducerId(),
-                                resp.getProducerEpoch())));
+                data.transactionalId(), data.transactionTimeoutMs(), Optional.empty(),
+                (resp) -> {
+                    InitProducerIdResponseData responseData = new InitProducerIdResponseData()
+                            .setErrorCode(resp.getError().code())
+                            .setProducerId(resp.getProducerId())
+                            .setProducerEpoch(resp.getProducerEpoch());
+                    response.complete(new InitProducerIdResponse(responseData));
+                });
     }
 
     @Override
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
+        AddPartitionsToTxnRequestData data = request.data();
         List<TopicPartition> partitionsToAdd = request.partitions();
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
         Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
@@ -2029,13 +2129,34 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     }
                     response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
                 } else {
-                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                            request.producerId(), request.producerEpoch(), authorizedPartitions, (errors) -> {
+                    transactionCoordinator.handleAddPartitionsToTransaction(data.transactionalId(),
+                            data.producerId(), data.producerEpoch(), authorizedPartitions, (errors) -> {
+                                AddPartitionsToTxnResponseData responseData = new AddPartitionsToTxnResponseData();
                                 // TODO: handle PRODUCER_FENCED errors
                                 Map<TopicPartition, Errors> topicPartitionErrorsMap =
                                         addPartitionError(partitionsToAdd, errors);
+                                topicPartitionErrorsMap.keySet()
+                                        .stream()
+                                        .map(TopicPartition::topic)
+                                        .distinct()
+                                        .forEach(topicName -> {
+                                            AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult topicResult =
+                                                    new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
+                                                    .setName(topicName);
+                                            responseData.results().add(topicResult);
+                                            topicPartitionErrorsMap.forEach((TopicPartition tp, Errors error) -> {
+                                                if (tp.topic().equals(topicName)) {
+                                                    topicResult.results()
+                                                        .add(new AddPartitionsToTxnResponseData
+                                                                .AddPartitionsToTxnPartitionResult()
+                                                        .setPartitionIndex(tp.partition())
+                                                        .setErrorCode(error.code()));
+                                                }
+                                            });
+                                        });
+
                                 response.complete(
-                                        new AddPartitionsToTxnResponse(0, topicPartitionErrorsMap));
+                                        new AddPartitionsToTxnResponse(responseData));
                             });
                 }
             }
@@ -2071,19 +2192,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
+        AddOffsetsToTxnRequestData data = request.data();
+        int partition = getGroupCoordinator().partitionFor(data.groupId());
         String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().offsetsTopicName();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(
-                request.transactionalId(),
-                request.producerId(),
-                request.producerEpoch(),
+                data.transactionalId(),
+                data.producerId(),
+                data.producerEpoch(),
                 topicPartitions,
                 (errors) -> {
+                    AddOffsetsToTxnResponseData responseData = new AddOffsetsToTxnResponseData()
+                            .setErrorCode(errors.code());
                     // TODO: handle PRODUCER_FENCED errors
                     response.complete(
-                            new AddOffsetsToTxnResponse(0, errors));
+                            new AddOffsetsToTxnResponse(responseData));
                 });
     }
 
@@ -2099,8 +2223,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
-
-        if (request.offsets().isEmpty()) {
+        TxnOffsetCommitRequestData data = request.data();
+        if (data.topics().isEmpty()) {
             response.complete(new TxnOffsetCommitResponse(0, Maps.newHashMap()));
             return;
         }
@@ -2126,9 +2250,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
 
                 getGroupCoordinator().handleTxnCommitOffsets(
-                        request.consumerGroupId(),
-                        request.producerId(),
-                        request.producerEpoch(),
+                        data.groupId(),
+                        data.producerId(),
+                        data.producerEpoch(),
                         convertTxnOffsets(convertedOffsetData)).whenComplete((resultMap, throwable) -> {
 
                     // recover to original topic name
@@ -2192,13 +2316,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                 CompletableFuture<AbstractResponse> response) {
         EndTxnRequest request = (EndTxnRequest) kafkaHeaderAndRequest.getRequest();
+        EndTxnRequestData data = request.data();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleEndTransaction(
-                request.transactionalId(),
-                request.producerId(),
-                request.producerEpoch(),
-                request.command(),
-                errors -> response.complete(new EndTxnResponse(0, errors)));
+                data.transactionalId(),
+                data.producerId(),
+                data.producerEpoch(),
+                data.committed() ? TransactionResult.COMMIT : TransactionResult.ABORT,
+                errors -> response.complete(new EndTxnResponse(new EndTxnResponseData().setErrorCode(errors.code()))));
     }
     @Override
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
@@ -2311,7 +2436,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
-        Set<String> topicsToDelete = request.topics();
+        DeleteTopicsRequestData data = request.data();
+        List<DeleteTopicsRequestData.DeleteTopicState> topicsToDelete = data.topics();
         if (topicsToDelete == null || topicsToDelete.isEmpty()) {
             resultFuture.complete(KafkaResponseUtils.newDeleteTopics(Maps.newHashMap()));
             return;
@@ -2333,7 +2459,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
         final String namespacePrefix = currentNamespacePrefix();
-        topicsToDelete.forEach(topic -> {
+        topicsToDelete.forEach((DeleteTopicsRequestData.DeleteTopicState topicState) -> {
+            String topic = topicState.name();
             KopTopic kopTopic;
             try {
                 kopTopic = new KopTopic(topic, namespacePrefix);
@@ -2367,16 +2494,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(deleteTopics.getRequest() instanceof DeleteRecordsRequest);
         DeleteRecordsRequest request = (DeleteRecordsRequest) deleteTopics.getRequest();
-        Map<TopicPartition, Long> partitionOffsets = request.partitionOffsets();
-        if (partitionOffsets == null || partitionOffsets.isEmpty()) {
+        Map<TopicPartition, Long> partitionOffsets = new HashMap<>();
+        request.data().topics().forEach((DeleteRecordsRequestData.DeleteRecordsTopic topic) -> {
+            String name = topic.name();
+            topic.partitions().forEach(partition -> {
+                TopicPartition topicPartition = new TopicPartition(name, partition.partitionIndex());
+                partitionOffsets.put(topicPartition, partition.offset());
+            });
+        });
+        if (partitionOffsets.isEmpty()) {
             resultFuture.complete(KafkaResponseUtils.newDeleteRecords(Maps.newHashMap()));
             return;
         }
-        Map<TopicPartition, DeleteRecordsResponse.PartitionResponse> deleteRecordsResponse =
+        Map<TopicPartition, Errors> deleteRecordsResponse =
                 Maps.newConcurrentMap();
         AtomicInteger topicToDeleteCount = new AtomicInteger(partitionOffsets.size());
         BiConsumer<TopicPartition, Errors> completeOne = (topic, errors) -> {
-            deleteRecordsResponse.put(topic, new DeleteRecordsResponse.PartitionResponse(0, errors));
+            deleteRecordsResponse.put(topic, errors);
             if (topicToDeleteCount.decrementAndGet() == 0) {
                 resultFuture.complete(KafkaResponseUtils.newDeleteRecords(deleteRecordsResponse));
             }
@@ -2423,11 +2557,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
 
         final Map<String, ApiError> result = Maps.newConcurrentMap();
-        final Map<String, CreatePartitionsRequest.PartitionDetails> validTopics = Maps.newHashMap();
-        final Set<String> duplicateTopics = request.duplicates();
+        final Map<String, CreatePartitionsRequestData.CreatePartitionsTopic> validTopics = Maps.newHashMap();
+        final Set<String> duplicateTopics = new HashSet<>();
 
         KafkaRequestUtils.forEachCreatePartitionsRequest(request, (topic, newPartition) -> {
-            if (!duplicateTopics.contains(topic)) {
+            if (duplicateTopics.add(topic)) {
                 validTopics.put(topic, newPartition);
             } else {
                 final String errorMessage = "Create topics partitions request from client `"
@@ -2444,13 +2578,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
-        final Map<String, CreatePartitionsRequest.PartitionDetails> authorizedTopics = Maps.newConcurrentMap();
+        final Map<String, CreatePartitionsRequestData.CreatePartitionsTopic> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
                 return;
             }
-            adminManager.createPartitionsAsync(authorizedTopics, request.timeout(), namespacePrefix)
+            adminManager.createPartitionsAsync(authorizedTopics, request.data().timeoutMs(), namespacePrefix)
                     .thenApply(validResult -> {
                 result.putAll(validResult);
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
@@ -2458,7 +2592,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> completeOneTopic = (topic, newPartitions) -> {
+        BiConsumer<String, CreatePartitionsRequestData.CreatePartitionsTopic> completeOneTopic =
+                (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createPartitionsAsync.run();
@@ -2502,12 +2637,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.close();
     }
 
+    public CompletableFuture<PartitionMetadata> lookup(TopicName topic) {
+        return findBroker(topic).thenApply(KafkaResponseUtils.BrokerLookupResult::toPartitionMetadata);
+    }
+
     // The returned future never completes exceptionally
-    public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
+    public CompletableFuture<KafkaResponseUtils.BrokerLookupResult> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        final CompletableFuture<PartitionMetadata> future = new CompletableFuture<>();
+        final CompletableFuture<KafkaResponseUtils.BrokerLookupResult> future = new CompletableFuture<>();
         kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
                 .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
@@ -2533,26 +2672,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             address.getPort());
     }
 
-    static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
+    static KafkaResponseUtils.BrokerLookupResult newPartitionMetadata(TopicName topicName, Node node) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
         if (log.isDebugEnabled()) {
             log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
         }
-
-        return KafkaResponseUtils.newMetadataPartition(kafkaPartitionIndex, node);
+        TopicPartition topicPartition = new TopicPartition(topicName.toString(), kafkaPartitionIndex);
+        return KafkaResponseUtils.newMetadataPartition(topicPartition, node);
     }
 
-    static PartitionMetadata newFailedPartitionMetadata(TopicName topicName) {
+    static KafkaResponseUtils.BrokerLookupResult newFailedPartitionMetadata(TopicName topicName) {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
         log.warn("Failed find Broker metadata, create PartitionMetadata with NOT_LEADER_FOR_PARTITION");
 
+        TopicPartition topicPartition = new TopicPartition(topicName.toString(), kafkaPartitionIndex);
         // most of this error happens when topic is in loading/unloading status,
         return KafkaResponseUtils.newMetadataPartition(
-                Errors.NOT_LEADER_FOR_PARTITION, kafkaPartitionIndex);
+                Errors.NOT_LEADER_OR_FOLLOWER, topicPartition);
     }
 
     private void throwIfTransactionCoordinatorDisabled() {
