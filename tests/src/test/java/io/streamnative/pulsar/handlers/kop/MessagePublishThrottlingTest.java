@@ -19,8 +19,10 @@ import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,7 +38,7 @@ import org.apache.pulsar.broker.service.PublishRateLimiter;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.PublishRate;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -66,13 +68,6 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         conf.setPreciseTopicPublishRateLimiterEnable(preciseTopicPublishRateLimiterEnable);
         super.internalSetup();
         log.info("success internal setup");
-
-        if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
-            admin.namespaces().createNamespace("public/__kafka");
-            admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
-            admin.namespaces().setRetention("public/__kafka",
-                    new RetentionPolicies(-1, -1));
-        }
     }
 
     @AfterClass
@@ -129,21 +124,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         int numMessage = 10;
         int msgBytes = 110;
         int numThread = 4;
-        ExecutorService executorService = Executors.newFixedThreadPool(numThread);
-        CountDownLatch latch = new CountDownLatch(numThread);
-        for (int n = 0; n < numThread; n++) {
-            executorService.submit(() -> {
-                for (int i = 0; i < numMessage; i++) {
-                    try {
-                        producer.send(new ProducerRecord<>(topicName, new byte[msgBytes])).get();
-                    } catch (InterruptedException | ExecutionException e) {
-                        log.error("Send message failed.", e);
-                    }
-                }
-                latch.countDown();
-            });
-        }
-        latch.await();
+        this.sendMessagesFromMultiThreads(producer, topicName, numThread, numMessage, msgBytes);
 
         prod.updateRates();
         double rateIn = prod.getStats().msgThroughputIn;
@@ -152,7 +133,6 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
 
         log.info("Byte rate in: {} byte/s, total: {} bytes", rateIn, numMessage * msgBytes * numThread);
         if (preciseTopicPublishRateLimiterEnable) {
-            // 400 - 100 <= rateIn <= 400 + 100
             assertTrue(rateIn <= topicByteRate + 100);
             assertTrue(rateIn >= topicByteRate - 100);
         } else {
@@ -222,25 +202,10 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         int numMessage = 20;
         int msgBytes = 50;
         int numThread = 4;
-        ExecutorService executorService = Executors.newFixedThreadPool(numThread);
-        CountDownLatch latch = new CountDownLatch(numThread);
-        for (int n = 0; n < numThread; n++) {
-            executorService.submit(() -> {
-                for (int i = 0; i < numMessage; i++) {
-                    try {
-                        producer.send(new ProducerRecord<>(topicName, new byte[msgBytes])).get();
-                    } catch (InterruptedException | ExecutionException e) {
-                        log.error("Send message failed.", e);
-                    }
-                }
-                latch.countDown();
-            });
-        }
-        latch.await();
+        this.sendMessagesFromMultiThreads(producer, topicName, numThread, numMessage, msgBytes);
 
         prod.updateRates();
         double rateIn = prod.getStats().getMsgRateIn();
-
 
         log.info("Msg rate in: {} msgs/s, total: {} msgs", rateIn, numMessage * numThread);
         if (preciseTopicPublishRateLimiterEnable) {
@@ -281,5 +246,28 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
 
         return new KafkaProducer<>(props);
+    }
+
+    private void sendMessagesFromMultiThreads(KafkaProducer<Integer, byte[]> producer, String topicName,
+                                              int numThread, int numMessage, int msgBytes) throws Exception {
+        ExecutorService executorService = Executors.newFixedThreadPool(numThread);
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (int n = 0; n < numThread; n++) {
+            final CompletableFuture<Void> future = new CompletableFuture<>();
+            futures.add(future);
+            executorService.submit(() -> {
+                for (int i = 0; i < numMessage; i++) {
+                    try {
+                        producer.send(new ProducerRecord<>(topicName, new byte[msgBytes])).get();
+                    } catch (InterruptedException | ExecutionException e) {
+                        log.error("Send message failed.", e);
+                        future.completeExceptionally(e);
+                    }
+                }
+                future.complete(null);
+            });
+        }
+        FutureUtil.waitForAll(futures).get();
+        executorService.shutdown();
     }
 }

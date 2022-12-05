@@ -864,9 +864,9 @@ public class PartitionLog {
         });
     }
 
-    protected void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
+    private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
                                               AppendRecordsContext appendRecordsContext) {
-        boolean isPublishRateExceeded;
+        final boolean isPublishRateExceeded;
         if (preciseTopicPublishRateLimitingEnable) {
             boolean isPreciseTopicPublishRateExceeded =
                     topic.isTopicPublishRateExceeded(numMessages, msgSize);
