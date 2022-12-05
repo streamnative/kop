@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -268,7 +269,7 @@ public class TransactionMarkerChannelManager {
         Integer txnTopicPartition = txnStateManager.partitionFor(transactionalId);
 
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
-        List<TopicPartition> unknownBrokerTopicList = new ArrayList<>();
+        List<TopicPartition> unknownBrokerTopicList = new CopyOnWriteArrayList<>();
 
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
