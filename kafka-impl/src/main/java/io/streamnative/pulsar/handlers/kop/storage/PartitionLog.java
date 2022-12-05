@@ -1061,9 +1061,6 @@ public class PartitionLog {
                 final ManagedCursor cursor = cursorLongPair.getLeft();
                 final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
 
-                requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
-
                 readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), future);
 
             }).exceptionally(ex -> {

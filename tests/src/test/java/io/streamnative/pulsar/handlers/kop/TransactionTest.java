@@ -233,13 +233,13 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
 
-    @Test
+    @Test(timeOut = 1000 * 20)
     public void basicRecoveryTestAfterTopicUnload() throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload";
         String transactionalId = "myProducer";
         String isolation = "read_committed";
-        boolean isBatch  = false;
+        boolean isBatch = false;
 
         String namespace = TopicName.get(topicName).getNamespace();
 
