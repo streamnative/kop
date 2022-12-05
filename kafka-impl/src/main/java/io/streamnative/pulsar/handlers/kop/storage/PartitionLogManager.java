@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
@@ -30,6 +31,7 @@ import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
  * Manage {@link PartitionLog}.
  */
 @AllArgsConstructor
+@Slf4j
 public class PartitionLogManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
@@ -69,6 +71,7 @@ public class PartitionLogManager {
     }
 
     public CompletableFuture<PartitionLog> removeLog(String topicName) {
+        log.info("removeLog", topicName);
         return logMap.remove(topicName);
     }
 

@@ -597,7 +597,9 @@ public class PartitionLog {
             log.error("Received request for offset {} for partition {}, "
                             + "but we only have entries less than {}.",
                     offset, topicPartition, logEndOffset);
-            registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
+            if (startPrepareMetadataNanos > 0) {
+                registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
+            }
             return true;
         }
         return false;
@@ -1014,9 +1016,6 @@ public class PartitionLog {
                 log.info("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
                 return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
             }
-            int maxReadEntriesNum = 1000;
-            long adjustedMaxBytes = 1024 * 1024;
-            final long startPrepareMetadataNanos = MathUtils.nowInNano();
             final CompletableFuture<Void> future = new CompletableFuture<>();
 
             // The future that is returned by getTopicConsumerManager is always completed normally
@@ -1033,7 +1032,7 @@ public class PartitionLog {
                 }
             });
 
-            if (checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
+            if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
                 future.completeExceptionally(new OffsetOutOfRangeException(""));
                 return future;
             }
@@ -1048,7 +1047,6 @@ public class PartitionLog {
             if (cursorFuture == null) {
                 // tcm is closed, just return a NONE error because the channel may be still active
                 log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
-                registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 future.completeExceptionally(new NotLeaderOrFollowerException());
                 return future;
             }
@@ -1057,7 +1055,6 @@ public class PartitionLog {
                 if (cursorLongPair == null) {
                     log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
                             + "Fetch for topic return error.", offset, topicPartition);
-                    registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                     future.completeExceptionally(new NotLeaderOrFollowerException());
                     return;
                 }
@@ -1067,92 +1064,108 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
 
-                readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
-                        (partitionName) -> {})
-                        .whenComplete((entries, throwable) -> {
-                            if (throwable != null) {
-                                tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
-                                        "cursor.readEntry fail. deleteCursor");
-                                if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
-                                        || throwable instanceof ManagedLedgerException.ManagedLedgerFencedException) {
-                                    future.completeExceptionally(new NotLeaderOrFollowerException());
-                                    return;
-                                }
-                                log.error("Read entry error on {}", fullPartitionName, throwable);
-                                future.completeExceptionally(new UnknownServerException(throwable));
-                                return;
-                            }
+                readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), future);
 
-                            // Add new offset back to TCM after entries are read successfully
-                            tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
-
-                            if (entries.isEmpty()) {
-                                log.info("No more entries to recover for {}", fullPartitionName);
-                                future.complete(null);
-                                return;
-                            }
-
-                            CompletableFuture<DecodeResult> decodedEntries = new CompletableFuture<>();
-                            decodeEntriesForRecovery(decodedEntries, entries, topic.get());
-
-                            decodedEntries.thenAccept((decodeResult) -> {
-                                try {
-
-                                    MemoryRecords records = decodeResult.getRecords();
-                                    Optional<Long> firstOffset = Optional
-                                            .ofNullable(records.firstBatch())
-                                            .map(batch -> batch.baseOffset());
-
-                                    long[] lastOffSetHolder = {-1L};
-                                    records.batches().forEach(batch -> {
-                                        batch.forEach(record -> {
-                                            if (lastOffSetHolder[0] < record.offset()) {
-                                                lastOffSetHolder[0] = record.offset();
-                                            }
-                                        });
-                                    });
-                                    long lastOffset = lastOffSetHolder[0];
-
-                                    log.info("Read entries while recovering {} firstOffSet {} lastOffset {}",
-                                            fullPartitionName,
-                                            firstOffset.orElse(null), lastOffset);
-
-                                    AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
-                                            firstOffset, AppendOrigin.Log);
-
-                                    analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-                                        if (log.isDebugEnabled()) {
-                                            log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
-                                                    pid, producerAppendInfo, lastOffset);
-                                        }
-                                        producerStateManager.update(producerAppendInfo);
-                                    });
-                                    analyzeResult.completedTxns().forEach(completedTxn -> {
-                                        // update to real last offset
-                                        completedTxn.lastOffset(lastOffset - 1);
-                                        long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                                        producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-                                        producerStateManager.completeTxn(completedTxn);
-                                    });
-                                } finally {
-                                    decodeResult.recycle();
-                                }
-                            }).exceptionally(error -> {
-                                future.completeExceptionally(error);
-                                return null;
-                            });
-
-
-                        });
             }).exceptionally(ex -> {
-                registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 future.completeExceptionally(new NotLeaderOrFollowerException());
                 return null;
             });
-
-
             return future;
         });
+    }
+
+
+    private void readNextEntriesForRecovery(ManagedCursor cursor, AtomicLong cursorOffset,
+                                            KafkaTopicConsumerManager tcm,
+                                            PersistentTopic topic,
+                                            CompletableFuture<Void> future) {
+        log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
+        int maxReadEntriesNum = 2;
+        long adjustedMaxBytes = Long.MAX_VALUE;
+        readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
+                (partitionName) -> {})
+                .whenComplete((entries, throwable) -> {
+                    if (throwable != null) {
+                        tcm.deleteOneCursorAsync(cursor,
+                                "cursor.readEntry fail. deleteCursor");
+                        if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
+                                || throwable instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                            future.completeExceptionally(new NotLeaderOrFollowerException());
+                            return;
+                        }
+                        log.error("Read entry error on {}", fullPartitionName, throwable);
+                        future.completeExceptionally(new UnknownServerException(throwable));
+                        return;
+                    }
+
+                    // Add new offset back to TCM after entries are read successfully
+                    tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
+
+                    if (entries.isEmpty()) {
+                        log.info("No more entries to recover for {}", fullPartitionName);
+                        future.complete(null);
+                        return;
+                    }
+
+                    CompletableFuture<DecodeResult> decodedEntries = new CompletableFuture<>();
+                    decodeEntriesForRecovery(decodedEntries, entries, topic);
+
+                    decodedEntries.thenAccept((decodeResult) -> {
+                        try {
+
+                            MemoryRecords records = decodeResult.getRecords();
+                            Optional<Long> firstOffset = Optional
+                                    .ofNullable(records.firstBatch())
+                                    .map(batch -> batch.baseOffset());
+
+                            long[] lastOffSetHolder = {-1L};
+                            records.batches().forEach(batch -> {
+                                batch.forEach(record -> {
+                                    if (lastOffSetHolder[0] < record.offset()) {
+                                        lastOffSetHolder[0] = record.offset();
+                                    }
+                                });
+                            });
+                            long lastOffset = lastOffSetHolder[0];
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("Read some entries while recovering {} firstOffSet {} lastOffset {}",
+                                        fullPartitionName,
+                                        firstOffset.orElse(null), lastOffset);
+                            }
+
+                            AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
+                                    firstOffset, AppendOrigin.Log);
+
+                            analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
+                                            pid, producerAppendInfo, lastOffset);
+                                }
+                                producerStateManager.update(producerAppendInfo);
+                            });
+                            analyzeResult.completedTxns().forEach(completedTxn -> {
+                                // update to real last offset
+                                completedTxn.lastOffset(lastOffset - 1);
+                                long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+                                producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+                                producerStateManager.completeTxn(completedTxn);
+                            });
+                            if (log.isDebugEnabled()) {
+                                log.debug("Completed recovery of batch {} {}", analyzeResult, fullPartitionName);
+                            }
+
+                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, future);
+
+                        } finally {
+                            decodeResult.recycle();
+                        }
+                    }).exceptionally(error -> {
+                        log.error("Bad error while recovering {}", fullPartitionName, error);
+                        future.completeExceptionally(error);
+                        return null;
+                    });
+                });
     }
 
     private void decodeEntriesForRecovery(final CompletableFuture<DecodeResult> future,

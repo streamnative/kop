@@ -46,6 +46,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.common.naming.TopicName;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -230,6 +231,59 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 1000 * 10)
     public void offsetAbortTest() throws Exception {
         txnOffsetTest("txn-offset-abort-test", 10, false);
+    }
+
+    @Test
+    public void basicRecoveryTestAfterTopicUnload() throws Exception {
+
+        String topicName = "basicRecoveryTestAfterTopicUnload";
+        String transactionalId = "myProducer";
+        String isolation = "read_committed";
+        boolean isBatch  = false;
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 20;
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                } else {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                }
+            }
+            producer.flush();
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+        }
+
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        consumeTxnMessage(topicName, totalTxnCount * messageCountPerTxn, lastMessage, isolation);
     }
 
     public void txnOffsetTest(String topic, int messageCnt, boolean isCommit) throws Exception {
