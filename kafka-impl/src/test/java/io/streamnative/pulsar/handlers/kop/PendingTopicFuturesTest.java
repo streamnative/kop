@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.testng.Assert;
@@ -55,19 +56,19 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testNormalComplete() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture = CompletableFuture.supplyAsync(() -> {
-            sleep(800);
-            return Optional.empty();
-        });
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture = new CompletableFuture<>();
         final List<Integer> completedIndexes = new ArrayList<>();
         final List<Integer> changesOfPendingCount = new ArrayList<>();
+        int randomNum = ThreadLocalRandom.current().nextInt(0, 9);
 
         for (int i = 0; i < 10; i++) {
             final int index = i;
             pendingTopicFutures.addListener(
                     topicFuture, ignored -> completedIndexes.add(index), (ignore) -> {});
             changesOfPendingCount.add(pendingTopicFutures.size());
-            sleep(234);
+            if (randomNum == i) {
+                topicFuture.complete(Optional.empty());
+            }
         }
 
         // all futures are completed, the size becomes 0 again.
@@ -88,19 +89,20 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testExceptionalComplete() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture = CompletableFuture.supplyAsync(() -> {
-            sleep(800);
-            throw new RuntimeException("error");
-        });
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture = new CompletableFuture<>();
         final List<String> exceptionMessages = new ArrayList<>();
         final List<Integer> changesOfPendingCount = new ArrayList<>();
 
+        int randomNum = ThreadLocalRandom.current().nextInt(0, 9);
         for (int i = 0; i < 10; i++) {
             pendingTopicFutures.addListener(topicFuture, topic -> {}, (ex) -> {
                 exceptionMessages.add(ex.getMessage());
             });
             changesOfPendingCount.add(pendingTopicFutures.size());
-            sleep(200);
+
+            if (randomNum == i) {
+                topicFuture.completeExceptionally(new RuntimeException("error"));
+            }
         }
 
         // all futures are completed, the size becomes 0 again.
