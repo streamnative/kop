@@ -3,12 +3,12 @@ name: kop tests
 on:
   pull_request:
     branches:
-      - master
-      - branch-*
+    - master
+    - branch-*
   push:
     branches:
-      - master
-      - branch-*
+    - master
+    - branch-*
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,6 +20,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: s4u/maven-settings-action@v2.6.0
+      with:
+        servers: '[{"id": "ossrh", "username": "${{ secrets.SONATYPE_USERNAME }}",
+          "password": "${{ secrets.SONATYPE_PASSWORD }}"}]'
+    - name: Login to cloudsmith
+      run: docker login -u="${{ secrets.CLOUDSMITH_USERNAME }}" -p="${{ secrets.CLOUDSMITH_API_KEY
+        }}" docker.cloudsmith.io
     - uses: actions/checkout@v1
     - name: Set up JDK 17
       uses: actions/setup-java@v1
@@ -55,7 +62,8 @@ jobs:
       run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
 
     - name: tests module
-      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
+      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test'
+        -pl tests
       timeout-minutes: 60
 
     - name: package surefire artifacts
