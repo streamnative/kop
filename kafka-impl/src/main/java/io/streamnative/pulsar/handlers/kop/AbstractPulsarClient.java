@@ -75,7 +75,7 @@ public abstract class AbstractPulsarClient implements Closeable {
                 ? pulsarService.getBrokerServiceUrlTls()
                 : pulsarService.getBrokerServiceUrl());
         conf.setTlsAllowInsecureConnection(kafkaConfig.isTlsAllowInsecureConnection());
-        conf.setTlsTrustCertsFilePath(kafkaConfig.getTlsCertificateFilePath());
+        conf.setTlsTrustCertsFilePath(kafkaConfig.getTlsTrustCertsFilePath());
 
         if (kafkaConfig.isBrokerClientTlsEnabled()) {
             if (kafkaConfig.isBrokerClientTlsEnabledWithKeyStore()) {
@@ -87,7 +87,7 @@ public abstract class AbstractPulsarClient implements Closeable {
                 conf.setTlsTrustCertsFilePath(
                         isNotBlank(kafkaConfig.getBrokerClientTrustCertsFilePath())
                                 ? kafkaConfig.getBrokerClientTrustCertsFilePath()
-                                : kafkaConfig.getTlsCertificateFilePath());
+                                : kafkaConfig.getTlsTrustCertsFilePath());
             }
         }
 
