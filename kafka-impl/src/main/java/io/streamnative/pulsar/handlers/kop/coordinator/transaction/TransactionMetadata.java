@@ -281,7 +281,10 @@ public class TransactionMetadata {
                             + "from the cache, not to persist the " + toState + "in the");
             }
 
-            log.info("TransactionalId {} complete transition from {} to {}", transactionalId, state, transitMetadata);
+            if (log.isDebugEnabled()) {
+                log.debug("TransactionalId {} complete transition from {} to {}", transactionalId, state,
+                        transitMetadata);
+            }
             this.txnLastUpdateTimestamp = transitMetadata.txnLastUpdateTimestamp;
             this.pendingState = Optional.empty();
             this.state = toState;
