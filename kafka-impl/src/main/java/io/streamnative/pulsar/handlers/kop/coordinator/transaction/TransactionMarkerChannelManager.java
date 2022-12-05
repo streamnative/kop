@@ -373,8 +373,10 @@ public class TransactionMarkerChannelManager {
         TransactionMetadata.TxnTransitMetadata newMetadata = pendingCompleteTxn.newMetadata;
         int coordinatorEpoch = pendingCompleteTxn.coordinatorEpoch;
 
-        log.info("Completed sending transaction markers for {}; begin transition to {}",
-                transactionalId, newMetadata.getTxnState());
+        if (log.isDebugEnabled()) {
+            log.debug("Completed sending transaction markers for {}; begin transition to {}",
+                    transactionalId, newMetadata.getTxnState());
+        }
 
         Either<Errors, Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 txnStateManager.getTransactionState(transactionalId);
@@ -419,8 +421,12 @@ public class TransactionMarkerChannelManager {
                 txnLogAppend.newMetadata, new TransactionStateManager.ResponseCallback() {
             @Override
             public void complete() {
-                log.info("Completed transaction for {} with coordinator epoch {}, final state after commit: {}",
-                    txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch, txnLogAppend.txnMetadata.getState());
+                if (log.isDebugEnabled()) {
+                    log.debug("Completed transaction for {} with coordinator epoch {}, "
+                                    + "final state after commit: {}",
+                            txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch,
+                            txnLogAppend.txnMetadata.getState());
+                }
             }
 
             @Override
