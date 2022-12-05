@@ -16,13 +16,11 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-
 import lombok.AllArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
@@ -40,7 +38,7 @@ public class PartitionLogManager {
     private final Time time;
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
 
-    private final KafkaTopicManagerSharedState sharedState;
+    private final KafkaTopicLookupService kafkaTopicLookupService;
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
@@ -48,14 +46,14 @@ public class PartitionLogManager {
                                RequestStats requestStats,
                                final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
                                Time time,
-                               KafkaTopicManagerSharedState sharedState,
+                               KafkaTopicLookupService kafkaTopicLookupService,
                                ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
         this.entryfilterMap = entryfilterMap;
         this.time = time;
-        this.sharedState = sharedState;
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
     }
 
@@ -64,7 +62,8 @@ public class PartitionLogManager {
 
         return logMap.computeIfAbsent(kopTopic, key -> {
                 return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryfilterMap,
-                        sharedState, producerStateManagerSnapshotBuffer)
+                        kafkaTopicLookupService,
+                        producerStateManagerSnapshotBuffer)
                         .recover(); // TODO: retry on failures
         });
     }

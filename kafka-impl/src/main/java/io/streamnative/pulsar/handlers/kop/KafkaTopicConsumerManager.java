@@ -48,7 +48,6 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class KafkaTopicConsumerManager implements Closeable {
 
     private final PersistentTopic topic;
-    private final KafkaRequestHandler requestHandler;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -67,13 +66,21 @@ public class KafkaTopicConsumerManager implements Closeable {
 
     private final boolean skipMessagesWithoutIndex;
 
+    private final String description;
+
     KafkaTopicConsumerManager(KafkaRequestHandler requestHandler, PersistentTopic topic) {
+        this(requestHandler.ctx.channel() + "",
+                requestHandler.isSkipMessagesWithoutIndex(),
+                topic);
+    }
+
+    public KafkaTopicConsumerManager(String description, boolean skipMessagesWithoutIndex, PersistentTopic topic) {
         this.topic = topic;
         this.cursors = new ConcurrentHashMap<>();
         this.createdCursors = new ConcurrentHashMap<>();
         this.lastAccessTimes = new ConcurrentHashMap<>();
-        this.requestHandler = requestHandler;
-        this.skipMessagesWithoutIndex = requestHandler.isSkipMessagesWithoutIndex();
+        this.description =  description;
+        this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
     }
 
     // delete expired cursors, so backlog can be cleared.
@@ -96,7 +103,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         if (cursorFuture != null) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Cursor timed out for offset: {}, cursors cache size: {}",
-                        requestHandler.ctx.channel(), offset, cursors.size());
+                        description, offset, cursors.size());
             }
 
             // TODO: Should we just cancel this future?
@@ -118,14 +125,14 @@ public class KafkaTopicConsumerManager implements Closeable {
                 public void deleteCursorComplete(Object ctx) {
                     if (log.isDebugEnabled()) {
                         log.debug("[{}] Cursor {} for topic {} deleted successfully for reason: {}.",
-                            requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason);
+                                description, cursor.getName(), topic.getName(), reason);
                     }
                 }
 
                 @Override
                 public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
                     log.warn("[{}] Error deleting cursor {} for topic {} for reason: {}.",
-                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
+                            description, cursor.getName(), topic.getName(), reason, exception);
                 }
             }, null);
             createdCursors.remove(cursor.getName());
@@ -148,7 +155,7 @@ public class KafkaTopicConsumerManager implements Closeable {
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] Get cursor for offset: {} in cache. cache size: {}",
-                    requestHandler.ctx.channel(), offset, cursors.size());
+                    description, offset, cursors.size());
         }
         return cursorFuture;
     }
@@ -182,7 +189,7 @@ public class KafkaTopicConsumerManager implements Closeable {
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] Add cursor back {} for offset: {}",
-                    requestHandler.ctx.channel(), pair.getLeft().getName(), offset);
+                    description, pair.getLeft().getName(), offset);
         }
     }
 
@@ -194,7 +201,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         }
         if (log.isDebugEnabled()) {
             log.debug("[{}] Close TCM for topic {}.",
-                requestHandler.ctx.channel(), topic.getName());
+                    description, topic.getName());
         }
         final List<CompletableFuture<Pair<ManagedCursor, Long>>> cursorFuturesToClose = new ArrayList<>();
         cursors.forEach((ignored, cursorFuture) -> cursorFuturesToClose.add(cursorFuture));
@@ -231,7 +238,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         if (((ManagedLedgerImpl) ledger).getState() == ManagedLedgerImpl.State.Closed) {
             log.error("[{}] Async get cursor for offset {} for topic {} failed, "
                             + "because current managedLedger has been closed",
-                    requestHandler.ctx.channel(), offset, topic.getName());
+                    description, offset, topic.getName());
             CompletableFuture<Pair<ManagedCursor, Long>> future = new CompletableFuture<>();
             future.completeExceptionally(new Exception("Current managedLedger for "
                     + topic.getName() + " has been closed."));
@@ -250,7 +257,7 @@ public class KafkaTopicConsumerManager implements Closeable {
             final PositionImpl previous = ((ManagedLedgerImpl) ledger).getPreviousPosition((PositionImpl) position);
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
-                        requestHandler.ctx.channel(), cursorName, offset, position, previous);
+                        description, cursorName, offset, position, previous);
             }
             try {
                 final ManagedCursor newCursor = ledger.newNonDurableCursor(previous, cursorName);
@@ -259,7 +266,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                 return Pair.of(newCursor, offset);
             } catch (ManagedLedgerException e) {
                 log.error("[{}] Error new cursor for topic {} at offset {} - {}. will cause fetch data error.",
-                        requestHandler.ctx.channel(), topic.getName(), offset, previous, e);
+                        description, topic.getName(), offset, previous, e);
                 return null;
             }
         });

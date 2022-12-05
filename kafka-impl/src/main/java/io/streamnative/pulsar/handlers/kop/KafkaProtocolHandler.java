@@ -86,6 +86,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SystemTopicClient txnTopicClient;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+
+    private KafkaTopicLookupService kafkaTopicLookupService;
     private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
     @VisibleForTesting
     @Getter
@@ -405,7 +407,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState,
+                kafkaTopicLookupService);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -425,6 +428,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
 
+        kafkaTopicLookupService = new KafkaTopicLookupService(brokerService);
+
         replicaManager = new ReplicaManager(
                 kafkaConfig,
                 requestStats,
@@ -432,7 +437,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getEntryFilters(),
                 producePurgatory,
                 fetchPurgatory,
-                kafkaTopicManagerSharedState,
+                kafkaTopicLookupService,
                 producerStateManagerSnapshotBuffer);
 
         try {

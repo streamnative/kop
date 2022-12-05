@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 /**
  * Stores snapshots of the state of ProducerStateManagers.
@@ -23,14 +22,14 @@ import java.util.function.Consumer;
 public interface ProducerStateManagerSnapshotBuffer {
 
     /**
-     * Writes a snapshot to the storage
+     * Writes a snapshot to the storage.
      * @param snapshot
      * @return a handle to the operation
      */
     CompletableFuture<Void> write(ProducerStateManagerSnapshot snapshot);
 
     /**
-     * Reads the latest available snapshot for a given partition
+     * Reads the latest available snapshot for a given partition.
      * @param topicPartition
      * @return
      */

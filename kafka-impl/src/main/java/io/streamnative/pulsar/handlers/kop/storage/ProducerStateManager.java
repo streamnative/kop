@@ -14,21 +14,13 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
@@ -49,38 +41,41 @@ public class ProducerStateManager {
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
-    public ProducerStateManager(String topicPartition, ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
+    public ProducerStateManager(String topicPartition,
+                                ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.topicPartition = topicPartition;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
     }
 
-    public CompletableFuture<Void> recover(PartitionLog partitionLog,
-                                           KafkaTopicManagerSharedState sharedState) {
+    public CompletableFuture<Void> recover(PartitionLog partitionLog) {
         return producerStateManagerSnapshotBuffer
                 .readLatestSnapshot(topicPartition)
-                .thenCompose(snapshot -> applySnapshotAndRecover(snapshot, partitionLog, sharedState));
+                .thenCompose(snapshot -> applySnapshotAndRecover(snapshot, partitionLog));
     }
 
     private CompletableFuture<Void> applySnapshotAndRecover(ProducerStateManagerSnapshot snapshot,
-                                                            PartitionLog partitionLog,
-                                                            KafkaTopicManagerSharedState sharedState
-                                                            ) {
+                                                            PartitionLog partitionLog) {
         this.abortedIndexList.clear();
-        if (snapshot.getAbortedIndexList() != null) {
-            this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
-        }
         this.producers.clear();
-        if (snapshot.getProducers() != null) {
-            this.producers.putAll(snapshot.getProducers());
-        }
         this.ongoingTxns.clear();
-        if (snapshot.getOngoingTxns() != null) {
-            this.ongoingTxns.putAll(snapshot.getOngoingTxns());
+        long offSetPosition = 0;
+        if (snapshot != null) {
+            if (snapshot.getAbortedIndexList() != null) {
+                this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
+            }
+            if (snapshot.getProducers() != null) {
+                this.producers.putAll(snapshot.getProducers());
+            }
+            if (snapshot.getOngoingTxns() != null) {
+                this.ongoingTxns.putAll(snapshot.getOngoingTxns());
+            }
+            offSetPosition = snapshot.getOffset();
+            log.info("Recover topic {} from offset {}", topicPartition);
+        } else {
+            log.info("No snapshot found for topic {}", topicPartition);
         }
-        long offSetPosition = snapshot.getOffset();
         // recover from log
-        // https://github.com/apache/kafka/blob/5002715485482a8bffd04c05110a29ca98ab097c/core/src/main/scala/kafka/log/Log.scala#L968
-        return partitionLog.recoverTxEntries(offSetPosition, sharedState, this);
+        return partitionLog.recoverTxEntries(offSetPosition, this);
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {

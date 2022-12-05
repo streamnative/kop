@@ -18,8 +18,7 @@ import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -66,10 +65,10 @@ public class ReplicaManager {
                           ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
-                          KafkaTopicManagerSharedState sharedState,
+                          KafkaTopicLookupService kafkaTopicLookupService,
                           ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
-                time, sharedState, producerStateManagerSnapshotBuffer);
+                time, kafkaTopicLookupService, producerStateManagerSnapshotBuffer);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();

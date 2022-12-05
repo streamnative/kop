@@ -54,6 +54,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
+    private final KafkaTopicLookupService kafkaTopicLookupService;
+
     private final AdminManager adminManager;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
@@ -83,7 +85,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler,
-                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
+                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                                   KafkaTopicLookupService kafkaTopicLookupService) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
@@ -104,6 +107,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         }
         this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.lengthFieldPrepender = new LengthFieldPrepender(4);
     }
 
@@ -130,7 +134,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, kafkaTopicLookupService);
     }
 
     @VisibleForTesting
@@ -143,6 +147,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
                 new RequestStats(rootStatsLogger.scope(SERVER_SCOPE)),
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, kafkaTopicLookupService);
     }
 }
