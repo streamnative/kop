@@ -30,6 +30,8 @@ import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -84,6 +86,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SystemTopicClient txnTopicClient;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+    private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
     @VisibleForTesting
     @Getter
     private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
@@ -420,13 +423,17 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
 
+        producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
+
         replicaManager = new ReplicaManager(
                 kafkaConfig,
                 requestStats,
                 Time.SYSTEM,
                 brokerService.getEntryFilters(),
                 producePurgatory,
-                fetchPurgatory);
+                fetchPurgatory,
+                kafkaTopicManagerSharedState,
+                producerStateManagerSnapshotBuffer);
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =

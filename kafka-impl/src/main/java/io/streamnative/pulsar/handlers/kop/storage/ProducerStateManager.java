@@ -20,76 +20,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
-
-/**
- * AbortedTxn is used cache the aborted index.
- */
-@Data
-@Accessors(fluent = true)
-@AllArgsConstructor
-class AbortedTxn {
-
-    private static final int VersionOffset = 0;
-    private static final int VersionSize = 2;
-    private static final int ProducerIdOffset = VersionOffset + VersionSize;
-    private static final int ProducerIdSize = 8;
-    private static final int FirstOffsetOffset = ProducerIdOffset + ProducerIdSize;
-    private static final int FirstOffsetSize = 8;
-    private static final int LastOffsetOffset = FirstOffsetOffset + FirstOffsetSize;
-    private static final int LastOffsetSize = 8;
-    private static final int LastStableOffsetOffset = LastOffsetOffset + LastOffsetSize;
-    private static final int LastStableOffsetSize = 8;
-    private static final int TotalSize = LastStableOffsetOffset + LastStableOffsetSize;
-
-    private static final Short CurrentVersion = 0;
-
-    private final Long producerId;
-    private final Long firstOffset;
-    private final Long lastOffset;
-    private final Long lastStableOffset;
-
-    protected ByteBuffer toByteBuffer() {
-        ByteBuffer buffer = ByteBuffer.allocate(AbortedTxn.TotalSize);
-        buffer.putShort(CurrentVersion);
-        buffer.putLong(producerId);
-        buffer.putLong(firstOffset);
-        buffer.putLong(lastOffset);
-        buffer.putLong(lastStableOffset);
-        buffer.flip();
-        return buffer;
-    }
-}
-
-@Data
-@Accessors(fluent = true)
-@AllArgsConstructor
-class CompletedTxn {
-    private Long producerId;
-    private Long firstOffset;
-    private Long lastOffset;
-    private Boolean isAborted;
-}
-
-@Data
-@Accessors(fluent = true)
-@EqualsAndHashCode
-class TxnMetadata {
-    private final long producerId;
-    private final long firstOffset;
-    private long lastOffset;
-
-    public TxnMetadata(long producerId, long firstOffset) {
-        this.producerId = producerId;
-        this.firstOffset = firstOffset;
-    }
-}
 
 /**
  * Producer state manager.
@@ -97,6 +39,7 @@ class TxnMetadata {
 @Slf4j
 public class ProducerStateManager {
 
+    @Getter
     private final String topicPartition;
     private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
 
@@ -104,8 +47,40 @@ public class ProducerStateManager {
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
 
-    public ProducerStateManager(String topicPartition) {
+    private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
+
+    public ProducerStateManager(String topicPartition, ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.topicPartition = topicPartition;
+        this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
+    }
+
+    public CompletableFuture<Void> recover(PartitionLog partitionLog,
+                                           KafkaTopicManagerSharedState sharedState) {
+        return producerStateManagerSnapshotBuffer
+                .readLatestSnapshot(topicPartition)
+                .thenCompose(snapshot -> applySnapshotAndRecover(snapshot, partitionLog, sharedState));
+    }
+
+    private CompletableFuture<Void> applySnapshotAndRecover(ProducerStateManagerSnapshot snapshot,
+                                                            PartitionLog partitionLog,
+                                                            KafkaTopicManagerSharedState sharedState
+                                                            ) {
+        this.abortedIndexList.clear();
+        if (snapshot.getAbortedIndexList() != null) {
+            this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
+        }
+        this.producers.clear();
+        if (snapshot.getProducers() != null) {
+            this.producers.putAll(snapshot.getProducers());
+        }
+        this.ongoingTxns.clear();
+        if (snapshot.getOngoingTxns() != null) {
+            this.ongoingTxns.putAll(snapshot.getOngoingTxns());
+        }
+        long offSetPosition = snapshot.getOffset();
+        // recover from log
+        // https://github.com/apache/kafka/blob/5002715485482a8bffd04c05110a29ca98ab097c/core/src/main/scala/kafka/log/Log.scala#L968
+        return partitionLog.recoverTxEntries(offSetPosition, sharedState, this);
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {

@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
@@ -48,7 +49,7 @@ public class EncodePerformanceTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            new ProducerStateManager("test", new MemoryProducerStateManagerSnapshotBuffer()));
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

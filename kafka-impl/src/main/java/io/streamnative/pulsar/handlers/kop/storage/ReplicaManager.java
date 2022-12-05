@@ -18,6 +18,8 @@ import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -55,6 +57,7 @@ public class ReplicaManager {
     private final PartitionLogManager logManager;
     private final DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private final DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+
     private final String metadataNamespace;
 
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
@@ -62,20 +65,22 @@ public class ReplicaManager {
                           Time time,
                           ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
-                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
+                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
+                          KafkaTopicManagerSharedState sharedState,
+                          ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
-                time);
+                time, sharedState, producerStateManagerSnapshotBuffer);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
-    public PartitionLog getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
+    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
     public void removePartitionLog(String topicName) {
-        PartitionLog partitionLog = logManager.removeLog(topicName);
+        CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
             log.debug("PartitionLog: {} has bean removed.", partitionLog);
         }
@@ -154,15 +159,16 @@ public class ReplicaManager {
                         Errors.forException(new InvalidTopicException(
                                 String.format("Cannot append to internal topic %s", topicPartition.topic())))));
             } else {
-                PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
-                partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
-                        .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
-                                new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
-                        .exceptionally(ex -> {
-                            addPartitionResponse.accept(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
-                            return null;
-                        });
+                getPartitionLog(topicPartition, namespacePrefix).thenAccept(partitionLog -> {
+                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
+                            .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
+                            .exceptionally(ex -> {
+                                addPartitionResponse.accept(topicPartition,
+                                        new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                return null;
+                            });
+                });
             }
         });
         // delay produce
@@ -253,12 +259,17 @@ public class ReplicaManager {
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             getPartitionLog(tp, context.getNamespacePrefix())
-                    .readRecords(fetchInfo, readCommitted,
-                            limitBytes, maxReadEntriesNum, context)
-                    .thenAccept(readResult -> {
-                        result.put(tp, readResult);
-                        complete.run();
+                    .thenCompose(partitionLog ->{
+                        return partitionLog
+                                .readRecords(fetchInfo, readCommitted,
+                                        limitBytes, maxReadEntriesNum, context
+                                )
+                                .thenAccept(readResult -> {
+                                    result.put(tp, readResult);
+                                    complete.run();
+                                });
                     });
+
         });
         return resultFuture;
     }
