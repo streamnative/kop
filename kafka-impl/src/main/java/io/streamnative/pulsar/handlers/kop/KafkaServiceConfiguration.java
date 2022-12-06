@@ -420,6 +420,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
+            doc = "Number of partitions for the transaction producer state topic"
+    )
+    private int kafkaTxnProducerStateTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
             doc = "The interval in milliseconds at which to rollback transactions that have timed out."
     )
     private long kafkaTxnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
