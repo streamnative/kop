@@ -21,11 +21,13 @@ import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * Manage {@link PartitionLog}.
@@ -42,14 +44,14 @@ public class PartitionLogManager {
 
     private final KafkaTopicLookupService kafkaTopicLookupService;
 
-    private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
+    private final Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
-                               RequestStats requestStats,
-                               final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
-                               Time time,
-                               KafkaTopicLookupService kafkaTopicLookupService,
-                               ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
+                           RequestStats requestStats,
+                           final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                           Time time,
+                           KafkaTopicLookupService kafkaTopicLookupService,
+                           Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
@@ -61,11 +63,12 @@ public class PartitionLogManager {
 
     public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
-
+        String tenant = TopicName.get(kopTopic).getTenant();
+        ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
         return logMap.computeIfAbsent(kopTopic, key -> {
                 return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryfilterMap,
                         kafkaTopicLookupService,
-                        producerStateManagerSnapshotBuffer)
+                        prodPerTenant)
                         .recover(); // TODO: retry on failures
         });
     }

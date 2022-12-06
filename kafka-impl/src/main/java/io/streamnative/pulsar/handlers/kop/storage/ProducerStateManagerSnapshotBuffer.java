@@ -35,5 +35,9 @@ public interface ProducerStateManagerSnapshotBuffer {
      */
     CompletableFuture<ProducerStateManagerSnapshot> readLatestSnapshot(String topicPartition);
 
+    /**
+     * Shutdown and release resources.
+     */
+    default void shutdown() {}
 
 }

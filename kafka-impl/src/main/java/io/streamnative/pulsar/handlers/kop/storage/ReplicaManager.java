@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,7 +67,7 @@ public class ReplicaManager {
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                           KafkaTopicLookupService kafkaTopicLookupService,
-                          ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
+                          Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer) {
         this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
                 time, kafkaTopicLookupService, producerStateManagerSnapshotBuffer);
         this.producePurgatory = producePurgatory;

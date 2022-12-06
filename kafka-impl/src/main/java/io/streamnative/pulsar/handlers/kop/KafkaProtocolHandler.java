@@ -30,7 +30,6 @@ import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
-import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
@@ -44,6 +43,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -88,7 +88,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
 
     private KafkaTopicLookupService kafkaTopicLookupService;
-    private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
     @VisibleForTesting
     @Getter
     private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
@@ -411,6 +410,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaTopicLookupService);
     }
 
+    private Function<String, ProducerStateManagerSnapshotBuffer> getProducerStateManagerSnapshotBufferByTenant =
+            (tenant) ->  getTransactionCoordinator(tenant).getProducerStateManagerSnapshotBuffer();
+
     // this is called after initialize, and with kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -426,8 +428,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
 
-        producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
-
         kafkaTopicLookupService = new KafkaTopicLookupService(brokerService);
 
         replicaManager = new ReplicaManager(
@@ -438,7 +438,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 producePurgatory,
                 fetchPurgatory,
                 kafkaTopicLookupService,
-                producerStateManagerSnapshotBuffer);
+                getProducerStateManagerSnapshotBufferByTenant
+                );
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =

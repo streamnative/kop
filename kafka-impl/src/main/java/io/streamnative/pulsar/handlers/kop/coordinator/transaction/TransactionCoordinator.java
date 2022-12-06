@@ -27,6 +27,8 @@ import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import java.util.HashSet;
@@ -68,6 +70,9 @@ public class TransactionCoordinator {
     @Getter
     private final TransactionStateManager txnManager;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+
+    @Getter
+    private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
     private final ScheduledExecutorService scheduler;
 
@@ -115,6 +120,7 @@ public class TransactionCoordinator {
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         this.scheduler = scheduler;
         this.time = time;
+        this.producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
     }
 
     public static TransactionCoordinator of(String tenant,
@@ -902,6 +908,7 @@ public class TransactionCoordinator {
         producerIdManager.shutdown();
         txnManager.shutdown();
         transactionMarkerChannelManager.close();
+        producerStateManagerSnapshotBuffer.shutdown();
         scheduler.shutdown();
         // TODO shutdown txn
         log.info("Shutdown transaction coordinator complete.");
