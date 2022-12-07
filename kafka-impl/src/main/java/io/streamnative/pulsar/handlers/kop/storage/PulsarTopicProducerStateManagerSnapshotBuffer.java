@@ -153,10 +153,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     private static ByteBuffer serialize(ProducerStateManagerSnapshot snapshot) {
 
-        try {
-            ByteBuf byteBuf = ByteBufAllocator.DEFAULT.buffer();
-            DataOutputStream dataOutputStream =
-                    new DataOutputStream(new ByteBufOutputStream(byteBuf));
+        ByteBuf byteBuf = ByteBufAllocator.DEFAULT.buffer();
+        try (DataOutputStream dataOutputStream =
+                     new DataOutputStream(new ByteBufOutputStream(byteBuf));) {
+
             dataOutputStream.writeUTF(snapshot.getTopicPartition());
             dataOutputStream.writeLong(snapshot.getOffset());
 
@@ -214,9 +214,8 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     private static ProducerStateManagerSnapshot deserialize(ByteBuffer buffer) {
 
-        try {
-            DataInputStream dataInputStream =
-                    new DataInputStream(new ByteBufInputStream(Unpooled.wrappedBuffer(buffer)));
+        try (DataInputStream dataInputStream =
+                     new DataInputStream(new ByteBufInputStream(Unpooled.wrappedBuffer(buffer)));) {
             String topicPartition = dataInputStream.readUTF();
             long offset = dataInputStream.readLong();
 

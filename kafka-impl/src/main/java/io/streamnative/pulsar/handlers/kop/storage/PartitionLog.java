@@ -327,7 +327,7 @@ public class PartitionLog {
             this.lastStableOffset = -1;
             this.highWatermark = -1;
             this.abortedTransactions = null;
-            this.partitionLog = partitionLog;
+            this.partitionLog = null;
             if (this.decodeResult != null) {
                 this.decodeResult.recycle();
                 this.decodeResult = null;
