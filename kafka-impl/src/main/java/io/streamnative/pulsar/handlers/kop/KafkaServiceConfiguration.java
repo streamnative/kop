@@ -427,6 +427,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
+            doc = "Interval for taking snapshots of the status of pending transactions"
+    )
+    private int kafkaTxnProducerStateTopicSnapshotIntervalSeconds = 60;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
             doc = "The interval in milliseconds at which to rollback transactions that have timed out."
     )
     private long kafkaTxnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;

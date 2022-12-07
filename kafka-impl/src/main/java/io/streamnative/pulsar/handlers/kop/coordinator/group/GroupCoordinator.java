@@ -82,7 +82,7 @@ public class GroupCoordinator {
         Time time
     ) {
         ScheduledExecutorService coordinatorExecutor = OrderedScheduler.newSchedulerBuilder()
-                .name("group-coordinator-executor")
+                .name("group-coordinator-executor-" + tenant)
                 .numThreads(1)
                 .build();
 

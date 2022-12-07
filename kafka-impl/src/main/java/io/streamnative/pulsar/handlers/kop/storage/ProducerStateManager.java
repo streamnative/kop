@@ -42,6 +42,8 @@ public class ProducerStateManager {
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
+    private volatile long mapEndOffset = -1;
+
     public ProducerStateManager(String topicPartition,
                                 ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.topicPartition = topicPartition;
@@ -65,7 +67,7 @@ public class ProducerStateManager {
             this.producers.putAll(snapshot.getProducers());
             this.ongoingTxns.putAll(snapshot.getOngoingTxns());
             offSetPosition = snapshot.getOffset();
-            log.info("Recover topic {} from offset {}", topicPartition);
+            log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
         } else {
             log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
         }
@@ -74,19 +76,20 @@ public class ProducerStateManager {
         return partitionLog
                 .recoverTxEntries(offSetPosition, this)
                 .thenCompose(numEntries -> {
-                    log.info("Recovery of {} finished. Scanned {} entries, time {} ms", topicPartition,
+                    log.info("Recovery of {} finished. Scanned {} entries, time {} ms, new mapEndOffset {}",
+                            topicPartition,
                             numEntries,
-                            System.currentTimeMillis() - startRecovery);
+                            System.currentTimeMillis() - startRecovery,
+                            mapEndOffset);
                     return takeSnapshot()
                             .thenApply(____ -> (Void) null);
                 });
     }
 
     public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot() {
-        log.info("Taking snapshot for {}", topicPartition);
-        long offset = -1;
+        log.info("Taking snapshot for {} mapEndOffset is {}", topicPartition, mapEndOffset);
         ProducerStateManagerSnapshot snapshot = new ProducerStateManagerSnapshot(topicPartition,
-                offset,
+                mapEndOffset,
                 new HashMap<>(producers),
                 new TreeMap<>(ongoingTxns),
                 new ArrayList<>(abortedIndexList));
@@ -161,6 +164,10 @@ public class ProducerStateManager {
         for (TxnMetadata txn : appendInfo.startedTransactions()) {
             ongoingTxns.put(txn.firstOffset(), txn);
         }
+    }
+
+    public void updateMapEndOffset(long mapEndOffset) {
+        this.mapEndOffset = mapEndOffset;
     }
 
     public void updateTxnIndex(CompletedTxn completedTxn, long lastStableOffset) {

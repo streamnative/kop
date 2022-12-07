@@ -233,59 +233,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
 
-    @Test(timeOut = 1000 * 20)
-    public void basicRecoveryTestAfterTopicUnload() throws Exception {
-
-        String topicName = "basicRecoveryTestAfterTopicUnload";
-        String transactionalId = "myProducer";
-        String isolation = "read_committed";
-        boolean isBatch = false;
-
-        String namespace = TopicName.get(topicName).getNamespace();
-
-        @Cleanup
-        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
-
-        producer.initTransactions();
-
-        int totalTxnCount = 10;
-        int messageCountPerTxn = 20;
-
-        String lastMessage = "";
-        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
-            producer.beginTransaction();
-
-            String contentBase;
-            if (txnIndex % 2 != 0) {
-                contentBase = "commit msg txnIndex %s messageIndex %s";
-            } else {
-                contentBase = "abort msg txnIndex %s messageIndex %s";
-            }
-
-            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
-                String msgContent = String.format(contentBase, txnIndex, messageIndex);
-                log.info("send txn message {}", msgContent);
-                lastMessage = msgContent;
-                if (isBatch) {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
-                } else {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
-                }
-            }
-            producer.flush();
-
-            if (txnIndex % 2 != 0) {
-                producer.commitTransaction();
-            } else {
-                producer.abortTransaction();
-            }
-        }
-
-        pulsar.getAdminClient().namespaces().unload(namespace);
-
-        consumeTxnMessage(topicName, totalTxnCount * messageCountPerTxn, lastMessage, isolation);
-    }
-
     public void txnOffsetTest(String topic, int messageCnt, boolean isCommit) throws Exception {
         String groupId = "my-group-id";
 
@@ -346,6 +293,82 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 }
             }
         }
+    }
+
+    @DataProvider(name = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    protected static Object[][] basicRecoveryTestAfterTopicUnloadNumTransactions() {
+        // isBatch
+        return new Object[][]{
+                {0},
+                {3},
+                {5}
+        };
+    }
+
+    @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
+
+        String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
+        String transactionalId = "myProducer_" + numTransactionsBetweenUnloads;
+        String isolation = "read_committed";
+        boolean isBatch = false;
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 20;
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                } else {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                }
+            }
+            producer.flush();
+
+            if (numTransactionsBetweenUnloads > 0
+                    && (txnIndex % numTransactionsBetweenUnloads) == 0) {
+                // force take snapshot
+                protocolHandler
+                        .getReplicaManager()
+                        .takeProducerStateSnapshots()
+                        .get();
+            }
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+        }
+
+        // unload the namespace, this will force a recovery
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        consumeTxnMessage(topicName, totalTxnCount * messageCountPerTxn, lastMessage, isolation);
     }
 
     private List<String> prepareData(String sourceTopicName,

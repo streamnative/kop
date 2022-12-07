@@ -49,6 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.ToString;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
@@ -114,6 +115,7 @@ public class PartitionLog {
     private final TopicPartition topicPartition;
     private final String fullPartitionName;
     private final AtomicReference<CompletableFuture<EntryFormatter>> entryFormatter = new AtomicReference<>();
+    @Getter
     private final ProducerStateManager producerStateManager;
 
     private final KafkaTopicLookupService kafkaTopicLookupService;
@@ -860,20 +862,7 @@ public class PartitionLog {
 
                 AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
                         encodeResult.getRecords(), Optional.of(offset), AppendOrigin.Client);
-                analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
-                                pid, producerAppendInfo, lastOffset);
-                    }
-                    producerStateManager.update(producerAppendInfo);
-                });
-                analyzeResult.completedTxns().forEach(completedTxn -> {
-                    // update to real last offset
-                    completedTxn.lastOffset(lastOffset - 1);
-                    long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                    producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-                    producerStateManager.completeTxn(completedTxn);
-                });
+                updateProducerStateManager(lastOffset, analyzeResult);
 
                 appendFuture.complete(offset);
             } else {
@@ -1028,7 +1017,6 @@ public class PartitionLog {
             future.whenComplete((___, error) -> {
                 // release resources in any case
                 try {
-                    log.info("closing TCM");
                     tcm.close();
                 } catch (Exception err) {
                     log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
@@ -1141,20 +1129,7 @@ public class PartitionLog {
                             AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
                                     firstOffset, AppendOrigin.Log);
 
-                            analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
-                                            pid, producerAppendInfo, lastOffset);
-                                }
-                                producerStateManager.update(producerAppendInfo);
-                            });
-                            analyzeResult.completedTxns().forEach(completedTxn -> {
-                                // update to real last offset
-                                completedTxn.lastOffset(lastOffset - 1);
-                                long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                                producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-                                producerStateManager.completeTxn(completedTxn);
-                            });
+                            updateProducerStateManager(lastOffset, analyzeResult);
                             if (log.isDebugEnabled()) {
                                 log.debug("Completed recovery of batch {} {}", analyzeResult, fullPartitionName);
                             }
@@ -1170,6 +1145,24 @@ public class PartitionLog {
                         return null;
                     });
                 });
+    }
+
+    private void updateProducerStateManager(long lastOffset, AnalyzeResult analyzeResult) {
+        analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
+            if (log.isDebugEnabled()) {
+                log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
+                        pid, producerAppendInfo, lastOffset);
+            }
+            producerStateManager.update(producerAppendInfo);
+        });
+        analyzeResult.completedTxns().forEach(completedTxn -> {
+            // update to real last offset
+            completedTxn.lastOffset(lastOffset - 1);
+            long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+            producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+            producerStateManager.completeTxn(completedTxn);
+        });
+        producerStateManager.updateMapEndOffset(lastOffset);
     }
 
     private void decodeEntriesForRecovery(final CompletableFuture<DecodeResult> future,

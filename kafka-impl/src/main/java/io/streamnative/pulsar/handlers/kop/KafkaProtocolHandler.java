@@ -43,6 +43,7 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import lombok.Getter;
@@ -109,6 +110,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
     private ReplicaManager replicaManager;
+
+    private ScheduledFuture<?> txnProducerStateSnapshotsTimeHandle;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -282,7 +285,19 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
                 brokerService.getAuthenticationService());
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
+
+
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                && kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() > 0) {
+            txnProducerStateSnapshotsTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
+                        getReplicaManager().takeProducerStateSnapshots();
+            },
+            kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+            TimeUnit.SECONDS);
+        }
     }
+
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
         log.info("createAndBootTransactionCoordinator {}", tenant);
@@ -481,6 +496,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void close() {
+        if (txnProducerStateSnapshotsTimeHandle != null) {
+            txnProducerStateSnapshotsTimeHandle.cancel(false);
+        }
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
         if (offsetTopicClient != null) {
             offsetTopicClient.close();

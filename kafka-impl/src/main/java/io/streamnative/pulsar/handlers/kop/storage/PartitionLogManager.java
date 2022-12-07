@@ -19,6 +19,8 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -28,6 +30,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Manage {@link PartitionLog}.
@@ -80,6 +83,22 @@ public class PartitionLogManager {
 
     public int size() {
         return logMap.size();
+    }
+
+    public CompletableFuture<Void> takeProducerStateSnapshots() {
+        List<CompletableFuture<Void>> handles = new ArrayList<>();
+        logMap.values().forEach(log -> {
+            if (log.isDone() && !log.isCompletedExceptionally()) {
+                PartitionLog partitionLog = log.getNow(null);
+                if (partitionLog != null) {
+                    handles.add(partitionLog
+                            .getProducerStateManager()
+                            .takeSnapshot()
+                            .thenApply(___ -> null));
+                }
+            }
+        });
+        return FutureUtil.waitForAll(handles);
     }
 }
 
