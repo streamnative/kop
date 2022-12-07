@@ -98,7 +98,8 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
                             log.error("Exhausted all producerIds as the next block's end producerId is will "
                                             + "has exceeded long type limit (current block end producerId is {})",
                                     currProducerIdBlock.blockEndId);
-                            newProducerIdBlockFuture.completeExceptionally(new KafkaException("Have exhausted all producerIds."));
+                            newProducerIdBlockFuture
+                                    .completeExceptionally(new KafkaException("Have exhausted all producerIds."));
                             return;
                         }
                         nextProducerIdBlock = ProducerIdBlock
