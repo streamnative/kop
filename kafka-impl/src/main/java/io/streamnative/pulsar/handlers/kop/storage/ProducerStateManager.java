@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,22 +61,41 @@ public class ProducerStateManager {
         this.ongoingTxns.clear();
         long offSetPosition = 0;
         if (snapshot != null) {
-            if (snapshot.getAbortedIndexList() != null) {
-                this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
-            }
-            if (snapshot.getProducers() != null) {
-                this.producers.putAll(snapshot.getProducers());
-            }
-            if (snapshot.getOngoingTxns() != null) {
-                this.ongoingTxns.putAll(snapshot.getOngoingTxns());
-            }
+            this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
+            this.producers.putAll(snapshot.getProducers());
+            this.ongoingTxns.putAll(snapshot.getOngoingTxns());
             offSetPosition = snapshot.getOffset();
             log.info("Recover topic {} from offset {}", topicPartition);
         } else {
-            log.info("No snapshot found for topic {}", topicPartition);
+            log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
         }
+        long startRecovery = System.currentTimeMillis();
         // recover from log
-        return partitionLog.recoverTxEntries(offSetPosition, this);
+        return partitionLog
+                .recoverTxEntries(offSetPosition, this)
+                .thenCompose(numEntries -> {
+                    log.info("Recovery of {} finished. Scanned {} entries, time {} ms", topicPartition,
+                            numEntries,
+                            System.currentTimeMillis() - startRecovery);
+                    return takeSnapshot()
+                            .thenApply(____ -> (Void) null);
+                });
+    }
+
+    public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot() {
+        log.info("Taking snapshot for {}", topicPartition);
+        long offset = -1;
+        ProducerStateManagerSnapshot snapshot = new ProducerStateManagerSnapshot(topicPartition,
+                offset,
+                new HashMap<>(producers),
+                new TreeMap<>(ongoingTxns),
+                new ArrayList<>(abortedIndexList));
+        return producerStateManagerSnapshotBuffer
+                .write(snapshot)
+                .thenApply(___ -> {
+                    log.info("Snapshot for {} taken", topicPartition);
+                    return snapshot;
+                });
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
@@ -90,7 +110,7 @@ public class ProducerStateManager {
      */
     public long lastStableOffset(CompletedTxn completedTxn) {
         for (TxnMetadata txnMetadata : ongoingTxns.values()) {
-            if (!completedTxn.producerId().equals(txnMetadata.producerId())) {
+            if (completedTxn.producerId() != txnMetadata.producerId()) {
                 return txnMetadata.firstOffset();
             }
         }

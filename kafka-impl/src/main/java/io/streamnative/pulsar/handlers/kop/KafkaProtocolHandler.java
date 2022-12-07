@@ -30,6 +30,7 @@ import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
@@ -410,8 +411,19 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaTopicLookupService);
     }
 
+    class ProducerStateManagerSnapshotProvider implements Function<String, ProducerStateManagerSnapshotBuffer> {
+        @Override
+        public ProducerStateManagerSnapshotBuffer apply(String tenant) {
+            if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+                return new MemoryProducerStateManagerSnapshotBuffer();
+            }
+            return getTransactionCoordinator(tenant)
+                    .getProducerStateManagerSnapshotBuffer();
+        }
+    }
+
     private Function<String, ProducerStateManagerSnapshotBuffer> getProducerStateManagerSnapshotBufferByTenant =
-            (tenant) ->  getTransactionCoordinator(tenant).getProducerStateManagerSnapshotBuffer();
+            new ProducerStateManagerSnapshotProvider();
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
     @Override

@@ -21,8 +21,8 @@ import lombok.experimental.Accessors;
 @Accessors(fluent = true)
 @AllArgsConstructor
 public final class CompletedTxn {
-    private Long producerId;
-    private Long firstOffset;
-    private Long lastOffset;
-    private Boolean isAborted;
+    private long producerId;
+    private long firstOffset;
+    private long lastOffset;
+    private boolean isAborted;
 }

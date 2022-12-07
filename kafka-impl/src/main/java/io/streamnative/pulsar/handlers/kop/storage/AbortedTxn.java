@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import java.nio.ByteBuffer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -40,19 +39,9 @@ public final class AbortedTxn {
 
     private static final Short CurrentVersion = 0;
 
-    private final Long producerId;
-    private final Long firstOffset;
-    private final Long lastOffset;
-    private final Long lastStableOffset;
+    private final long producerId;
+    private final long firstOffset;
+    private final long lastOffset;
+    private final long lastStableOffset;
 
-    protected ByteBuffer toByteBuffer() {
-        ByteBuffer buffer = ByteBuffer.allocate(AbortedTxn.TotalSize);
-        buffer.putShort(CurrentVersion);
-        buffer.putLong(producerId);
-        buffer.putLong(firstOffset);
-        buffer.putLong(lastOffset);
-        buffer.putLong(lastStableOffset);
-        buffer.flip();
-        return buffer;
-    }
 }

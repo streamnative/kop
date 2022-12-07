@@ -54,6 +54,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 50;
+    public static final int DefaultTxnProducerStateLogTopicNumPartitions = 8;
     public static final int DefaultTxnCoordinatorSchedulerNum = 1;
     public static final int DefaultTxnStateManagerSchedulerNum = 1;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
@@ -422,7 +423,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Number of partitions for the transaction producer state topic"
     )
-    private int kafkaTxnProducerStateTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+    private int kafkaTxnProducerStateTopicNumPartitions = DefaultTxnProducerStateLogTopicNumPartitions;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,

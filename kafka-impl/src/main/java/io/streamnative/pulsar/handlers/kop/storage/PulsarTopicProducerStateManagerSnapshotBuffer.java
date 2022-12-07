@@ -13,9 +13,23 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -99,6 +113,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     @Override
     public CompletableFuture<Void> write(ProducerStateManagerSnapshot snapshot) {
         ByteBuffer serialized = serialize(snapshot);
+        if (serialized == null) {
+            // cannot serialise, skip
+            return CompletableFuture.completedFuture(null);
+        }
         CompletableFuture<Producer<ByteBuffer>> producerHandle = pulsarClient.newProducerBuilder()
                 .enableBatching(false)
                 .topic(topic)
@@ -134,24 +152,154 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     }
 
     private static ByteBuffer serialize(ProducerStateManagerSnapshot snapshot) {
-        return ByteBuffer.allocate(0);
+
+        try {
+            ByteBuf byteBuf = ByteBufAllocator.DEFAULT.buffer();
+            DataOutputStream dataOutputStream =
+                    new DataOutputStream(new ByteBufOutputStream(byteBuf));
+            dataOutputStream.writeUTF(snapshot.getTopicPartition());
+            dataOutputStream.writeLong(snapshot.getOffset());
+
+            dataOutputStream.writeInt(snapshot.getProducers().size());
+            for (Map.Entry<Long, ProducerStateEntry> entry : snapshot.getProducers().entrySet()) {
+                ProducerStateEntry producer = entry.getValue();
+                dataOutputStream.writeLong(producer.producerId());
+                if (producer.producerEpoch() != null) {
+                    dataOutputStream.writeInt(producer.producerEpoch());
+                } else {
+                    dataOutputStream.writeInt(-1);
+                }
+                if (producer.coordinatorEpoch() != null) {
+                    dataOutputStream.writeInt(producer.coordinatorEpoch());
+                } else {
+                    dataOutputStream.writeInt(-1);
+                }
+                if (producer.lastTimestamp() != null) {
+                    dataOutputStream.writeLong(producer.lastTimestamp());
+                } else {
+                    dataOutputStream.writeLong(-1L);
+                }
+                if (producer.currentTxnFirstOffset().isPresent()) {
+                    dataOutputStream.writeLong(producer.currentTxnFirstOffset().get());
+                } else {
+                    dataOutputStream.writeLong(-1);
+                }
+            }
+
+            dataOutputStream.writeInt(snapshot.getOngoingTxns().size());
+            for (Map.Entry<Long, TxnMetadata> entry : snapshot.getOngoingTxns().entrySet()) {
+                TxnMetadata tx = entry.getValue();
+                dataOutputStream.writeLong(tx.producerId());
+                dataOutputStream.writeLong(tx.firstOffset());
+                dataOutputStream.writeLong(tx.lastOffset());
+            }
+
+            dataOutputStream.writeInt(snapshot.getAbortedIndexList().size());
+            for (AbortedTxn tx : snapshot.getAbortedIndexList()) {
+                dataOutputStream.writeLong(tx.producerId());
+                dataOutputStream.writeLong(tx.firstOffset());
+                dataOutputStream.writeLong(tx.lastOffset());
+                dataOutputStream.writeLong(tx.lastStableOffset());
+            }
+
+            dataOutputStream.flush();
+
+            return byteBuf.nioBuffer();
+
+        } catch (IOException err) {
+            log.error("Cannot serialise snapshot {}", snapshot, err);
+            return null;
+        }
     }
 
     private static ProducerStateManagerSnapshot deserialize(ByteBuffer buffer) {
-        return null;
+
+        try {
+            DataInputStream dataInputStream =
+                    new DataInputStream(new ByteBufInputStream(Unpooled.wrappedBuffer(buffer)));
+            String topicPartition = dataInputStream.readUTF();
+            long offset = dataInputStream.readLong();
+
+            int numProducers = dataInputStream.readInt();
+            Map<Long, ProducerStateEntry> producers = new HashMap<>();
+            for (int i = 0; i < numProducers; i++) {
+                long producerId = dataInputStream.readLong();
+                Integer producerEpoch = dataInputStream.readInt();
+                if (producerEpoch == -1) {
+                    producerEpoch = null;
+                }
+                Integer coordinatorEpoch = dataInputStream.readInt();
+                if (coordinatorEpoch == -1) {
+                    coordinatorEpoch = null;
+                }
+                Long lastTimestamp = dataInputStream.readLong();
+                if (lastTimestamp == -1) {
+                    lastTimestamp = null;
+                }
+                Long currentTxFirstOffset = dataInputStream.readLong();
+                if (currentTxFirstOffset == -1) {
+                    currentTxFirstOffset = null;
+                }
+                ProducerStateEntry entry = ProducerStateEntry.empty(producerId)
+                        .producerEpoch(producerEpoch != null ? producerEpoch.shortValue() : null)
+                        .coordinatorEpoch(coordinatorEpoch)
+                        .lastTimestamp(lastTimestamp)
+                        .currentTxnFirstOffset(Optional.ofNullable(currentTxFirstOffset));
+                producers.put(producerId, entry);
+            }
+
+            int numOngoingTxns = dataInputStream.readInt();
+            TreeMap<Long, TxnMetadata> ongoingTxns = new TreeMap<>();
+            for (int i = 0; i < numOngoingTxns; i++) {
+                long producerId = dataInputStream.readLong();
+                long firstOffset = dataInputStream.readLong();
+                long lastOffset = dataInputStream.readLong();
+                ongoingTxns.put(firstOffset, new TxnMetadata(producerId, firstOffset)
+                        .lastOffset(lastOffset));
+            }
+
+            int numAbortedIndexList = dataInputStream.readInt();
+            List<AbortedTxn> abortedTxnList = new ArrayList<>();
+            for (int i = 0; i < numAbortedIndexList; i++) {
+                long producerId = dataInputStream.readLong();
+                long firstOffset = dataInputStream.readLong();
+                long lastOffset = dataInputStream.readLong();
+                long lastStableOffset = dataInputStream.readLong();
+                abortedTxnList.add(new AbortedTxn(producerId, firstOffset, lastOffset, lastStableOffset));
+            }
+
+            return new ProducerStateManagerSnapshot(topicPartition, offset,
+                    producers, ongoingTxns, abortedTxnList);
+
+        } catch (IOException err) {
+            log.error("Cannot deserialize snapshot", err);
+            return null;
+        }
     }
 
     private void processMessage(Message<ByteBuffer> msg) {
         ProducerStateManagerSnapshot deserialize = deserialize(msg.getValue());
         if (deserialize != null) {
-            latestSnapshots.put(deserialize.getTopicPartition(), deserialize);
+            String key = msg.hasKey() ? msg.getKey() : null;
+            if (Objects.equals(key, deserialize.getTopicPartition())) {
+                if (log.isDebugEnabled()) {
+                    log.info("found snapshot for {} : {}", deserialize.getTopicPartition(), deserialize);
+                }
+                latestSnapshots.put(deserialize.getTopicPartition(), deserialize);
+            } else {
+                log.error("Found erroneous snapshot with key {} but for topic {}: {}",
+                        key, deserialize.getTopicPartition(), deserialize);
+            }
         }
     }
 
     @Override
     public CompletableFuture<ProducerStateManagerSnapshot> readLatestSnapshot(String topicPartition) {
+        log.info("Reading latest snapshot for {}", topicPartition);
         return ensureLatestData(false).thenApply(__ -> {
-            return latestSnapshots.get(topicPartition);
+            ProducerStateManagerSnapshot result =  latestSnapshots.get(topicPartition);
+            log.info("Latest snapshot for {} is {}", topicPartition, result);
+            return result;
         });
     }
 

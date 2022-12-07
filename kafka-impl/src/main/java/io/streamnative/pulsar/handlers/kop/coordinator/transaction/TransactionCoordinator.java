@@ -27,8 +27,8 @@ import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
-import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.PulsarTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import java.util.HashSet;
@@ -40,6 +40,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -111,7 +112,9 @@ public class TransactionCoordinator {
                                      TransactionStateManager txnManager,
                                      Time time,
                                      String namespacePrefixForMetadata,
-                                     String namespacePrefixForUserTopics) {
+                                     String namespacePrefixForUserTopics,
+                                     Function<TransactionConfig, ProducerStateManagerSnapshotBuffer>
+                                             producerStateManagerSnapshotBufferFactory) {
         this.namespacePrefixForMetadata = namespacePrefixForMetadata;
         this.namespacePrefixForUserTopics = namespacePrefixForUserTopics;
         this.transactionConfig = transactionConfig;
@@ -120,7 +123,7 @@ public class TransactionCoordinator {
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         this.scheduler = scheduler;
         this.time = time;
-        this.producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
+        this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBufferFactory.apply(transactionConfig);
     }
 
     public static TransactionCoordinator of(String tenant,
@@ -152,7 +155,10 @@ public class TransactionCoordinator {
                 transactionStateManager,
                 time,
                 namespacePrefixForMetadata,
-                namespacePrefixForUserTopics);
+                namespacePrefixForUserTopics,
+                (config) -> new PulsarTopicProducerStateManagerSnapshotBuffer(
+                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient)
+                );
     }
 
     /**

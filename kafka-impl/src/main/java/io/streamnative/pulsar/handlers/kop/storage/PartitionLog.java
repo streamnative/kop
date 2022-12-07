@@ -1007,16 +1007,20 @@ public class PartitionLog {
         }
     }
 
-    public CompletableFuture<Void> recoverTxEntries(
+    public CompletableFuture<Long> recoverTxEntries(
                                              long offset,
                                              ProducerStateManager producerStateManager) {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            // no need to scan the topic, because transactions are disabled
+            return CompletableFuture.completedFuture(Long.valueOf(0));
+        }
         return kafkaTopicLookupService
                 .getTopic(fullPartitionName, this).thenCompose(topic -> {
             if (!topic.isPresent()) {
                 log.info("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
                 return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
             }
-            final CompletableFuture<Void> future = new CompletableFuture<>();
+            final CompletableFuture<Long> future = new CompletableFuture<>();
 
             // The future that is returned by getTopicConsumerManager is always completed normally
             KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("recover-tx",
@@ -1061,7 +1065,8 @@ public class PartitionLog {
                 final ManagedCursor cursor = cursorLongPair.getLeft();
                 final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
 
-                readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), future);
+                AtomicLong entryCounter = new AtomicLong();
+                readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), entryCounter, future);
 
             }).exceptionally(ex -> {
                 future.completeExceptionally(new NotLeaderOrFollowerException());
@@ -1075,7 +1080,8 @@ public class PartitionLog {
     private void readNextEntriesForRecovery(ManagedCursor cursor, AtomicLong cursorOffset,
                                             KafkaTopicConsumerManager tcm,
                                             PersistentTopic topic,
-                                            CompletableFuture<Void> future) {
+                                            AtomicLong entryCounter,
+                                            CompletableFuture<Long> future) {
         log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
         int maxReadEntriesNum = 2;
         long adjustedMaxBytes = Long.MAX_VALUE;
@@ -1100,7 +1106,7 @@ public class PartitionLog {
 
                     if (entries.isEmpty()) {
                         log.info("No more entries to recover for {}", fullPartitionName);
-                        future.complete(null);
+                        future.complete(entryCounter.get());
                         return;
                     }
 
@@ -1121,6 +1127,7 @@ public class PartitionLog {
                                     if (lastOffSetHolder[0] < record.offset()) {
                                         lastOffSetHolder[0] = record.offset();
                                     }
+                                    entryCounter.incrementAndGet();
                                 });
                             });
                             long lastOffset = lastOffSetHolder[0];
@@ -1152,7 +1159,7 @@ public class PartitionLog {
                                 log.debug("Completed recovery of batch {} {}", analyzeResult, fullPartitionName);
                             }
 
-                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, future);
+                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter, future);
 
                         } finally {
                             decodeResult.recycle();

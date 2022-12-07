@@ -32,6 +32,7 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
@@ -134,7 +135,9 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 transactionManager,
                 time,
                 METADATA_NAMESPACE_PREFIX,
-                NAMESPACE_PREFIX);
+                NAMESPACE_PREFIX,
+                (config) -> new MemoryProducerStateManagerSnapshotBuffer()
+                );
         result = null;
         error = Errors.NONE;
         capturedTxn = ArgumentCaptor.forClass(TransactionMetadata.class);

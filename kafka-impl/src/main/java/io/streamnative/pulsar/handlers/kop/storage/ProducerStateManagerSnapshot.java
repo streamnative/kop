@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import com.google.common.collect.Maps;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -26,10 +24,10 @@ import lombok.Data;
 public final class ProducerStateManagerSnapshot {
     private final String topicPartition;
     private final long offset;
-    private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
+    private final Map<Long, ProducerStateEntry> producers;
 
     // ongoing transactions sorted by the first offset of the transaction
-    private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
-    private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
+    private final TreeMap<Long, TxnMetadata> ongoingTxns;
+    private final List<AbortedTxn> abortedIndexList;
 
 }
