@@ -29,6 +29,7 @@ import lombok.NonNull;
 import lombok.Setter;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
 
@@ -531,7 +532,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             AdvertisedListener advertisedListener = AdvertisedListener.create(listener);
             String hostname = advertisedListener.getHostname();
             if (hostname.equals("advertisedAddress")) {
-                hostname = getAdvertisedAddress();
+                hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(getAdvertisedAddress());
                 listenersReBuilder.append(advertisedListener.getListenerName())
                         .append("://")
                         .append(hostname)
