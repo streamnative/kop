@@ -83,7 +83,7 @@ public class TransactionCoordinator {
                                 txnIdAndPidEpoch.getTransactionalId());
                         break;
                     case INVALID_PRODUCER_ID_MAPPING:
-                        // case PRODUCER_FENCED:
+                    case PRODUCER_FENCED:
                     case CONCURRENT_TRANSACTIONS:
                         if (log.isDebugEnabled()) {
                             log.debug("Rollback of ongoing transaction for transactionalId {} "
@@ -396,7 +396,6 @@ public class TransactionCoordinator {
 
         if (expectedProducerIdAndEpoch.isPresent()
                 && !isValidProducerId(txnMetadata, expectedProducerIdAndEpoch.get())) {
-            // TODO the error should be Errors.PRODUCER_FENCED, needs upgrade kafka client version
             resultFuture.complete(Either.left(producerEpochFenceErrors()));
             return resultFuture;
         } else {
@@ -490,7 +489,6 @@ public class TransactionCoordinator {
             if (txnMetadata.getProducerId() != producerId) {
                 return Either.left(Errors.INVALID_PRODUCER_ID_MAPPING);
             } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
-                // TODO the error should be Errors.PRODUCER_FENCED, needs upgrade kafka client version
                 return Either.left(producerEpochFenceErrors());
             } else if (txnMetadata.getPendingState().isPresent()) {
                 // return a retriable exception to let the client backoff and retry
@@ -532,7 +530,7 @@ public class TransactionCoordinator {
         if (log.isDebugEnabled()) {
             log.debug("There is a newer producer with the same transactionalId which fences the current one.");
         }
-        return Errors.INVALID_PRODUCER_EPOCH;
+        return Errors.PRODUCER_FENCED;
     }
 
     public void handleEndTransaction(String transactionalId,
@@ -644,7 +642,6 @@ public class TransactionCoordinator {
             }
             if ((isFromClient && producerEpoch != txnMetadata.getProducerEpoch())
                     || producerEpoch < txnMetadata.getProducerEpoch()) {
-                // TODO the error should be Errors.PRODUCER, needs upgrade kafka client version
                 return Either.left(producerEpochFenceErrors());
             }
             if (txnMetadata.getPendingState().isPresent()
