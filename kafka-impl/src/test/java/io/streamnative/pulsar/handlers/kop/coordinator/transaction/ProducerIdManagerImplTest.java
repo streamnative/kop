@@ -99,7 +99,7 @@ public class ProducerIdManagerImplTest {
 
     @Test
     public void tooManyConcurrentNewProducersShouldFail() throws Exception {
-        int blockSize = 1000;
+        long blockSize = ProducerIdManagerImpl.PID_BLOCK_SIZE;
         int brokerId = 1;
         // Initialize a fake metadata store such that the futures are not completed. This will allow
         // for low level control during this test.
@@ -117,7 +117,7 @@ public class ProducerIdManagerImplTest {
         producerIdManager.initialize();
         // Relies on the fact that completing the future also triggers the callbacks to run
         firstGetFuture.complete(Optional.empty());
-        List<CompletableFuture<Long>> futureIds = new ArrayList<>(blockSize + 1);
+        List<CompletableFuture<Long>> futureIds = new ArrayList<>((int) blockSize + 1);
 
         // Create one blockSize worth of producer ids
         for (int i = 0; i < blockSize; i++) {
@@ -141,8 +141,6 @@ public class ProducerIdManagerImplTest {
         GetResult result = new GetResult(ProducerIdManagerImpl.generateProducerIdBlockJson(zeroBlock), stat);
         secondGetFuture.complete(Optional.of(result));
 
-
-        int countSuccess = 0;
         int countFailed = 0;
         HashSet<Long> set = new HashSet<>();
         for (CompletableFuture<Long> id : futureIds) {
@@ -151,16 +149,14 @@ public class ProducerIdManagerImplTest {
                   countFailed++;
               } else {
                   set.add(id.get());
-                  countSuccess++;
               }
             } else {
                 Assert.fail();
             }
         }
 
-        Assert.assertEquals(set.size(), 1000);
         Assert.assertEquals(countFailed, 1, "Only one producer id should have failed");
-        Assert.assertEquals(countSuccess, blockSize, "There should have been a whole block created");
+        Assert.assertEquals(set.size(), blockSize, "Ensures all ids are unique and that no extra ids were created.");
     }
 
 }
