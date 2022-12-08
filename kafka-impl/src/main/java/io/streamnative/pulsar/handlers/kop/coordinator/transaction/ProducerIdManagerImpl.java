@@ -82,6 +82,8 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
 
     public synchronized CompletableFuture<Void> getNewProducerIdBlock() {
         if (newProducerIdBlockFuture != null && !newProducerIdBlockFuture.isDone()) {
+            // In this case, the class is already getting the new producer id block.
+            // Returning this future ensures that callbacks work correctly
             return newProducerIdBlockFuture;
         }
         newProducerIdBlockFuture = new CompletableFuture<>();
@@ -131,6 +133,7 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
                             .thenAccept(version -> {
                                 synchronized (this) {
                                     currentProducerIdBlock = nextProducerIdBlock;
+                                    nextProducerId = nextProducerIdBlock.blockStartId;
                                     newProducerIdBlockFuture.complete(null);
                                 }
                             }).exceptionally(ex -> {
@@ -174,8 +177,15 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
         if (nextProducerId > currentProducerIdBlock.blockEndId) {
             getNewProducerIdBlock().thenAccept(__ -> {
                 synchronized (this) {
-                    nextProducerId = currentProducerIdBlock.blockStartId + 1;
-                    nextProducerIdFuture.complete(nextProducerId - 1);
+                    if (nextProducerId > currentProducerIdBlock.blockEndId) {
+                        // This can only happen if more than blockSize producers attempt to connect
+                        // while the getNewProducerIdBlock() is processing
+                        Exception ex = new IllegalStateException("New ProducerIdBlock exhausted. Try again.");
+                        nextProducerIdFuture.completeExceptionally(ex);
+                    } else {
+                        nextProducerId += 1;
+                        nextProducerIdFuture.complete(nextProducerId - 1);
+                    }
                 }
             }).exceptionally(ex -> {
                 nextProducerIdFuture.completeExceptionally(ex);
