@@ -13,9 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.expectThrows;
 
+import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager;
 import java.time.Duration;
@@ -42,6 +46,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -379,11 +384,134 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         return new KafkaProducer<>(producerProps);
     }
 
+
+    @Test
+    public void testProducerFencedWhileSendFirstRecord() throws Exception {
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        producer1.initTransactions();
+        producer1.beginTransaction();
+
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        producer2.send(new ProducerRecord<>("test", "test")).get();
+
+        assertThat(
+                expectThrows(ExecutionException.class, () -> {
+                    producer1.send(new ProducerRecord<>("test", "test"))
+                            .get();
+                }).getCause(), instanceOf(ProducerFencedException.class));
+
+        producer1.close();
+        producer2.close();
+    }
+
+    @Test
+    public void testProducerFencedWhileCommitTransaction() throws Exception {
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        producer1.initTransactions();
+        producer1.beginTransaction();
+        producer1.send(new ProducerRecord<>("test", "test"))
+                .get();
+
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        producer2.send(new ProducerRecord<>("test", "test")).get();
+
+
+        // producer1 is still able to write (TODO: this should throw a InvalidProducerEpochException)
+        producer1.send(new ProducerRecord<>("test", "test")).get();
+
+        // but it cannot commit
+        expectThrows(ProducerFencedException.class, () -> {
+            producer1.commitTransaction();
+        });
+
+        // producer2 can commit
+        producer2.commitTransaction();
+        producer1.close();
+        producer2.close();
+    }
+
+    @Test
+    public void testProducerFencedWhileSendOffsets() throws Exception {
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        producer1.initTransactions();
+        producer1.beginTransaction();
+        producer1.send(new ProducerRecord<>("test", "test"))
+                .get();
+
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        producer2.send(new ProducerRecord<>("test", "test")).get();
+
+
+        // producer1 cannot offsets
+        expectThrows(ProducerFencedException.class, () -> {
+            producer1.sendOffsetsToTransaction(ImmutableMap.of(new TopicPartition("test", 0),
+                            new OffsetAndMetadata(0L)),
+                    "testGroup");
+        });
+
+        // and it cannot commit
+        expectThrows(ProducerFencedException.class, () -> {
+            producer1.commitTransaction();
+        });
+
+        producer1.close();
+        producer2.close();
+    }
+
+    @Test
+    public void testProducerFencedWhileAbortAndBegin() throws Exception {
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        producer1.initTransactions();
+        producer1.beginTransaction();
+        producer1.send(new ProducerRecord<>("test", "test"))
+                .get();
+
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        producer2.send(new ProducerRecord<>("test", "test")).get();
+
+        // producer1 cannot abort
+        expectThrows(ProducerFencedException.class, () -> {
+            producer1.abortTransaction();
+        });
+
+        // producer1 cannot start a new transaction
+        expectThrows(ProducerFencedException.class, () -> {
+            producer1.beginTransaction();
+        });
+        producer1.close();
+        producer2.close();
+    }
+
+    @Test
+    public void testNotFencedWithBeginTransaction() throws Exception {
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        producer1.initTransactions();
+
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        producer2.send(new ProducerRecord<>("test", "test")).get();
+
+        // beginTransaction doesn't do anything
+        producer1.beginTransaction();
+
+        producer1.close();
+        producer2.close();
+    }
+
     /**
      * Get the Kafka server address.
      */
     private String getKafkaServerAdder() {
-        return "localhost:" + getKafkaBrokerPort();
+        return "localhost:" + getClientPort();
     }
 
     protected void addCustomizeProps(Properties producerProps) {
