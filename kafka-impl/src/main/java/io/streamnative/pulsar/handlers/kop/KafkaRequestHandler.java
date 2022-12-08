@@ -835,7 +835,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         topicManager,
                         this::startSendOperationForThrottling,
                         this::completeSendOperationForThrottling,
-                        pendingTopicFuturesMap);
+                        pendingTopicFuturesMap,
+                        ctx);
                 ReplicaManager replicaManager = getReplicaManager();
                 replicaManager.appendRecords(
                         timeoutMs,
@@ -2234,7 +2235,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     topicManager,
                     this::startSendOperationForThrottling,
                     this::completeSendOperationForThrottling,
-                    this.pendingTopicFuturesMap);
+                    this.pendingTopicFuturesMap,
+                    ctx);
             getReplicaManager().appendRecords(
                     kafkaConfig.getRequestTimeoutMs(),
                     true,
