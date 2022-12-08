@@ -66,6 +66,8 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         conf.setPreciseTopicPublishRateLimiterEnable(preciseTopicPublishRateLimiterEnable);
+        conf.setTopicLevelPoliciesEnabled(true);
+        conf.setSystemTopicEnabled(true);
         super.internalSetup();
         log.info("success internal setup");
     }
