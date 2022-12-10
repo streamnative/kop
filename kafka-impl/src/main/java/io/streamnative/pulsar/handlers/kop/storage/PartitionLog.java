@@ -17,6 +17,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicConsumerManager;
@@ -82,6 +83,7 @@ import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.common.naming.TopicName;
@@ -121,6 +123,7 @@ public class PartitionLog {
     private final KafkaTopicLookupService kafkaTopicLookupService;
 
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
+    private final boolean preciseTopicPublishRateLimitingEnable;
 
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         RequestStats requestStats,
@@ -138,6 +141,7 @@ public class PartitionLog {
         this.fullPartitionName = fullPartitionName;
         this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.producerStateManager = new ProducerStateManager(fullPartitionName, producerStateManagerSnapshotBuffer);
+      this.preciseTopicPublishRateLimitingEnable = kafkaConfig.isPreciseTopicPublishRateLimiterEnable();
     }
 
     public CompletableFuture<PartitionLog> recover() {
@@ -832,6 +836,8 @@ public class PartitionLog {
             return;
         }
         PersistentTopic persistentTopic = persistentTopicOpt.get();
+        checkAndRecordPublishQuota(persistentTopic, appendInfo.validBytes(),
+                appendInfo.numMessages(), appendRecordsContext);
         if (persistentTopic.isSystemTopic()) {
             encodeResult.recycle();
             log.error("Not support producing message to system topic: {}", persistentTopic);
@@ -873,6 +879,37 @@ public class PartitionLog {
             }
             encodeResult.recycle();
         });
+    }
+
+    private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
+                                              AppendRecordsContext appendRecordsContext) {
+        final boolean isPublishRateExceeded;
+        if (preciseTopicPublishRateLimitingEnable) {
+            boolean isPreciseTopicPublishRateExceeded =
+                    topic.isTopicPublishRateExceeded(numMessages, msgSize);
+            if (isPreciseTopicPublishRateExceeded) {
+                topic.disableCnxAutoRead();
+                return;
+            }
+            isPublishRateExceeded = topic.isBrokerPublishRateExceeded();
+        } else {
+            if (topic.isResourceGroupRateLimitingEnabled()) {
+                final boolean resourceGroupPublishRateExceeded =
+                        topic.isResourceGroupPublishRateExceeded(numMessages, msgSize);
+                if (resourceGroupPublishRateExceeded) {
+                    topic.disableCnxAutoRead();
+                    return;
+                }
+            }
+            isPublishRateExceeded = topic.isPublishRateExceeded();
+        }
+
+        if (isPublishRateExceeded) {
+            ChannelHandlerContext ctx = appendRecordsContext.getCtx();
+            if (ctx != null && ctx.channel().config().isAutoRead()) {
+                ctx.channel().config().setAutoRead(false);
+            }
+        }
     }
 
     /**

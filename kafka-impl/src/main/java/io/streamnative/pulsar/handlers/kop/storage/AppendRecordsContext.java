@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
@@ -37,6 +38,7 @@ public class AppendRecordsContext {
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
+    private ChannelHandlerContext ctx;
 
     private AppendRecordsContext(Recycler.Handle<AppendRecordsContext> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
@@ -46,12 +48,14 @@ public class AppendRecordsContext {
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
                                            final Consumer<Integer> startSendOperationForThrottling,
                                            final Consumer<Integer> completeSendOperationForThrottling,
-                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap,
+                                           final ChannelHandlerContext ctx) {
         AppendRecordsContext context = RECYCLER.get();
         context.topicManager = topicManager;
         context.startSendOperationForThrottling = startSendOperationForThrottling;
         context.completeSendOperationForThrottling = completeSendOperationForThrottling;
         context.pendingTopicFuturesMap = pendingTopicFuturesMap;
+        context.ctx = ctx;
 
         return context;
     }
@@ -62,6 +66,7 @@ public class AppendRecordsContext {
         completeSendOperationForThrottling = null;
         pendingTopicFuturesMap = null;
         recyclerHandle.recycle(this);
+        ctx = null;
     }
 
 }

@@ -371,8 +371,7 @@ public class TransactionMetadata {
                 log.info("Expected producer epoch {} does not match current "
                         + "producer epoch {} or previous producer epoch {}",
                         expectedProducerEpoch, producerEpoch, lastProducerEpoch);
-                // TODO the error should be Errors.PRODUCER_FENCED
-                errorsOrBumpEpochResult = Either.left(Errors.INVALID_PRODUCER_EPOCH);
+                errorsOrBumpEpochResult = Either.left(Errors.PRODUCER_FENCED);
             }
         }
 
