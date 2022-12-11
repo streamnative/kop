@@ -54,6 +54,8 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
     private ProducerIdBlock currentProducerIdBlock;
     private Long nextProducerId = -1L;
 
+    private CompletableFuture<Void> newProducerIdBlockFuture;
+
     public ProducerIdManagerImpl(int brokerId, MetadataStoreExtended metadataStore) {
         this.brokerId = brokerId;
         this.metadataStore = metadataStore;
@@ -78,62 +80,78 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
                 .build();
     }
 
-    public CompletableFuture<Void> getNewProducerIdBlock() {
-        CompletableFuture<Void> future = new CompletableFuture<>();
+    public synchronized CompletableFuture<Void> getNewProducerIdBlock() {
+        if (newProducerIdBlockFuture != null && !newProducerIdBlockFuture.isDone()) {
+            // In this case, the class is already getting the new producer id block.
+            // Returning this future ensures that callbacks work correctly
+            return newProducerIdBlockFuture;
+        }
+        newProducerIdBlockFuture = new CompletableFuture<>();
         getCurrentDataAndVersion().thenAccept(currentDataAndVersionOpt -> {
-            if (currentDataAndVersionOpt.isPresent() && currentDataAndVersionOpt.get().getData() != null) {
-                DataAndVersion dataAndVersion = currentDataAndVersionOpt.get();
-                try {
-                    ProducerIdBlock currProducerIdBlock =
-                            ProducerIdManagerImpl.parseProducerIdBlockData(dataAndVersion.getData());
-                    if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - ProducerIdManagerImpl.PID_BLOCK_SIZE) {
-                        // We have exhausted all producerIds (wow!), treat it as a fatal error
-                        log.error("Exhausted all producerIds as the next block's end producerId is will "
-                                + "has exceeded long type limit (current block end producerId is {})",
-                                currProducerIdBlock.blockEndId);
-                        future.completeExceptionally(new KafkaException("Have exhausted all producerIds."));
+            synchronized (this) {
+                final ProducerIdBlock nextProducerIdBlock;
+                if (currentDataAndVersionOpt.isPresent() && currentDataAndVersionOpt.get().getData() != null) {
+                    DataAndVersion dataAndVersion = currentDataAndVersionOpt.get();
+                    try {
+                        ProducerIdBlock currProducerIdBlock =
+                                ProducerIdManagerImpl.parseProducerIdBlockData(dataAndVersion.getData());
+                        if (currProducerIdBlock.blockEndId > Long.MAX_VALUE - ProducerIdManagerImpl.PID_BLOCK_SIZE) {
+                            // We have exhausted all producerIds (wow!), treat it as a fatal error
+                            log.error("Exhausted all producerIds as the next block's end producerId is will "
+                                            + "has exceeded long type limit (current block end producerId is {})",
+                                    currProducerIdBlock.blockEndId);
+                            newProducerIdBlockFuture
+                                    .completeExceptionally(new KafkaException("Have exhausted all producerIds."));
+                            return;
+                        }
+                        nextProducerIdBlock = ProducerIdBlock
+                                .builder()
+                                .brokerId(brokerId)
+                                .blockStartId(currProducerIdBlock.blockEndId + 1L)
+                                .blockEndId(currProducerIdBlock.blockEndId + ProducerIdManagerImpl.PID_BLOCK_SIZE)
+                                .build();
+                    } catch (IOException e) {
+                        newProducerIdBlockFuture.completeExceptionally(new KafkaException("Get producerId failed.", e));
                         return;
                     }
-                    currentProducerIdBlock = ProducerIdBlock
+                } else {
+                    if (log.isDebugEnabled()) {
+                        log.debug("There is no producerId block yet, creating the first block");
+                    }
+                    nextProducerIdBlock = ProducerIdBlock
                             .builder()
                             .brokerId(brokerId)
-                            .blockStartId(currProducerIdBlock.blockEndId + 1L)
-                            .blockEndId(currProducerIdBlock.blockEndId + ProducerIdManagerImpl.PID_BLOCK_SIZE)
+                            .blockStartId(0L)
+                            .blockEndId(ProducerIdManagerImpl.PID_BLOCK_SIZE - 1)
                             .build();
-                } catch (IOException e) {
-                    future.completeExceptionally(new KafkaException("Get producerId failed.", e));
-                    return;
                 }
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("There is no producerId block yet, creating the first block");
+                try {
+                    byte[] newProducerIdBlockData = ProducerIdManagerImpl
+                            .generateProducerIdBlockJson(nextProducerIdBlock);
+                    conditionalUpdateData(newProducerIdBlockData,
+                            currentDataAndVersionOpt.orElse(DataAndVersion.DEFAULT_VERSION).getVersion())
+                            .thenAccept(version -> {
+                                synchronized (this) {
+                                    currentProducerIdBlock = nextProducerIdBlock;
+                                    nextProducerId = nextProducerIdBlock.blockStartId;
+                                    newProducerIdBlockFuture.complete(null);
+                                }
+                            }).exceptionally(ex -> {
+                                synchronized (this) {
+                                    newProducerIdBlockFuture.completeExceptionally(ex);
+                                }
+                                return null;
+                            });
+                } catch (JsonProcessingException e) {
+                    newProducerIdBlockFuture.completeExceptionally(e);
                 }
-                currentProducerIdBlock = ProducerIdBlock
-                        .builder()
-                        .brokerId(brokerId)
-                        .blockStartId(0L)
-                        .blockEndId(ProducerIdManagerImpl.PID_BLOCK_SIZE - 1)
-                        .build();
+        }}).exceptionally(ex -> {
+            synchronized (this) {
+                newProducerIdBlockFuture.completeExceptionally(ex);
             }
-            try {
-                byte[] newProducerIdBlockData = ProducerIdManagerImpl
-                        .generateProducerIdBlockJson(currentProducerIdBlock);
-                conditionalUpdateData(newProducerIdBlockData,
-                        currentDataAndVersionOpt.orElse(DataAndVersion.DEFAULT_VERSION).getVersion())
-                        .thenAccept(version -> {
-                            future.complete(null);
-                        }).exceptionally(ex -> {
-                            future.completeExceptionally(ex);
-                            return null;
-                        });
-            } catch (JsonProcessingException e) {
-                future.completeExceptionally(e);
-            }
-        }).exceptionally(ex -> {
-            future.completeExceptionally(ex);
             return null;
         });
-        return future;
+        return newProducerIdBlockFuture;
     }
 
     @Override
@@ -141,7 +159,9 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
         CompletableFuture<Void> future = new CompletableFuture<>();
         getNewProducerIdBlock()
                 .thenAccept(__ -> {
-                    nextProducerId = currentProducerIdBlock.blockStartId;
+                    synchronized (this) {
+                        nextProducerId = currentProducerIdBlock.blockStartId;
+                    }
                     future.complete(null);
                 }).exceptionally(throwable -> {
                     future.completeExceptionally(throwable);
@@ -156,8 +176,17 @@ public class ProducerIdManagerImpl implements ProducerIdManager {
         // grab a new block of producerIds if this block has been exhausted
         if (nextProducerId > currentProducerIdBlock.blockEndId) {
             getNewProducerIdBlock().thenAccept(__ -> {
-                nextProducerId = currentProducerIdBlock.blockStartId + 1;
-                nextProducerIdFuture.complete(nextProducerId - 1);
+                synchronized (this) {
+                    if (nextProducerId > currentProducerIdBlock.blockEndId) {
+                        // This can only happen if more than blockSize producers attempt to connect
+                        // while the getNewProducerIdBlock() is processing
+                        Exception ex = new IllegalStateException("New ProducerIdBlock exhausted. Try again.");
+                        nextProducerIdFuture.completeExceptionally(ex);
+                    } else {
+                        nextProducerId += 1;
+                        nextProducerIdFuture.complete(nextProducerId - 1);
+                    }
+                }
             }).exceptionally(ex -> {
                 nextProducerIdFuture.completeExceptionally(ex);
                 return null;
