@@ -163,7 +163,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     private static ByteBuffer serialize(ProducerStateManagerSnapshot snapshot) {
 
-        ByteBuf byteBuf = ByteBufAllocator.DEFAULT.buffer();
+        ByteBuf byteBuf = Unpooled.buffer();
         try (DataOutputStream dataOutputStream =
                      new DataOutputStream(new ByteBufOutputStream(byteBuf));) {
 
