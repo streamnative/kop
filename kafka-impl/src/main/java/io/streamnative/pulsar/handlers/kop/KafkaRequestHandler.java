@@ -80,7 +80,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
@@ -312,9 +311,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                EndPoint advertisedEndPoint,
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
-                               OrderedScheduler sendResponseScheduler,
                                KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
-        super(requestStats, kafkaConfig, sendResponseScheduler);
+        super(requestStats, kafkaConfig);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
         this.replicaManager = replicaManager;

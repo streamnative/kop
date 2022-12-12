@@ -31,7 +31,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgato
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
-import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.pulsar.broker.PulsarService;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
@@ -66,7 +65,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final SslContextFactory.Server sslContextFactory;
     @Getter
     private final RequestStats requestStats;
-    private final OrderedScheduler sendResponseScheduler;
 
     private final LengthFieldPrepender lengthFieldPrepender;
 
@@ -82,7 +80,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    EndPoint advertisedEndPoint,
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
-                                   OrderedScheduler sendResponseScheduler,
                                    KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
         super();
         this.pulsarService = pulsarService;
@@ -102,7 +99,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         } else {
             sslContextFactory = null;
         }
-        this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
         this.lengthFieldPrepender = new LengthFieldPrepender(4);
     }
@@ -129,7 +125,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats,
                 kafkaTopicManagerSharedState);
     }
 
@@ -142,7 +138,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
                 new RequestStats(rootStatsLogger.scope(SERVER_SCOPE)),
-                sendResponseScheduler,
                 kafkaTopicManagerSharedState);
     }
 }

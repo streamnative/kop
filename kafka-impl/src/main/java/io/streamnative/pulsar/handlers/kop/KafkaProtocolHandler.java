@@ -99,7 +99,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Getter
     private KopEventManager kopEventManager;
-    private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
@@ -168,10 +167,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider = new PrometheusMetricsProvider();
         StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
         requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
-        sendResponseScheduler = OrderedScheduler.newSchedulerBuilder()
-                .name("send-response")
-                .numThreads(kafkaConfig.getNumSendKafkaResponseThreads())
-                .build();
     }
 
     // This method is called after initialize
@@ -401,7 +396,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 endPoint,
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
-                sendResponseScheduler,
                 kafkaTopicManagerSharedState);
     }
 
@@ -482,7 +476,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kafkaTopicManagerSharedState.close();
         kopBrokerLookupManager.close();
         statsProvider.stop();
-        sendResponseScheduler.shutdown();
     }
 
     @VisibleForTesting
