@@ -694,7 +694,7 @@ public class PartitionLog {
             }
         }
         // Release all the entries that are not in the result
-        for (int i = committedEntries.size(); i < entries.size(); i ++) {
+        for (int i = committedEntries.size(); i < entries.size(); i++) {
             entries.get(i).release();
         }
         return committedEntries;
