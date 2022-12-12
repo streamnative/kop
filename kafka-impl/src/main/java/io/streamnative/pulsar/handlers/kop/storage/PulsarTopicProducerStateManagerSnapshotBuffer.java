@@ -33,10 +33,12 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
 public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerStateManagerSnapshotBuffer {
@@ -127,6 +129,14 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             // wait for local cache to be up-to-date
             CompletableFuture<Void> dummy = ensureLatestData(true)
                     .thenCompose((___) -> {
+                        ProducerStateManagerSnapshot latest = latestSnapshots.get(snapshot.getTopicPartition());
+                        if (latest != null && latest.getOffset() >= snapshot.getOffset()) {
+                            log.error("Topic ownership changed for {}. Found a snapshot at {} "
+                                    + "while trying to write the snapshot at {}", snapshot.getTopicPartition(),
+                                    latest.getOffset(), snapshot.getOffset());
+                            return FutureUtil.failedFuture(new NotLeaderOrFollowerException("No more owner of "
+                                    + "ProducerState for topic " + topic));
+                        }
                         return opProducer
                                 .newMessage()
                                 .key(snapshot.getTopicPartition()) // leverage compaction
