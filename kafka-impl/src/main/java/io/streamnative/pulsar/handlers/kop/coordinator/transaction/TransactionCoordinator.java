@@ -837,8 +837,10 @@ public class TransactionCoordinator {
     @VisibleForTesting
     protected void abortTimedOutTransactions(
             BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors> onComplete) {
+        log.info("abortTimedOutTransactions.....");
         for (TransactionStateManager.TransactionalIdAndProducerIdEpoch txnIdAndPidEpoch :
                 txnManager.timedOutTransactions()) {
+            log.info("abortTimedOutTransactions.....{}", txnIdAndPidEpoch);
             txnManager.getTransactionState(txnIdAndPidEpoch.getTransactionalId())
                     .map(option -> option.map(epochAndTxnMetadata -> {
                         TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();

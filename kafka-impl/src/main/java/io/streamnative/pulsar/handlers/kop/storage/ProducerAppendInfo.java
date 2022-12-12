@@ -69,8 +69,9 @@ public class ProducerAppendInfo {
         initUpdatedEntry();
     }
 
-    private void checkProducerEpoch(Short producerEpoch) {
-        if (producerEpoch < updatedEntry.producerEpoch()) {
+    private void checkProducerEpoch(short producerEpoch) {
+        if (updatedEntry.producerEpoch() != null
+                && producerEpoch < updatedEntry.producerEpoch()) {
             String message = String.format("Producer's epoch in %s is %s, which is smaller than the last seen "
                     + "epoch %s", topicPartition, producerEpoch, currentEntry.producerEpoch());
             throw new IllegalArgumentException(message);
@@ -126,7 +127,7 @@ public class ProducerAppendInfo {
 
     public Optional<CompletedTxn> appendEndTxnMarker(
             EndTransactionMarker endTxnMarker,
-            Short producerEpoch,
+            short producerEpoch,
             long offset,
             long timestamp) {
         checkProducerEpoch(producerEpoch);

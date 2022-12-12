@@ -69,10 +69,20 @@ public class PartitionLogManager {
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
         return logMap.computeIfAbsent(kopTopic, key -> {
-                return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryfilterMap,
-                        kafkaTopicLookupService,
-                        prodPerTenant)
-                        .recover(); // TODO: retry on failures
+            CompletableFuture<PartitionLog> result = new PartitionLog(kafkaConfig, requestStats,
+                    time, topicPartition, kopTopic, entryfilterMap,
+                    kafkaTopicLookupService,
+                    prodPerTenant)
+                    .recoverTransactions();
+
+            result.exceptionally(error -> {
+                // in case of failure we have to remove the CompletableFuture from the map
+                log.error("Recovery of {} failed", key, error);
+                logMap.remove(key, result);
+                return null;
+            });
+
+            return result;
         });
     }
 

@@ -38,7 +38,8 @@ public class ProducerStateEntry {
 
 
     public boolean maybeUpdateProducerEpoch(Short producerEpoch) {
-        if (!this.producerEpoch.equals(producerEpoch)) {
+        if (this.producerEpoch == null
+                || !this.producerEpoch.equals(producerEpoch)) {
             this.producerEpoch = producerEpoch;
             return true;
         } else {

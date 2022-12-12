@@ -144,8 +144,15 @@ public class PartitionLog {
       this.preciseTopicPublishRateLimitingEnable = kafkaConfig.isPreciseTopicPublishRateLimiterEnable();
     }
 
-    public CompletableFuture<PartitionLog> recover() {
-        return producerStateManager.recover(this).thenApply(___ -> this);
+    public CompletableFuture<PartitionLog> recoverTransactions() {
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            return producerStateManager
+                    .recover(this)
+                    .thenApply(___ -> this);
+        } else {
+            return CompletableFuture
+                    .completedFuture(this);
+        }
     }
 
     private CompletableFuture<EntryFormatter> getEntryFormatter(
