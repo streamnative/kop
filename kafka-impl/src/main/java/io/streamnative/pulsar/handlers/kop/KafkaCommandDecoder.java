@@ -59,6 +59,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected AtomicBoolean isActive = new AtomicBoolean(false);
     // Queue to make response get responseFuture in order and limit the max request size
     private final LinkedBlockingQueue<ResponseAndRequest> requestQueue;
+    private int numQueuedRequestsInProgress;
+    private final int maxQueuedRequests;
     @Getter
     @Setter
     protected volatile RequestStats requestStats;
@@ -70,6 +72,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.requestStats = requestStats;
         this.kafkaConfig = kafkaConfig;
         this.requestQueue = new LinkedBlockingQueue<>(kafkaConfig.getMaxQueuedRequests());
+        this.maxQueuedRequests = kafkaConfig.getMaxQueuedRequests();
     }
 
     @Override
@@ -77,6 +80,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         super.channelActive(ctx);
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
+        this.numQueuedRequestsInProgress = 0;
         isActive.set(true);
     }
 
@@ -225,7 +229,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         final long timeBeforeParse = MathUtils.nowInNano();
         KafkaHeaderAndRequest kafkaHeaderAndRequest = byteBufToRequest(buffer, remoteAddress);
-        // potentially blocking until there is room in the queue for the request.
         registerRequestParseLatency.accept(timeBeforeParse, null);
 
         try {
@@ -237,6 +240,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
             CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
             final long startProcessRequestTimestamp = MathUtils.nowInNano();
+            // this callback is just meant to make sure that we roll through things, but it feels racy
             responseFuture.whenComplete((response, e) -> {
                 if (e instanceof CancellationException) {
                     if (log.isDebugEnabled()) {
@@ -255,9 +259,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     writeAndFlushResponseToClient(channel);
                 });
             });
-            // potentially blocking until there is room in the queue for the request.
             requestQueue.put(ResponseAndRequest.of(responseFuture, kafkaHeaderAndRequest));
+            numQueuedRequestsInProgress++;
             RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.incrementAndGet();
+            if (numQueuedRequestsInProgress == maxQueuedRequests) {
+                channel.config().setAutoRead(false);
+            }
 
             if (!isActive.get()) {
                 handleInactive(kafkaHeaderAndRequest, responseFuture);
@@ -392,7 +399,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } else {
                 if (requestQueue.remove(responseAndRequest)) {
                     RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
-                } else { // it has been removed by another thread, skip this element
+                    numQueuedRequestsInProgress--;
+                    if (!channel.config().isAutoRead()) {
+                        channel.config().setAutoRead(true);
+                    }
+                } else {
+                    log.error("Request was removed from queue, but that shouldn't be possible.");
                     continue;
                 }
             }
