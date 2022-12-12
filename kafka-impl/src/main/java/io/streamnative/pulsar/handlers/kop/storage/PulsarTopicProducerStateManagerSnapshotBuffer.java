@@ -130,7 +130,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             CompletableFuture<Void> dummy = ensureLatestData(true)
                     .thenCompose((___) -> {
                         ProducerStateManagerSnapshot latest = latestSnapshots.get(snapshot.getTopicPartition());
-                        if (latest != null && latest.getOffset() >= snapshot.getOffset()) {
+                        if (latest != null && latest.getOffset() > snapshot.getOffset()) {
                             log.error("Topic ownership changed for {}. Found a snapshot at {} "
                                     + "while trying to write the snapshot at {}", snapshot.getTopicPartition(),
                                     latest.getOffset(), snapshot.getOffset());

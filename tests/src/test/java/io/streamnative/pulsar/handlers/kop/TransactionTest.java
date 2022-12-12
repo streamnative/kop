@@ -325,7 +325,75 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
-    public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
+    public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenSnapshots) throws Exception {
+
+        String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenSnapshots;
+        String transactionalId = "myProducer_" + numTransactionsBetweenSnapshots;
+        String isolation = "read_committed";
+        boolean isBatch = false;
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 20;
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                } else {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                }
+            }
+            producer.flush();
+
+            if (numTransactionsBetweenSnapshots > 0
+                    && (txnIndex % numTransactionsBetweenSnapshots) == 0) {
+                // force take snapshot
+                protocolHandler
+                        .getReplicaManager()
+                        .takeProducerStateSnapshots()
+                        .get();
+            }
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+        }
+
+        // unload the namespace, this will force a recovery
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        final int expected =  totalTxnCount * messageCountPerTxn / 2;
+        consumeTxnMessage(topicName, expected, lastMessage, isolation);
+    }
+
+
+    @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
         String transactionalId = "myProducer_" + numTransactionsBetweenUnloads;
@@ -370,11 +438,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             if (numTransactionsBetweenUnloads > 0
                     && (txnIndex % numTransactionsBetweenUnloads) == 0) {
-                // force take snapshot
-                protocolHandler
-                        .getReplicaManager()
-                        .takeProducerStateSnapshots()
-                        .get();
+
+                // unload the namespace, this will force a recovery
+                pulsar.getAdminClient().namespaces().unload(namespace);
             }
 
             if (txnIndex % 2 != 0) {
@@ -384,21 +450,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             }
         }
 
-        // unload the namespace, this will force a recovery
-        pulsar.getAdminClient().namespaces().unload(namespace);
 
-        final int expected;
-        switch (isolation) {
-            case "read_committed":
-                expected = totalTxnCount * messageCountPerTxn / 2;
-                break;
-            case "read_uncommitted":
-                expected = totalTxnCount * messageCountPerTxn;
-                break;
-            default:
-                expected = -1;
-                fail();
-        }
+        final int expected = totalTxnCount * messageCountPerTxn / 2;
         consumeTxnMessage(topicName, expected, lastMessage, isolation);
     }
 
