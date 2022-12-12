@@ -25,6 +25,7 @@ import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationFactoryOAuth2;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
 
 @Slf4j
 public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
@@ -97,6 +98,13 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
                 adminCredentialPath,
                 AUDIENCE
         ));
+    }
+
+
+    @Test(enabled = false)
+    @Override
+    public void basicRecoveryAbortedTransactionDueToProducerTimedOut(boolean takeSnapshotBeforeRecovery) {
+        // this test is disabled in this suite because the token expires
     }
 
 }

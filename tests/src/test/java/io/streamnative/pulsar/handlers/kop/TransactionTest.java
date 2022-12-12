@@ -414,7 +414,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
     public void basicRecoveryAbortedTransaction(boolean takeSnapshotBeforeRecovery) throws Exception {
 
-        String topicName = "basicRecoveryTestAfterTopicUnload2";
+        String topicName = "basicRecoveryAbortedTransaction_" + takeSnapshotBeforeRecovery;
         String transactionalId = "myProducer";
         String isolation = "read_committed";
 
@@ -469,7 +469,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryAbortedTransactionDueToProducerFenced(boolean takeSnapshotBeforeRecovery)
             throws Exception {
 
-        String topicName = "basicRecoveryTestAfterTopicUnload2";
+        String topicName = "basicRecoveryAbortedTransactionDueToProducerFenced_" + takeSnapshotBeforeRecovery;
         String transactionalId = "myProducer";
         String isolation = "read_committed";
 
@@ -536,14 +536,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryAbortedTransactionDueToProducerTimedOut(boolean takeSnapshotBeforeRecovery)
             throws Exception {
 
-        String topicName = "basicRecoveryTestAfterTopicUnload2";
+        String topicName = "basicRecoveryAbortedTransactionDueToProducerTimedOut_" + takeSnapshotBeforeRecovery;
         String transactionalId = "myProducer";
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
 
         @Cleanup
-        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1777);
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
 
         producer.initTransactions();
 
