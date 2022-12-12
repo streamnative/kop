@@ -40,7 +40,7 @@ public class ProducerAppendInfo {
     private final String topicPartition;
 
     // The id of the producer appending to the log
-    private final Long producerId;
+    private final long producerId;
 
     // The current entry associated with the producer id which contains metadata for a fixed number of
     // the most recent appends made by the producer. Validation of the first incoming append will
@@ -69,8 +69,9 @@ public class ProducerAppendInfo {
         initUpdatedEntry();
     }
 
-    private void checkProducerEpoch(Short producerEpoch) {
-        if (producerEpoch < updatedEntry.producerEpoch()) {
+    private void checkProducerEpoch(short producerEpoch) {
+        if (updatedEntry.producerEpoch() != null
+                && producerEpoch < updatedEntry.producerEpoch()) {
             String message = String.format("Producer's epoch in %s is %s, which is smaller than the last seen "
                     + "epoch %s", topicPartition, producerEpoch, currentEntry.producerEpoch());
             throw new IllegalArgumentException(message);
@@ -126,9 +127,9 @@ public class ProducerAppendInfo {
 
     public Optional<CompletedTxn> appendEndTxnMarker(
             EndTransactionMarker endTxnMarker,
-            Short producerEpoch,
-            Long offset,
-            Long timestamp) {
+            short producerEpoch,
+            long offset,
+            long timestamp) {
         checkProducerEpoch(producerEpoch);
 
         // Only emit the `CompletedTxn` for non-empty transactions. A transaction marker

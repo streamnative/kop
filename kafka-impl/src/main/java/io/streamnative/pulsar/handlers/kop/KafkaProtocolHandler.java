@@ -30,6 +30,8 @@ import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -45,8 +47,10 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -86,6 +90,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
     private LookupClient lookupClient;
+
+    private KafkaTopicLookupService kafkaTopicLookupService;
     @VisibleForTesting
     @Getter
     private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
@@ -110,6 +116,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
     private ReplicaManager replicaManager;
+
+    private ScheduledFuture<?> txnProducerStateSnapshotsTimeHandle;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -294,6 +302,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
                 brokerService.getAuthenticationService());
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
+
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                && kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() > 0) {
+            txnProducerStateSnapshotsTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
+                        getReplicaManager().takeProducerStateSnapshots();
+                    },
+                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                    TimeUnit.SECONDS);
+        }
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -436,6 +454,20 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 lookupClient);
     }
 
+    class ProducerStateManagerSnapshotProvider implements Function<String, ProducerStateManagerSnapshotBuffer> {
+        @Override
+        public ProducerStateManagerSnapshotBuffer apply(String tenant) {
+            if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+                return new MemoryProducerStateManagerSnapshotBuffer();
+            }
+            return getTransactionCoordinator(tenant)
+                    .getProducerStateManagerSnapshotBuffer();
+        }
+    }
+
+    private Function<String, ProducerStateManagerSnapshotBuffer> getProducerStateManagerSnapshotBufferByTenant =
+            new ProducerStateManagerSnapshotProvider();
+
     // this is called after initialize, and with kafkaConfig, brokerService all set.
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -451,13 +483,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
 
+        kafkaTopicLookupService = new KafkaTopicLookupService(brokerService);
+
         replicaManager = new ReplicaManager(
                 kafkaConfig,
                 requestStats,
                 Time.SYSTEM,
                 brokerService.getEntryFilterProvider().getBrokerEntryFilters(),
                 producePurgatory,
-                fetchPurgatory);
+                fetchPurgatory,
+                kafkaTopicLookupService,
+                getProducerStateManagerSnapshotBufferByTenant
+        );
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
@@ -487,6 +524,19 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void close() {
+        if (txnProducerStateSnapshotsTimeHandle != null) {
+            txnProducerStateSnapshotsTimeHandle.cancel(false);
+        }
+
+        if (offsetTopicClient != null) {
+            offsetTopicClient.close();
+        }
+        if (txnTopicClient != null) {
+            txnTopicClient.close();
+        }
+        if (adminManager != null) {
+            adminManager.shutdown();
+        }
         if (producePurgatory != null) {
             producePurgatory.shutdown();
         }

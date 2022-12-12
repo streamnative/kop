@@ -15,53 +15,100 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
+import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Manage {@link PartitionLog}.
  */
 @AllArgsConstructor
+@Slf4j
 public class PartitionLogManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
-    private final Map<String, PartitionLog> logMap;
+    private final Map<String, CompletableFuture<PartitionLog>> logMap;
     private final Time time;
     private final List<EntryFilter> entryFilters;
+
+    private final KafkaTopicLookupService kafkaTopicLookupService;
+
+    private final Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                RequestStats requestStats,
                                final List<EntryFilter> entryFilters,
-                               Time time) {
+                               Time time,
+                               KafkaTopicLookupService kafkaTopicLookupService,
+                               Function<String, ProducerStateManagerSnapshotBuffer>
+                                       producerStateManagerSnapshotBuffer) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
         this.entryFilters = entryFilters;
         this.time = time;
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
+        this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
     }
 
-    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
-
+        String tenant = TopicName.get(kopTopic).getTenant();
+        ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
         return logMap.computeIfAbsent(kopTopic, key -> {
-                return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryFilters,
-                        new ProducerStateManager(kopTopic));
+            CompletableFuture<PartitionLog> result = new PartitionLog(kafkaConfig, requestStats,
+                    time, topicPartition, kopTopic, entryFilters,
+                    kafkaTopicLookupService,
+                    prodPerTenant)
+                    .recoverTransactions();
+
+            result.exceptionally(error -> {
+                // in case of failure we have to remove the CompletableFuture from the map
+                log.error("Recovery of {} failed", key, error);
+                logMap.remove(key, result);
+                return null;
+            });
+
+            return result;
         });
     }
 
-    public PartitionLog removeLog(String topicName) {
+    public CompletableFuture<PartitionLog> removeLog(String topicName) {
+        log.info("removeLog {}", topicName);
         return logMap.remove(topicName);
     }
 
     public int size() {
         return logMap.size();
+    }
+
+    public CompletableFuture<Void> takeProducerStateSnapshots() {
+        List<CompletableFuture<Void>> handles = new ArrayList<>();
+        logMap.values().forEach(log -> {
+            if (log.isDone() && !log.isCompletedExceptionally()) {
+                PartitionLog partitionLog = log.getNow(null);
+                if (partitionLog != null) {
+                    handles.add(partitionLog
+                            .getProducerStateManager()
+                            .takeSnapshot()
+                            .thenApply(___ -> null));
+                }
+            }
+        });
+        return FutureUtil.waitForAll(handles);
     }
 }
 

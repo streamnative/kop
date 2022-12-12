@@ -46,6 +46,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     private final Long producerId = 1L;
     private final MockTime time = new MockTime();
     private ProducerStateManager stateManager;
+    private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
     @BeforeClass
     @Override
@@ -59,7 +60,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     protected void setUp() {
-        stateManager = new ProducerStateManager(partition.toString());
+        producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
+        stateManager = new ProducerStateManager(partition.toString(), producerStateManagerSnapshotBuffer);
     }
 
     @AfterMethod
@@ -208,7 +210,7 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        stateManager = new ProducerStateManager(partition.toString());
+        stateManager = new ProducerStateManager(partition.toString(), producerStateManagerSnapshotBuffer);
         short epoch = 0;
         append(stateManager, producerId, epoch, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);

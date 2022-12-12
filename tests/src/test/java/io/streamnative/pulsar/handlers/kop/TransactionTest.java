@@ -19,6 +19,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
+import static org.testng.Assert.fail;
 
 import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState;
@@ -53,6 +54,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.common.naming.TopicName;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -74,6 +76,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         this.conf.setKafkaTxnLogTopicNumPartitions(50);
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
+
+        // enable tx expiration, but producers have
+        // a very long TRANSACTION_TIMEOUT_CONFIG
+        // so they won't expire by default
+        this.conf.setKafkaTransactionalIdExpirationMs(5000);
+        this.conf.setKafkaTransactionalIdExpirationEnable(true);
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -141,7 +149,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 });
     }
 
-    public void basicProduceAndConsumeTest(String topicName,
+    private void basicProduceAndConsumeTest(String topicName,
                                            String transactionalId,
                                            String isolation,
                                            boolean isBatch) throws Exception {
@@ -183,7 +191,19 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             }
         }
 
-        consumeTxnMessage(topicName, totalTxnCount * messageCountPerTxn, lastMessage, isolation);
+        final int expected;
+        switch (isolation) {
+            case "read_committed":
+                expected = totalTxnCount * messageCountPerTxn / 2;
+                break;
+            case "read_uncommitted":
+                expected = totalTxnCount * messageCountPerTxn;
+                break;
+            default:
+                expected = -1;
+                fail();
+        }
+        consumeTxnMessage(topicName, expected, lastMessage, isolation);
     }
 
     private void consumeTxnMessage(String topicName,
@@ -203,7 +223,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             boolean readFinish = false;
             for (ConsumerRecord<Integer, String> record : consumerRecords) {
                 if (isolation.equals("read_committed")) {
-                    assertFalse(record.value().contains("abort msg txnIndex"));
+                    assertFalse(record.value().contains("abort"));
                 }
                 log.info("Fetch for receive record offset: {}, key: {}, value: {}",
                         record.offset(), record.key(), record.value());
@@ -220,12 +240,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             }
         }
         log.info("Fetch for receive message finish. isolation: {}, receive count: {}", isolation, receiveCount.get());
-
-        if (isolation.equals("read_committed")) {
-            Assert.assertEquals(receiveCount.get(), totalMessageCount / 2);
-        } else {
-            Assert.assertEquals(receiveCount.get(), totalMessageCount);
-        }
+        Assert.assertEquals(receiveCount.get(), totalMessageCount);
         log.info("Fetch for finish consume messages. isolation: {}", isolation);
     }
 
@@ -289,7 +304,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 if (records.isEmpty()) {
                     msgCnt.decrementAndGet();
                 } else {
-                    Assert.fail("The transaction was committed, the consumer shouldn't receive any more messages.");
+                    fail("The transaction was committed, the consumer shouldn't receive any more messages.");
                 }
             } else {
                 for (ConsumerRecord<Integer, String> record : records) {
@@ -299,6 +314,341 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 }
             }
         }
+    }
+
+    @DataProvider(name = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    protected static Object[][] basicRecoveryTestAfterTopicUnloadNumTransactions() {
+        // isBatch
+        return new Object[][]{
+                {0},
+                {3},
+                {5}
+        };
+    }
+
+    @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenSnapshots) throws Exception {
+
+        String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenSnapshots;
+        String transactionalId = "myProducer_" + numTransactionsBetweenSnapshots;
+        String isolation = "read_committed";
+        boolean isBatch = false;
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 20;
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                } else {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                }
+            }
+            producer.flush();
+
+            if (numTransactionsBetweenSnapshots > 0
+                    && (txnIndex % numTransactionsBetweenSnapshots) == 0) {
+                // force take snapshot
+                protocolHandler
+                        .getReplicaManager()
+                        .takeProducerStateSnapshots()
+                        .get();
+            }
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+        }
+
+        // unload the namespace, this will force a recovery
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        final int expected =  totalTxnCount * messageCountPerTxn / 2;
+        consumeTxnMessage(topicName, expected, lastMessage, isolation);
+    }
+
+
+    @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
+
+        String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
+        String transactionalId = "myProducer_" + numTransactionsBetweenUnloads;
+        String isolation = "read_committed";
+        boolean isBatch = false;
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        int totalTxnCount = 10;
+        int messageCountPerTxn = 20;
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        String lastMessage = "";
+        for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
+            producer.beginTransaction();
+
+            String contentBase;
+            if (txnIndex % 2 != 0) {
+                contentBase = "commit msg txnIndex %s messageIndex %s";
+            } else {
+                contentBase = "abort msg txnIndex %s messageIndex %s";
+            }
+
+            for (int messageIndex = 0; messageIndex < messageCountPerTxn; messageIndex++) {
+                String msgContent = String.format(contentBase, txnIndex, messageIndex);
+                log.info("send txn message {}", msgContent);
+                lastMessage = msgContent;
+                if (isBatch) {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
+                } else {
+                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
+                }
+            }
+            producer.flush();
+
+            if (numTransactionsBetweenUnloads > 0
+                    && (txnIndex % numTransactionsBetweenUnloads) == 0) {
+
+                // unload the namespace, this will force a recovery
+                pulsar.getAdminClient().namespaces().unload(namespace);
+            }
+
+            if (txnIndex % 2 != 0) {
+                producer.commitTransaction();
+            } else {
+                producer.abortTransaction();
+            }
+        }
+
+
+        final int expected = totalTxnCount * messageCountPerTxn / 2;
+        consumeTxnMessage(topicName, expected, lastMessage, isolation);
+    }
+
+    @DataProvider(name = "takeSnapshotBeforeRecovery")
+    protected static Object[][] takeSnapshotBeforeRecovery() {
+        // isBatch
+        return new Object[][]{
+                {true},
+                {false}
+        };
+    }
+
+    @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
+    public void basicRecoveryAbortedTransaction(boolean takeSnapshotBeforeRecovery) throws Exception {
+
+        String topicName = "basicRecoveryAbortedTransaction_" + takeSnapshotBeforeRecovery;
+        String transactionalId = "myProducer";
+        String isolation = "read_committed";
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        producer.beginTransaction();
+
+        String firstMessage = "aborted msg 1";
+
+        producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
+        producer.flush();
+        // force take snapshot
+        protocolHandler
+                .getReplicaManager()
+                .takeProducerStateSnapshots()
+                .get();
+
+        // recovery will re-process the topic from this point onwards
+        String secondMessage = "aborted msg 2";
+        producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
+
+        producer.abortTransaction();
+
+        producer.beginTransaction();
+        String lastMessage = "committed mgs";
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.commitTransaction();
+
+        if (takeSnapshotBeforeRecovery) {
+            protocolHandler
+                    .getReplicaManager()
+                    .takeProducerStateSnapshots()
+                    .get();
+        }
+
+        // unload the namespace, this will force a recovery
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        consumeTxnMessage(topicName, 2, lastMessage, isolation);
+    }
+
+    @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
+    public void basicRecoveryAbortedTransactionDueToProducerFenced(boolean takeSnapshotBeforeRecovery)
+            throws Exception {
+
+        String topicName = "basicRecoveryAbortedTransactionDueToProducerFenced_" + takeSnapshotBeforeRecovery;
+        String transactionalId = "myProducer";
+        String isolation = "read_committed";
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        producer.beginTransaction();
+
+        String firstMessage = "aborted msg 1";
+
+        producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
+        producer.flush();
+        // force take snapshot
+        protocolHandler
+                .getReplicaManager()
+                .takeProducerStateSnapshots()
+                .get();
+
+        // recovery will re-process the topic from this point onwards
+        String secondMessage = "aborted msg 2";
+        producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
+
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
+        producer2.initTransactions();
+
+        // the transaction is automatically aborted, because the first instance of the
+        // producer has been fenced
+        expectThrows(ProducerFencedException.class, () -> {
+            producer.commitTransaction();
+        });
+
+
+        producer2.beginTransaction();
+        String lastMessage = "committed mgs";
+        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.commitTransaction();
+
+        if (takeSnapshotBeforeRecovery) {
+            // force take snapshot
+            protocolHandler
+                    .getReplicaManager()
+                    .takeProducerStateSnapshots()
+                    .get();
+        }
+
+        // unload the namespace, this will force a recovery
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        consumeTxnMessage(topicName, 2, lastMessage, isolation);
+    }
+
+
+    @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
+    public void basicRecoveryAbortedTransactionDueToProducerTimedOut(boolean takeSnapshotBeforeRecovery)
+            throws Exception {
+
+        String topicName = "basicRecoveryAbortedTransactionDueToProducerTimedOut_" + takeSnapshotBeforeRecovery;
+        String transactionalId = "myProducer";
+        String isolation = "read_committed";
+
+        String namespace = TopicName.get(topicName).getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
+
+        producer.initTransactions();
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        producer.beginTransaction();
+
+        String firstMessage = "aborted msg 1";
+
+        producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
+        producer.flush();
+        // force take snapshot
+        protocolHandler
+                .getReplicaManager()
+                .takeProducerStateSnapshots()
+                .get();
+
+        // recovery will re-process the topic from this point onwards
+        String secondMessage = "aborted msg 2";
+        producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
+
+        Thread.sleep(conf.getKafkaTransactionalIdExpirationMs() + 5000);
+
+        // the transaction is automatically aborted, because of producer timeout
+        expectThrows(ProducerFencedException.class, () -> {
+            producer.commitTransaction();
+        });
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        String lastMessage = "committed mgs";
+        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.commitTransaction();
+
+        if (takeSnapshotBeforeRecovery) {
+            // force take snapshot
+            protocolHandler
+                    .getReplicaManager()
+                    .takeProducerStateSnapshots()
+                    .get();
+        }
+
+        // unload the namespace, this will force a recovery
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
     private List<String> prepareData(String sourceTopicName,
@@ -333,7 +683,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             Thread.sleep(200);
         }
         if (!flag.get()) {
-            Assert.fail("The txn markers are not wrote.");
+            fail("The txn markers are not wrote.");
         }
     }
 
@@ -349,12 +699,22 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaProducer<Integer, String> buildTransactionProducer(String transactionalId) {
+        return buildTransactionProducer(transactionalId, -1);
+    }
+
+    private KafkaProducer<Integer, String> buildTransactionProducer(String transactionalId, int txTimeout) {
         Properties producerProps = new Properties();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, getKafkaServerAdder());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000 * 10);
         producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+        if (txTimeout > 0) {
+            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, txTimeout);
+        } else {
+            // very long time-out
+            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, 600 * 1000);
+        }
         addCustomizeProps(producerProps);
 
         return new KafkaProducer<>(producerProps);
