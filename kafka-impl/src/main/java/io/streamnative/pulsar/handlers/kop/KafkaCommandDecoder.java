@@ -399,10 +399,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             } else {
                 if (requestQueue.remove(responseAndRequest)) {
                     RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
-                    numQueuedRequestsInProgress--;
-                    if (!channel.config().isAutoRead()) {
+                    if (numQueuedRequestsInProgress == maxQueuedRequests) {
                         channel.config().setAutoRead(true);
                     }
+                    numQueuedRequestsInProgress--;
                 } else {
                     log.error("Request was removed from queue, but that shouldn't be possible.");
                     continue;
