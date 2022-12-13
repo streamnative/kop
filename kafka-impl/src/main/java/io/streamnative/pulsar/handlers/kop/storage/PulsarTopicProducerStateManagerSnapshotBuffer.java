@@ -222,7 +222,6 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     }
 
     private static ProducerStateManagerSnapshot deserialize(ByteBuffer buffer) {
-
         try (DataInputStream dataInputStream =
                      new DataInputStream(new ByteBufInputStream(Unpooled.wrappedBuffer(buffer)));) {
             String topicPartition = dataInputStream.readUTF();
@@ -279,7 +278,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             return new ProducerStateManagerSnapshot(topicPartition, offset,
                     producers, ongoingTxns, abortedTxnList);
 
-        } catch (IOException err) {
+        } catch (Throwable err) {
             log.error("Cannot deserialize snapshot", err);
             return null;
         }
@@ -294,9 +293,6 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                     log.info("found snapshot for {} : {}", deserialize.getTopicPartition(), deserialize);
                 }
                 latestSnapshots.put(deserialize.getTopicPartition(), deserialize);
-            } else {
-                log.error("Found erroneous snapshot with key {} but for topic {}: {}",
-                        key, deserialize.getTopicPartition(), deserialize);
             }
         }
     }
