@@ -18,7 +18,6 @@ import io.netty.buffer.ByteBufOutputStream;
 import java.io.DataOutputStream;
 import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.protocol.DataOutputStreamWritable;
 import org.apache.kafka.common.protocol.Message;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.Writable;
