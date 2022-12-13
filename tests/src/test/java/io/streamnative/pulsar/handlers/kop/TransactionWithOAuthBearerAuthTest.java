@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.security.auth.KafkaMockAuthorizationProvider;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import java.net.URL;
@@ -105,15 +104,6 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
     @Override
     public void basicRecoveryAbortedTransactionDueToProducerTimedOut(boolean takeSnapshotBeforeRecovery) {
         // this test is disabled in this suite because the token expires
-    }
-
-
-    public static class OauthMockAuthorizationProvider extends KafkaMockAuthorizationProvider {
-
-        @Override
-        public boolean roleAuthorized(String role) {
-            return role.equals(ADMIN_USER);
-        }
     }
 
 }
