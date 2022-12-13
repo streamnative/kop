@@ -26,7 +26,7 @@ import lombok.Data;
 public class TransactionConfig {
 
     public static final String DefaultTransactionMetadataTopicName = "public/default/__transaction_state";
-    public static final String DefaultProducerStateSnapshotTopicName = "public/default/__transaction_state";
+    public static final String DefaultProducerStateSnapshotTopicName = "public/default/__transaction_producer_state";
     public static final String DefaultProducerIdTopicName = "public/default/__transaction_producerid_generator";
     public static final long DefaultTransactionsMaxTimeoutMs = TimeUnit.MINUTES.toMillis(15);
     public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
