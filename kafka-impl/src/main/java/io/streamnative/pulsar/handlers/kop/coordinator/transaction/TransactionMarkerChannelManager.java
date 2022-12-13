@@ -16,8 +16,6 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.EndPoint;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
