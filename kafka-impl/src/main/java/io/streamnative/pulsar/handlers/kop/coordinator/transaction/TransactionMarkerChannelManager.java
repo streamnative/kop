@@ -183,7 +183,7 @@ public class TransactionMarkerChannelManager {
                 .newEventLoopGroup(0, false, new DefaultThreadFactory("kop-txn"));
         bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup);
-        bootstrap.channel(NioSocketChannel.class);
+        bootstrap.channel(EventLoopUtil.getClientSocketChannelClass(eventLoopGroup));
         bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this));
     }
 
