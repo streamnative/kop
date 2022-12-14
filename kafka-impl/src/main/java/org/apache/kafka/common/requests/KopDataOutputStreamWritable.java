@@ -13,18 +13,18 @@
  */
 package org.apache.kafka.common.requests;
 
-import org.apache.kafka.common.utils.Utils;
-
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import org.apache.kafka.common.protocol.DataOutputStreamWritable;
+import org.apache.kafka.common.utils.Utils;
 
 /**
  * This class is necessary to bypass a bug in
- * <a href="https://github.com/apache/kafka/blob/927edfece3db8aab7d01850955f9a65e5c110da5/clients/src/main/java/org/apache/kafka/common/protocol/DataOutputStreamWritable.java#L102">DataOutputStreamWritable</a>
+ * <a href="https://github.com/apache/kafka/blob/927edfece3db8aab7d01850955f9a65e5c110da5/clients/src/main/java/org/apache/kafka/common/protocol/DataOutputStreamWritable.java#L102">KopDataOutputStreamWritable</a>.
  */
-public class DataOutputStreamWritable extends org.apache.kafka.common.protocol.DataOutputStreamWritable {
-    public DataOutputStreamWritable(DataOutputStream out) {
+public class KopDataOutputStreamWritable extends DataOutputStreamWritable {
+    public KopDataOutputStreamWritable(DataOutputStream out) {
         super(out);
     }
     @Override
