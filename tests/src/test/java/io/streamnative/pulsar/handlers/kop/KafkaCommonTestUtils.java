@@ -115,15 +115,13 @@ public class KafkaCommonTestUtils {
         RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
 
 
-        ByteBuffer serializedRequest = KopResponseUtils.serializeRequest(mockHeader, request);
+        ByteBuf byteBuf = KopResponseUtils.serializeRequest(mockHeader, request);
 
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
+        RequestHeader header = RequestHeader.parse(byteBuf.nioBuffer());
 
         ApiKeys apiKey = header.apiKey();
         short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, serializedRequest).request;
+        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, byteBuf.nioBuffer()).request;
         return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 }
