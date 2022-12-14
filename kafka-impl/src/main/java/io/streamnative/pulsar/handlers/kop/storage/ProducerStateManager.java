@@ -73,17 +73,24 @@ public class ProducerStateManager {
         }
         long startRecovery = System.currentTimeMillis();
         // recover from log
-        return partitionLog
+        CompletableFuture<Void> result =  partitionLog
                 .recoverTxEntries(offSetPosition, this)
-                .thenCompose(numEntries -> {
+                .thenApply(numEntries -> {
                     log.info("Recovery of {} finished. Scanned {} entries, time {} ms, new mapEndOffset {}",
                             topicPartition,
                             numEntries,
                             System.currentTimeMillis() - startRecovery,
                             mapEndOffset);
-                    return takeSnapshot()
-                            .thenApply(____ -> (Void) null);
+                    return null;
                 });
+
+        result.thenRun(() -> {
+            // that a snapshot when the recovery is done
+            // this will make the next recovery faster
+            takeSnapshot();
+        });
+
+        return result;
     }
 
     public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot() {
