@@ -1146,7 +1146,7 @@ public class PartitionLog {
                                             AtomicLong entryCounter,
                                             CompletableFuture<Long> future) {
         log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
-        int maxReadEntriesNum = 2;
+        int maxReadEntriesNum = 200;
         long adjustedMaxBytes = Long.MAX_VALUE;
         readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
                 (partitionName) -> {})
