@@ -46,8 +46,8 @@ public class KopResponseUtils {
         return serialize(header.data(), header.headerVersion(), response.data(), version);
     }
 
-    public static ByteBuffer serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
-        return RequestUtils.serialize(requestHeader.data(), requestHeader.headerVersion(),
+    public static ByteBuf serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
+        return serialize(requestHeader.data(), requestHeader.headerVersion(),
                 request.data(), request.version());
     }
 

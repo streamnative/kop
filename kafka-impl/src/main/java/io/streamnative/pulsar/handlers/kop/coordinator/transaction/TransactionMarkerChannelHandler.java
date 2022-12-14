@@ -73,7 +73,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     private void enqueueRequest(ChannelHandlerContext channel, PendingRequest pendingRequest) {
         final long correlationId = pendingRequest.getCorrelationId();
         pendingRequestMap.put(correlationId, pendingRequest);
-        channel.writeAndFlush(Unpooled.wrappedBuffer(pendingRequest.serialize())).addListener(writeFuture -> {
+        channel.writeAndFlush(pendingRequest.serialize()).addListener(writeFuture -> {
             if (!writeFuture.isSuccess()) {
                 pendingRequest.completeExceptionally(writeFuture.cause());
                 pendingRequestMap.remove(correlationId);

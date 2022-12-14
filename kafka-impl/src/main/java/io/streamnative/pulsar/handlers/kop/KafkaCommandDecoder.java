@@ -593,10 +593,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected abstract void
     handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
-    protected abstract void
-    handleDescribeCluster(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
-
-
     public static class KafkaHeaderAndRequest {
 
         private static final String DEFAULT_CLIENT_HOST = "";
@@ -605,6 +601,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         private final AbstractRequest request;
         private final ByteBuf buffer;
         private final SocketAddress remoteAddress;
+
+        private final AtomicBoolean released = new AtomicBoolean();
 
         public KafkaHeaderAndRequest(RequestHeader header,
                               AbstractRequest request,
@@ -617,6 +615,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public ByteBuf getBuffer() {
+            if (released.get()) {
+                throw new IllegalStateException("Already released");
+            }
             return buffer;
         }
 
@@ -650,8 +651,17 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 this.header, this.request, this.remoteAddress);
         }
 
+        public void bufferReleased() {
+            if (!released.compareAndSet(false, true)) {
+                throw new IllegalStateException("Already released");
+            }
+        }
+
         public void close() {
-            ReferenceCountUtil.safeRelease(this.buffer);
+           if (!released.compareAndSet(false, true)) {
+               return;
+           }
+           ReferenceCountUtil.safeRelease(this.buffer);
         }
     }
 
