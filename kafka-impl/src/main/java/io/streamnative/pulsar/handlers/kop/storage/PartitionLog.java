@@ -368,8 +368,11 @@ public class PartitionLog {
         Log
     }
 
+    // TODO: the first and last offset only make sense here if there is only a sinlge completed txn.
+    // It might make sense to refactor this method.
     public AnalyzeResult analyzeAndValidateProducerState(MemoryRecords records,
                                                          Optional<Long> firstOffset,
+                                                         Long lastOffset,
                                                          AppendOrigin origin) {
         Map<Long, ProducerAppendInfo> updatedProducers = Maps.newHashMap();
         List<CompletedTxn> completedTxns = Lists.newArrayList();
@@ -380,7 +383,12 @@ public class PartitionLog {
                 // compute the last stable offset without relying on additional index lookups.
                 Optional<CompletedTxn> maybeCompletedTxn =
                         updateProducers(batch, updatedProducers, firstOffset, origin);
-                maybeCompletedTxn.ifPresent(completedTxns::add);
+                maybeCompletedTxn.ifPresent(txn -> {
+                    if (lastOffset != null) {
+                        txn.lastOffset(lastOffset);
+                    }
+                    completedTxns.add(txn);
+                });
             }
         }
 
@@ -904,9 +912,9 @@ public class PartitionLog {
                                 time.nanoseconds() - beforePublish, TimeUnit.NANOSECONDS);
                         final long lastOffset = offset + numMessages - 1;
 
-                        AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
-                                encodeResult.getRecords(), Optional.of(offset), AppendOrigin.Client);
-                        updateProducerStateManager(lastOffset, analyzeResult);
+                AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
+                        encodeResult.getRecords(), Optional.of(offset), lastOffset, AppendOrigin.Client);
+                updateProducerStateManager(lastOffset, analyzeResult);
 
                         appendFuture.complete(offset);
                     } else {
@@ -1179,6 +1187,8 @@ public class PartitionLog {
                     decodedEntries.thenAccept((decodeResult) -> {
                         try {
                             MemoryRecords records = decodeResult.getRecords();
+                            // When we retrieve many entries, this firstOffset's baseOffset is not necessarily
+                            // the base offset for all records.
                             Optional<Long> firstOffset = Optional
                                     .ofNullable(records.firstBatch())
                                     .map(batch -> batch.baseOffset());
@@ -1200,8 +1210,9 @@ public class PartitionLog {
                                         firstOffset.orElse(null), lastOffset);
                             }
 
+                            // Get the relevant offsets from each record
                             AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
-                                    firstOffset, AppendOrigin.Log);
+                                    Optional.empty(), null, AppendOrigin.Log);
 
                             updateProducerStateManager(lastOffset, analyzeResult);
                             if (log.isDebugEnabled()) {
@@ -1229,8 +1240,6 @@ public class PartitionLog {
             producerStateManager.update(producerAppendInfo);
         });
         analyzeResult.completedTxns().forEach(completedTxn -> {
-            // update to real last offset
-            completedTxn.lastOffset(lastOffset - 1);
             long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
             producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
             producerStateManager.completeTxn(completedTxn);
