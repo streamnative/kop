@@ -72,8 +72,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
-        this.conf.setOffsetsTopicNumPartitions(50);
-        this.conf.setKafkaTxnLogTopicNumPartitions(50);
+        this.conf.setOffsetsTopicNumPartitions(10);
+        this.conf.setKafkaTxnLogTopicNumPartitions(10);
+        this.conf.setKafkaTxnProducerStateTopicNumPartitions(10);
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
 
