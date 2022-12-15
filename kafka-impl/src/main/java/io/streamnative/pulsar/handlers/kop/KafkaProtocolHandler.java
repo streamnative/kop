@@ -539,15 +539,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             txnProducerStateSnapshotsTimeHandle.cancel(false);
         }
 
-        if (offsetTopicClient != null) {
-            offsetTopicClient.close();
-        }
-        if (txnTopicClient != null) {
-            txnTopicClient.close();
-        }
-        if (adminManager != null) {
-            adminManager.shutdown();
-        }
         if (producePurgatory != null) {
             producePurgatory.shutdown();
         }
@@ -565,6 +556,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopBrokerLookupManager.close();
         statsProvider.stop();
         sendResponseScheduler.shutdown();
+
+        if (offsetTopicClient != null) {
+            offsetTopicClient.close();
+        }
+        if (txnTopicClient != null) {
+            txnTopicClient.close();
+        }
+        if (adminManager != null) {
+            adminManager.shutdown();
+        }
         recoveryExecutor.shutdown();
 
         List<CompletableFuture<?>> closeHandles = new ArrayList<>();
