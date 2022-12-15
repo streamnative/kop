@@ -314,7 +314,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         });
     }
 
-    @Test(timeOut = 20000, expectedExceptions = KeeperException.NoNodeException.class)
+    @Test(timeOut = 30000, expectedExceptions = KeeperException.NoNodeException.class)
     public void testFindTransactionCoordinatorShouldNotStoreGroupId() throws Exception {
         String kafkaServer = "localhost:" + getKafkaBrokerPort();
 
