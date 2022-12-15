@@ -53,6 +53,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -121,6 +122,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+
+
+    private OrderedExecutor recoveryExecutor;
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -275,6 +279,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             }
         });
         bundleListener.register();
+
+        recoveryExecutor = OrderedExecutor
+                .newBuilder()
+                .name("kafka-tx-recovery")
+                .numThreads(kafkaConfig.getKafkaTransactionRecoveryNumThreads())
+                .build();
 
         if (kafkaConfig.isKafkaManageSystemNamespaces()) {
             // initialize default Group Coordinator
@@ -493,7 +503,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 producePurgatory,
                 fetchPurgatory,
                 kafkaTopicLookupService,
-                getProducerStateManagerSnapshotBufferByTenant
+                getProducerStateManagerSnapshotBufferByTenant,
+                recoveryExecutor
         );
 
         try {
@@ -554,6 +565,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopBrokerLookupManager.close();
         statsProvider.stop();
         sendResponseScheduler.shutdown();
+        recoveryExecutor.shutdown();
 
         List<CompletableFuture<?>> closeHandles = new ArrayList<>();
         if (offsetTopicClient != null) {

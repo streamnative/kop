@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
@@ -48,13 +49,15 @@ public class PartitionLogManager {
 
     private final Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer;
 
+    private final OrderedExecutor recoveryExecutor;
+
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                RequestStats requestStats,
                                final List<EntryFilter> entryFilters,
                                Time time,
                                KafkaTopicLookupService kafkaTopicLookupService,
-                               Function<String, ProducerStateManagerSnapshotBuffer>
-                                       producerStateManagerSnapshotBuffer) {
+                               Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
+                               OrderedExecutor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
@@ -62,6 +65,7 @@ public class PartitionLogManager {
         this.time = time;
         this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
+        this.recoveryExecutor = recoveryExecutor;
     }
 
     public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
@@ -73,7 +77,7 @@ public class PartitionLogManager {
                     time, topicPartition, kopTopic, entryFilters,
                     kafkaTopicLookupService,
                     prodPerTenant)
-                    .recoverTransactions();
+                    .recoverTransactions(recoveryExecutor);
 
             result.exceptionally(error -> {
                 // in case of failure we have to remove the CompletableFuture from the map

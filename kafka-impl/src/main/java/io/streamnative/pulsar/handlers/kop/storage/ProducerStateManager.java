@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.RecordBatch;
@@ -50,14 +51,15 @@ public class ProducerStateManager {
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
     }
 
-    public CompletableFuture<Void> recover(PartitionLog partitionLog) {
+    public CompletableFuture<Void> recover(PartitionLog partitionLog, Executor executor) {
         return producerStateManagerSnapshotBuffer
                 .readLatestSnapshot(topicPartition)
-                .thenCompose(snapshot -> applySnapshotAndRecover(snapshot, partitionLog));
+                .thenCompose(snapshot -> applySnapshotAndRecover(snapshot, partitionLog, executor));
     }
 
     private CompletableFuture<Void> applySnapshotAndRecover(ProducerStateManagerSnapshot snapshot,
-                                                            PartitionLog partitionLog) {
+                                                            PartitionLog partitionLog,
+                                                            Executor executor) {
         this.abortedIndexList.clear();
         this.producers.clear();
         this.ongoingTxns.clear();
@@ -74,7 +76,7 @@ public class ProducerStateManager {
         long startRecovery = System.currentTimeMillis();
         // recover from log
         CompletableFuture<Void> result =  partitionLog
-                .recoverTxEntries(offSetPosition, this)
+                .recoverTxEntries(offSetPosition, executor)
                 .thenApply(numEntries -> {
                     log.info("Recovery of {} finished. Scanned {} entries, time {} ms, new mapEndOffset {}",
                             topicPartition,

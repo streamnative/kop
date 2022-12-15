@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,6 +55,7 @@ import lombok.ToString;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
@@ -143,14 +145,13 @@ public class PartitionLog {
         this.producerStateManager = new ProducerStateManager(fullPartitionName, producerStateManagerSnapshotBuffer);
     }
 
-    public CompletableFuture<PartitionLog> recoverTransactions() {
+    public CompletableFuture<PartitionLog> recoverTransactions(OrderedExecutor executor) {
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             return producerStateManager
-                    .recover(this)
+                    .recover(this, executor.chooseThread(fullPartitionName))
                     .thenApply(___ -> this);
         } else {
-            return CompletableFuture
-                    .completedFuture(this);
+            return CompletableFuture.completedFuture(this);
         }
     }
 
@@ -1081,7 +1082,7 @@ public class PartitionLog {
 
     public CompletableFuture<Long> recoverTxEntries(
             long offset,
-            ProducerStateManager producerStateManager) {
+            Executor executor) {
         if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(Long.valueOf(0));
@@ -1137,7 +1138,8 @@ public class PartitionLog {
                         final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
 
                         AtomicLong entryCounter = new AtomicLong();
-                        readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), entryCounter, future);
+                        readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), entryCounter,
+                                future, executor);
 
                     }).exceptionally(ex -> {
                         future.completeExceptionally(new NotLeaderOrFollowerException());
@@ -1152,13 +1154,13 @@ public class PartitionLog {
                                             KafkaTopicConsumerManager tcm,
                                             PersistentTopic topic,
                                             AtomicLong entryCounter,
-                                            CompletableFuture<Long> future) {
+                                            CompletableFuture<Long> future, Executor executor) {
         log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
         int maxReadEntriesNum = 200;
         long adjustedMaxBytes = Long.MAX_VALUE;
         readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
                 (partitionName) -> {})
-                .whenComplete((entries, throwable) -> {
+                .whenCompleteAsync((entries, throwable) -> {
                     if (throwable != null) {
                         tcm.deleteOneCursorAsync(cursor,
                                 "cursor.readEntry fail. deleteCursor");
@@ -1176,8 +1178,10 @@ public class PartitionLog {
                     tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
 
                     if (entries.isEmpty()) {
-                        log.info("No more entries to recover for {}", fullPartitionName);
-                        future.complete(entryCounter.get());
+                        if (log.isDebugEnabled()) {
+                            log.debug("No more entries to recover for {}", fullPartitionName);
+                        }
+                        future.completeAsync(() -> entryCounter.get(), executor);
                         return;
                     }
 
@@ -1219,7 +1223,8 @@ public class PartitionLog {
                                 log.debug("Completed recovery of batch {} {}", analyzeResult, fullPartitionName);
                             }
 
-                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter, future);
+                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter,
+                                    future, executor);
                         } finally {
                             decodeResult.recycle();
                         }
@@ -1228,7 +1233,7 @@ public class PartitionLog {
                         future.completeExceptionally(error);
                         return null;
                     });
-                });
+                }, executor);
     }
 
     private void updateProducerStateManager(long lastOffset, AnalyzeResult analyzeResult) {
