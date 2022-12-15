@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
@@ -37,9 +38,12 @@ public interface EntryFormatter {
      *
      * @param entries the list of entries
      * @param magic the Kafka record batch's magic value
+     * @param pulsarTopicName the Topic Name in Pulsar
+     * @param schemaManager the SchemaManager
      * @return the DecodeResult contains the Kafka records
      */
-    DecodeResult decode(List<Entry> entries, byte magic);
+    CompletableFuture<DecodeResult> decode(List<Entry> entries, byte magic,
+                                           String pulsarTopicName, SchemaManager schemaManager);
 
     /**
      * Get the number of messages from MemoryRecords.

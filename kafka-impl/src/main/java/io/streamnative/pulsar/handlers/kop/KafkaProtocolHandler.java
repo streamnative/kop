@@ -25,6 +25,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.format.PulsarAdminSchemaManager;
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
@@ -42,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +81,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private PrometheusMetricsProvider statsProvider;
     @Getter
     private KopBrokerLookupManager kopBrokerLookupManager;
+    private volatile PulsarAdmin pulsarAdmin;
     @VisibleForTesting
     @Getter
     private AdminManager adminManager = null;
@@ -101,9 +105,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
+    @Getter
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
     private ReplicaManager replicaManager;
+
+    private final ConcurrentHashMap<String, SchemaManager> schemaManagerCache = new ConcurrentHashMap<>();
+
+    private final Function<String, SchemaManager> schemaManagerForTenant = (tenant) ->
+        schemaManagerCache.computeIfAbsent(tenant, t -> new PulsarAdminSchemaManager(tenant,
+                pulsarAdmin, schemaRegistryManager.getSchemaStorage()));
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -153,6 +164,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.setBindAddress(conf.getBindAddress());
         }
 
+        if (kafkaConfig.isKafkaApplyAvroSchemaOnDecode()
+                && !kafkaConfig.isKopSchemaRegistryEnable()) {
+            throw new RuntimeException("You must enable the SchemaRegistry "
+                    + "if you want to use kafkaApplyAvroSchemaOnDecode feature");
+        }
+
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
             final String[] tokens = fullNamespace.split("/");
@@ -193,7 +210,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         brokerService = service;
         kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService);
-        PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
             adminManager = new AdminManager(pulsarAdmin, kafkaConfig);
@@ -402,7 +418,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState,
+                schemaManagerForTenant);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -483,6 +500,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopBrokerLookupManager.close();
         statsProvider.stop();
         sendResponseScheduler.shutdown();
+        schemaManagerCache.clear();
     }
 
     @VisibleForTesting

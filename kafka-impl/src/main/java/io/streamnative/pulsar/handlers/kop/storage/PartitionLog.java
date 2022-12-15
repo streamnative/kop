@@ -33,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.format.EncodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.format.KafkaMixedEntryFormatter;
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.nio.ByteBuffer;
@@ -624,31 +625,37 @@ public class PartitionLog {
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
             return;
         }
-        groupNameFuture.whenCompleteAsync((groupName, ex) -> {
+        groupNameFuture.whenCompleteAsync((_groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
-                groupName = "";
+                _groupName = "";
             }
             final long startDecodingEntriesNanos = MathUtils.nowInNano();
 
             // Get the last entry position for delayed fetch.
             Position lastPosition = this.getLastPositionFromEntries(committedEntries);
-            final DecodeResult decodeResult = entryFormatter.decode(committedEntries, magic);
-            requestStats.getFetchDecodeStats().registerSuccessfulEvent(
-                    MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+            SchemaManager schemaManager = context.getRequestHandler().getSchemaManager();
+            final CompletableFuture<DecodeResult> decodeResultFuture = entryFormatter.decode(committedEntries, magic,
+                    fullPartitionName, schemaManager);
+            String groupName = _groupName;
+            decodeResultFuture.thenAcceptAsync((DecodeResult decodeResult) -> {
+                requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
 
-            // collect consumer metrics
-            decodeResult.updateConsumerStats(topicPartition, committedEntries.size(), groupName, requestStats);
-            List<FetchResponse.AbortedTransaction> abortedTransactions = null;
-            if (readCommitted) {
-                abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
-            }
-            if (log.isDebugEnabled()) {
-                log.debug("Partition {} read entry completed in {} ns",
-                        topicPartition, MathUtils.nowInNano() - startDecodingEntriesNanos);
-            }
+                // collect consumer metrics
+                decodeResult.updateConsumerStats(topicPartition, committedEntries.size(), groupName, requestStats);
+                List<FetchResponse.AbortedTransaction> abortedTransactions = null;
+                if (readCommitted) {
+                    abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Partition {} read entry completed in {} ns",
+                            topicPartition, MathUtils.nowInNano() - startDecodingEntriesNanos);
+                }
 
-            future.complete(ReadRecordsResult.get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition));
+                future.complete(ReadRecordsResult
+                        .get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition));
+            }, context.getDecodeExecutor());
         }, context.getDecodeExecutor()).exceptionally(ex -> {
             log.error("Partition {} read entry exceptionally. ", topicPartition, ex);
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));

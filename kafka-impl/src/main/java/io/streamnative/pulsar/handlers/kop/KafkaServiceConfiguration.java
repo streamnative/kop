@@ -396,6 +396,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String entryFormat = "pulsar";
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Encode the Fetch results using KafkaAvroDeserializer format in case of AVRO data written by Pulsar"
+    )
+    private boolean kafkaApplyAvroSchemaOnDecode = false;
+
+    @FieldContext(
         category = CATEGORY_KOP,
         doc = "The broker id, default is 1"
     )

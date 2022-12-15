@@ -13,14 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
-import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
-
 /**
  * Accesses the SchemaStorage instance for a given tenant.
  */
 public interface SchemaStorageAccessor extends AutoCloseable {
 
-    SchemaStorage getSchemaStorageForTenant(String tenant) throws SchemaStorageException;
+    SchemaStorage getSchemaStorageForTenant(String tenant);
 
     @Override
     void close();
