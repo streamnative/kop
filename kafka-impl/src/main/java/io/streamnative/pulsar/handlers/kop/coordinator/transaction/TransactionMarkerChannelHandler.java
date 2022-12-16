@@ -104,7 +104,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelActive(ChannelHandlerContext channelHandlerContext) throws Exception {
-        log.info("[TransactionMarkerChannelHandler] channelActive to {}", channelHandlerContext.channel());
+        log.info("[TransactionMarkerChannelHandler] Connected to broker {}", channelHandlerContext.channel());
         handleAuthentication(channelHandlerContext);
         super.channelActive(channelHandlerContext);
     }
