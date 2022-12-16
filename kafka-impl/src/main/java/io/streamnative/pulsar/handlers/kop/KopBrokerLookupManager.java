@@ -48,9 +48,10 @@ public class KopBrokerLookupManager {
     public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
             LOOKUP_CACHE = new ConcurrentHashMap<>();
 
-    public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService) throws Exception {
+    public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService,
+                                  LookupClient lookupClient) throws Exception {
         this.pulsar = pulsarService;
-        this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
+        this.lookupClient = lookupClient;
         this.metadataStoreCacheLoader = new MetadataStoreCacheLoader(pulsarService.getPulsarResources(),
                 conf.getBrokerLookupTimeoutMs());
         this.selfAdvertisedListeners = conf.getKafkaAdvertisedListeners();

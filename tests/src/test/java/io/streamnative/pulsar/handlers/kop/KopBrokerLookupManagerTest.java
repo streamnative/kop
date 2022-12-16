@@ -30,6 +30,7 @@ public class KopBrokerLookupManagerTest extends KopProtocolHandlerTestBase {
     private static final String TENANT = "test";
     private static final String NAMESPACE = TENANT + "/" + "kop-broker-lookup-manager-test";
 
+    private LookupClient lookupClient;
     private KopBrokerLookupManager kopBrokerLookupManager;
 
     @BeforeClass
@@ -43,13 +44,16 @@ public class KopBrokerLookupManagerTest extends KopProtocolHandlerTestBase {
                 .build());
         admin.namespaces().createNamespace(NAMESPACE);
         admin.namespaces().setDeduplicationStatus(NAMESPACE, true);
-        kopBrokerLookupManager = new KopBrokerLookupManager(conf, pulsar);
+        lookupClient = new LookupClient(pulsar, conf);
+        kopBrokerLookupManager = new KopBrokerLookupManager(conf, pulsar, lookupClient);
     }
 
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
+        kopBrokerLookupManager.close();
+        lookupClient.close();
     }
 
     @Test(timeOut = 20 * 1000)

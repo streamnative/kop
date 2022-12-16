@@ -43,7 +43,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.configuration.Configuration;
@@ -52,7 +51,6 @@ import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -71,8 +69,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     public static final String PROTOCOL_NAME = "kafka";
     public static final String TLS_HANDLER = "tls";
-    private static final Map<PulsarService, LookupClient> LOOKUP_CLIENT_MAP = new ConcurrentHashMap<>();
-
     @Getter
     private RequestStats requestStats;
     private PrometheusMetricsProvider statsProvider;
@@ -84,6 +80,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SystemTopicClient txnTopicClient;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+    private LookupClient lookupClient;
     @VisibleForTesting
     @Getter
     private Map<InetSocketAddress, ChannelInitializer<SocketChannel>> channelInitializerMap;
@@ -202,12 +199,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             throw new IllegalStateException(e);
         }
 
-        LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
+        lookupClient = new LookupClient(brokerService.pulsar(), kafkaConfig);
         offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
         txnTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
 
         try {
-            kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar());
+            kopBrokerLookupManager = new KopBrokerLookupManager(kafkaConfig, brokerService.getPulsar(), lookupClient);
         } catch (Exception ex) {
             log.error("Failed to get kopBrokerLookupManager", ex);
             throw new IllegalStateException(ex);
@@ -402,7 +399,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState,
+                lookupClient);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
@@ -456,16 +454,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void close() {
-        Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
-        if (offsetTopicClient != null) {
-            offsetTopicClient.close();
-        }
-        if (txnTopicClient != null) {
-            txnTopicClient.close();
-        }
-        if (adminManager != null) {
-            adminManager.shutdown();
-        }
         if (producePurgatory != null) {
             producePurgatory.shutdown();
         }
@@ -483,6 +471,19 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         kopBrokerLookupManager.close();
         statsProvider.stop();
         sendResponseScheduler.shutdown();
+
+        if (offsetTopicClient != null) {
+            offsetTopicClient.close();
+        }
+        if (txnTopicClient != null) {
+            txnTopicClient.close();
+        }
+        if (adminManager != null) {
+            adminManager.shutdown();
+        }
+        if (lookupClient != null) {
+            lookupClient.close();
+        }
     }
 
     @VisibleForTesting
@@ -570,9 +571,5 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         transactionCoordinator.startup(kafkaConfig.isKafkaTransactionalIdExpirationEnable()).get();
 
         return transactionCoordinator;
-    }
-
-    public static @NonNull LookupClient getLookupClient(final PulsarService pulsarService) {
-        return LOOKUP_CLIENT_MAP.computeIfAbsent(pulsarService, ignored -> new LookupClient(pulsarService));
     }
 }
