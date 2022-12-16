@@ -275,6 +275,7 @@ public class ProducerStateManager {
     }
 
     public void purgeAbortedTxns(long offset) {
+        boolean empty;
         synchronized (abortedIndexList) {
             abortedIndexList.removeIf(tx -> {
                 boolean toRemove = tx.lastOffset() < offset;
@@ -283,7 +284,8 @@ public class ProducerStateManager {
                 }
                 return toRemove;
             });
-            if (!abortedIndexList.isEmpty()) {
+            empty = abortedIndexList.isEmpty();
+            if (!empty) {
                 log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
         }
