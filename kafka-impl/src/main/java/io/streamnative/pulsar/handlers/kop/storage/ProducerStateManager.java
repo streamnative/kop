@@ -270,15 +270,36 @@ public class ProducerStateManager {
         }
     }
 
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
-        List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
-        for (AbortedTxn abortedTxn : abortedIndexList) {
-            if (abortedTxn.lastOffset() >= fetchOffset) {
-                abortedTransactions.add(
-                        new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+    public boolean hasSomeAbortedTransactions() {
+        return !abortedIndexList.isEmpty();
+    }
+
+    public void purgeAbortedTxns(long offset) {
+        synchronized (abortedIndexList) {
+            abortedIndexList.removeIf(tx -> {
+                boolean toRemove = tx.lastOffset() < offset;
+                if (toRemove) {
+                    log.info("Transaction {} can be removed (lastOffset < {})", tx, tx.lastOffset(), offset);
+                }
+                return toRemove;
+            });
+            if (!abortedIndexList.isEmpty()) {
+                log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
         }
-        return abortedTransactions;
+    }
+
+    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
+        synchronized (abortedIndexList) {
+            List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
+            for (AbortedTxn abortedTxn : abortedIndexList) {
+                if (abortedTxn.lastOffset() >= fetchOffset) {
+                    abortedTransactions.add(
+                            new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+                }
+            }
+            return abortedTransactions;
+        }
     }
 
     public void handleMissingDataBeforeRecovery(long minOffset, long snapshotOffset) {

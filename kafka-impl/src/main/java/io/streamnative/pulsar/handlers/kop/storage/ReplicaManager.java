@@ -337,4 +337,8 @@ public class ReplicaManager {
         }
     }
 
+    public CompletableFuture<Void> purgeAbortedTxns() {
+        return logManager.purgeAbortedTxns();
+    }
+
 }
