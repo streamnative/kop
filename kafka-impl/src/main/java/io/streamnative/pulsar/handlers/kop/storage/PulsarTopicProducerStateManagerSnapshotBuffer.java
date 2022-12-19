@@ -53,24 +53,51 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     private synchronized CompletableFuture<Reader<ByteBuffer>> ensureReaderHandle() {
         if (reader == null) {
-            reader = pulsarClient.newReaderBuilder()
+            CompletableFuture<Reader<ByteBuffer>> newReader = pulsarClient.newReaderBuilder()
                     .topic(topic)
                     .startMessageId(MessageId.earliest)
                     .readCompacted(true)
                     .createAsync();
+            reader = newReader;
+
+            newReader.whenComplete((r, error) -> {
+                if (error != null) {
+                    discardReader(newReader);
+                }
+            });
         }
         return reader;
     }
 
+    private synchronized void discardReader(CompletableFuture<Reader<ByteBuffer>> oldReader) {
+        if (reader == oldReader) {
+            reader = null;
+        }
+    }
+
     private synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
         if (producer == null) {
-            producer = pulsarClient.newProducerBuilder()
+            CompletableFuture<Producer<ByteBuffer>> newProducer = pulsarClient.newProducerBuilder()
                     .enableBatching(false)
                     .topic(topic)
                     .blockIfQueueFull(true)
                     .createAsync();
+
+            producer = newProducer;
+
+            newProducer.whenComplete((r, error) -> {
+                if (error != null) {
+                    discardProducer(newProducer);
+                }
+            });
         }
         return producer;
+    }
+
+    private synchronized void discardProducer(CompletableFuture<Producer<ByteBuffer>> oldProducer) {
+        if (producer == oldProducer) {
+            producer = null;
+        }
     }
 
     private CompletableFuture<Void> readNextMessageIfAvailable(Reader<ByteBuffer> reader) {
