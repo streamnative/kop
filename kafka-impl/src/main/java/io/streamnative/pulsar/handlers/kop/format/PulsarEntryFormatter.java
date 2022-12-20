@@ -20,7 +20,6 @@ import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.Entry;
