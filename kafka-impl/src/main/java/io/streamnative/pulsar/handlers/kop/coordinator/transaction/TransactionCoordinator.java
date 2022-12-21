@@ -35,6 +35,7 @@ import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -133,7 +134,8 @@ public class TransactionCoordinator {
                                             MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
-                                            Time time) throws Exception {
+                                            Time time,
+                                            Executor recoveryExecutor) throws Exception {
         String namespacePrefixForMetadata = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
         String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         TransactionStateManager transactionStateManager =
@@ -157,7 +159,7 @@ public class TransactionCoordinator {
                 namespacePrefixForMetadata,
                 namespacePrefixForUserTopics,
                 (config) -> new PulsarTopicProducerStateManagerSnapshotBuffer(
-                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient, scheduler)
+                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient, recoveryExecutor)
                 );
     }
 
