@@ -157,7 +157,7 @@ public class TransactionCoordinator {
                 namespacePrefixForMetadata,
                 namespacePrefixForUserTopics,
                 (config) -> new PulsarTopicProducerStateManagerSnapshotBuffer(
-                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient)
+                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient, scheduler)
                 );
     }
 

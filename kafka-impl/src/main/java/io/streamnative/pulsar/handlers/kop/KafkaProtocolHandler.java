@@ -123,7 +123,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
 
-
+    @Getter
     private OrderedExecutor recoveryExecutor;
 
     @Override

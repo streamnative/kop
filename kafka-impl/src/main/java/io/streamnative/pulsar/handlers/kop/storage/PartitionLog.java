@@ -165,7 +165,8 @@ public class PartitionLog {
                 initFuture.completeExceptionally(errorLoadTopic);
                 return;
             }
-            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                    && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
                 producerStateManager
                         .recover(this, recoveryExecutor)
                         .thenRun(() -> initFuture.complete(this))
@@ -833,7 +834,7 @@ public class PartitionLog {
 
             @Override
             public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
-                log.error("Error read entry for topic: {}", fullPartitionName);
+                log.error("Error read entry for topic: {}", fullPartitionName, exception);
                 if (exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
                     invalidateCacheOnTopic.accept(fullPartitionName);
                 }

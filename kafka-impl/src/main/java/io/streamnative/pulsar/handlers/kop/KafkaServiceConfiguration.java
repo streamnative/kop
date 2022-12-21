@@ -429,6 +429,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
+            doc = "Flag to enable disable producer state recovery"
+    )
+    private boolean kafkaTransactionStateProducerRecoveryEnabled = true;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
             doc = "Number of partitions for the transaction log topic"
     )
     private int kafkaTxnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
