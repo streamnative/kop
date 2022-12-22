@@ -23,6 +23,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PENDING_TOPIC_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
@@ -31,8 +32,8 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_S
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
-
 import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -47,6 +48,7 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 
 /**
@@ -152,6 +154,8 @@ public class RequestStats {
 
     private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
+    private final Map<TopicPartition, StatsLogger> cachedLoggersForTopicPartitions = new ConcurrentHashMap<>();
+
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
@@ -219,6 +223,12 @@ public class RequestStats {
                 return ACTIVE_CHANNEL_COUNT_INSTANCE;
             }
         });
+    }
+
+    public StatsLogger getStatsLoggerForTopicPartition(TopicPartition topicPartition) {
+        return cachedLoggersForTopicPartitions.computeIfAbsent(topicPartition, __ -> statsLogger
+                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition())));
     }
 
     /**
