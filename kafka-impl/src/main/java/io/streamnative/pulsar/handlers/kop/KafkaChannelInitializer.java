@@ -135,13 +135,11 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     @VisibleForTesting
     public KafkaRequestHandler newCnx(final TenantContextManager tenantContextManager) throws Exception {
-        PrometheusMetricsProvider statsProvider = new PrometheusMetricsProvider();
-        StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
-                new RequestStats(rootStatsLogger.scope(SERVER_SCOPE)),
+                requestStats,
                 sendResponseScheduler,
                 kafkaTopicManagerSharedState);
     }
