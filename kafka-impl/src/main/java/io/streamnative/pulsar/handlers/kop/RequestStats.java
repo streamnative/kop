@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.ALIVE_CHANNEL_C
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORDS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
@@ -48,6 +49,7 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 
@@ -155,6 +157,7 @@ public class RequestStats {
     private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
     private final Map<TopicPartition, StatsLogger> cachedLoggersForTopicPartitions = new ConcurrentHashMap<>();
+    private final Map<Pair<TopicPartition, String>, StatsLogger> cachedLoggersForTopicPartitionsAndGroups = new ConcurrentHashMap<>();
 
     private final Map<String, RequestStats> cachedRequestStatsForTenants = new ConcurrentHashMap<>();
 
@@ -228,9 +231,17 @@ public class RequestStats {
     }
 
     public StatsLogger getStatsLoggerForTopicPartition(TopicPartition topicPartition) {
-        return cachedLoggersForTopicPartitions.computeIfAbsent(topicPartition, __ -> statsLogger
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition())));
+        return cachedLoggersForTopicPartitions.computeIfAbsent(topicPartition,
+                __ -> statsLogger
+                        .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                        .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition())));
+    }
+
+    public StatsLogger getStatsLoggerForTopicPartitionAndGroup(TopicPartition topicPartition, String groupId) {
+        return cachedLoggersForTopicPartitionsAndGroups.computeIfAbsent(
+                Pair.of(topicPartition, groupId),
+                __ -> getStatsLoggerForTopicPartition(topicPartition)
+                        .scopeLabel(GROUP_SCOPE, groupId));
     }
 
     /**
