@@ -1068,7 +1068,7 @@ public class PartitionLog {
      * Remove all the AbortedTxn that are no more referred by existing data on the topic.
      * @return
      */
-    public CompletableFuture<Void> purgeAbortedTxns() {
+    public CompletableFuture<Long> purgeAbortedTxns() {
         if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(null);
@@ -1078,9 +1078,9 @@ public class PartitionLog {
             return CompletableFuture.completedFuture(null);
         }
         return fetchOldestAvailableIndexFromTopic()
-                .thenAccept(offset -> {
-                    producerStateManager.purgeAbortedTxns(offset);
-                });
+                .thenApply(offset ->
+                    producerStateManager.purgeAbortedTxns(offset)
+                );
     }
 
     public CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {

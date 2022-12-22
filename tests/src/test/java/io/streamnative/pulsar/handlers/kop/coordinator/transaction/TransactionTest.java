@@ -62,7 +62,6 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -714,10 +713,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-    @Test(timeOut = 20000, enabled = false)
-    public void testPurgeAbortedTx() throws Exception {
 
-        String topicName = "testPurgeAbortedTx";
+    @Test(timeOut = 60000, dataProvider = "takeSnapshotBeforeRecovery")
+    public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
+
+        String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery;
         String transactionalId = "myProducer";
         String isolation = "read_committed";
 
@@ -736,53 +736,89 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 pulsar.getProtocolHandlers().protocol("kafka");
 
         producer.beginTransaction();
-        String firstMessage = "aborted msg 1";
-        producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get();
+        producer.flush();
+        // this transaction is to be purged later
+        producer.abortTransaction();
+
+        producer.beginTransaction();
+        String lastMessage = "msg1b";
+        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.commitTransaction();
+
+        assertEquals(
+            consumeTxnMessage(topicName, 2, lastMessage, isolation, "first_group"),
+            List.of("msg1", "msg1b"));
+
+
+        // unload and reload in order to have at least 2 ledgers in the
+        // topic, this way we can drop the head ledger
+        admin.namespaces().unload(namespace);
+        admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
+
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get();
+        producer.commitTransaction();
+
+        admin.namespaces().unload(namespace);
+        admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
+
+        if (takeSnapshotBeforeRecovery) {
+            takeSnapshot(topicName);
+        }
+
+        // all the messages up to here will be trimmed
+
+        trimConsumedLedgers(fullTopicName.getPartition(0).toString());
+
+        if (takeSnapshotBeforeRecovery) {
+            admin.namespaces().unload(namespace);
+            admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
+        }
+
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();
+        producer.commitTransaction();
+
+        // this TX is aborted and must not be purged
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 2")).get();
         producer.flush();
         producer.abortTransaction();
 
         producer.beginTransaction();
-        String lastMessage = "committed mgs";
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        String lastMessage2 = "msg6";
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
         producer.commitTransaction();
 
-        consumeTxnMessage(topicName, 2, lastMessage, isolation);
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+        String namespacePrefix = namespace;
 
-        protocolHandler
+        PartitionLog partitionLog = protocolHandler
                 .getReplicaManager()
-                .purgeAbortedTxns().get();
+                .getPartitionLog(topicPartition, namespacePrefix);
 
-        RetentionPolicies retention = pulsar
-                .getAdminClient()
-                .namespaces()
-                .getRetention(namespace);
+        // verify that we have 2 aborted TX in memory
+        assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
+        assertEquals(2,
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE).size());
 
-        try {
-            pulsar
-                    .getAdminClient()
-                    .namespaces().setRetention(namespace,
-                            new RetentionPolicies(0, 0));
+        // verify that we actually drop (only) one aborted TX
+        long purged = partitionLog.purgeAbortedTxns().get();
+        assertEquals(purged, 1);
 
-            trimConsumedLedgers(fullTopicName.getPartition(0).toString());
+        // verify that we still have one aborted TX
+        assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
+        assertEquals(1,
+             partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE).size());
 
-            producer.beginTransaction();
-            String lastMessage2 = "committed mgs 2";
-            producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
-            producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
-            producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
-            producer.commitTransaction();
-
-            protocolHandler
-                    .getReplicaManager()
-                    .purgeAbortedTxns().get();
-
-            consumeTxnMessage(topicName, 3, lastMessage2, isolation, "second_group");
-        } finally {
-            pulsar
-                    .getAdminClient()
-                    .namespaces().setRetention(namespace, retention);
-        }
+        // use a new consumer group, it will read from the beginning of the topic
+        assertEquals(
+                consumeTxnMessage(topicName, 3, lastMessage2, isolation, "second_group"),
+                List.of("msg4", "msg5", "msg6"));
 
     }
 

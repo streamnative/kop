@@ -120,14 +120,15 @@ public class PartitionLogManager {
         return FutureUtil.waitForAll(handles);
     }
 
-    public CompletableFuture<Void> purgeAbortedTxns() {
-        List<CompletableFuture<Void>> handles = new ArrayList<>();
+    public CompletableFuture<?> purgeAbortedTxns() {
+        List<CompletableFuture<Long>> handles = new ArrayList<>();
         logMap.values().forEach(log -> {
             if (log.isInitialised()) {
                 handles.add(log.purgeAbortedTxns());
             }
         });
-        return FutureUtil.waitForAll(handles);
+        return FutureUtil
+                .waitForAll(handles);
     }
 }
 

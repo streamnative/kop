@@ -6,6 +6,7 @@ pulsar-kop-*-bin.tar.gz
 pulsar-protocol-handler-kafka-readme.md
 *.log
 *.nar
+**/nb-configuration.xml
 
 *.versionsBackup
 */bin

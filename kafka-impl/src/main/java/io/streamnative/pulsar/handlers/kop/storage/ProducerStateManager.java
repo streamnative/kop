@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.SafeRunnable;
@@ -274,13 +275,15 @@ public class ProducerStateManager {
         return !abortedIndexList.isEmpty();
     }
 
-    public void purgeAbortedTxns(long offset) {
+    public long purgeAbortedTxns(long offset) {
         boolean empty;
+        AtomicLong count = new AtomicLong();
         synchronized (abortedIndexList) {
             abortedIndexList.removeIf(tx -> {
                 boolean toRemove = tx.lastOffset() < offset;
                 if (toRemove) {
-                    log.info("Transaction {} can be removed (lastOffset < {})", tx, tx.lastOffset(), offset);
+                    log.info("Transaction {} can be removed (lastOffset {} < {})", tx, tx.lastOffset(), offset);
+                    count.incrementAndGet();
                 }
                 return toRemove;
             });
@@ -289,6 +292,7 @@ public class ProducerStateManager {
                 log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
         }
+        return count.get();
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
