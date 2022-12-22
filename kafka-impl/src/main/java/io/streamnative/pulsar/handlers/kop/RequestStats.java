@@ -35,6 +35,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKE
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
+
 import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -157,7 +158,8 @@ public class RequestStats {
     private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
     private final Map<TopicPartition, StatsLogger> cachedLoggersForTopicPartitions = new ConcurrentHashMap<>();
-    private final Map<Pair<TopicPartition, String>, StatsLogger> cachedLoggersForTopicPartitionsAndGroups = new ConcurrentHashMap<>();
+    private final Map<Pair<TopicPartition, String>, StatsLogger> cachedLoggersForTopicPartitionsAndGroups =
+            new ConcurrentHashMap<>();
 
     private final Map<String, RequestStats> cachedRequestStatsForTenants = new ConcurrentHashMap<>();
 
