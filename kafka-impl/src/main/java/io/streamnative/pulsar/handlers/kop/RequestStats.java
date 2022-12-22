@@ -156,6 +156,8 @@ public class RequestStats {
 
     private final Map<TopicPartition, StatsLogger> cachedLoggersForTopicPartitions = new ConcurrentHashMap<>();
 
+    private final Map<String, RequestStats> cachedRequestStatsForTenants = new ConcurrentHashMap<>();
+
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
@@ -250,6 +252,7 @@ public class RequestStats {
     }
 
     public RequestStats forTenant(String tenant) {
-        return new RequestStats(statsLogger.scopeLabel("tenant", tenant));
+        return cachedRequestStatsForTenants.computeIfAbsent(tenant,
+                __ -> new RequestStats(statsLogger.scopeLabel("tenant", tenant)));
     }
 }
