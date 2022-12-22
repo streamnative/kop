@@ -68,7 +68,7 @@ public class PulsarMessageBuilder {
             metadata.setNullValue(true);
             return this;
         }
-        this.content = ByteBuffer.wrap(SCHEMA.encode(value));
+        this.content = value;
         return this;
     }
 
