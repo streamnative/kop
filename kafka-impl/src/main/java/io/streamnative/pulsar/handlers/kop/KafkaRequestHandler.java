@@ -830,7 +830,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
-        final int numPartitions = produceRequest.data().topicData().size();
+        final int numPartitions = produceRequest
+                .data()
+                .topicData()
+                .stream()
+                .mapToInt(t -> t.partitionData().size())
+                .sum();
         if (numPartitions == 0) {
             resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
             return;
