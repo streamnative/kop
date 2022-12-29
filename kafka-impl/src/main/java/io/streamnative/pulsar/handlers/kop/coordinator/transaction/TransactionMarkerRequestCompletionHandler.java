@@ -165,7 +165,6 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         case UNKNOWN_TOPIC_OR_PARTITION:
                         // this error was introduced in newer kafka client version,
                         // recover this condition after bump the kafka client version
-                        //case NOT_LEADER_OR_FOLLOWER:
                         case NOT_ENOUGH_REPLICAS:
                         case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
                         case REQUEST_TIMED_OUT:

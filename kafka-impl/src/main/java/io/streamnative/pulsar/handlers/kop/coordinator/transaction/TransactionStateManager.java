@@ -406,11 +406,13 @@ public class TransactionStateManager {
                     // note that for timed out request we return NOT_AVAILABLE error code to let client retry
                     return Errors.COORDINATOR_NOT_AVAILABLE;
                 case KAFKA_STORAGE_ERROR:
-//                case Errors.NOT_LEADER_OR_FOLLOWER:
+                case NOT_LEADER_OR_FOLLOWER:
                     return Errors.NOT_COORDINATOR;
                 case MESSAGE_TOO_LARGE:
                 case RECORD_LIST_TOO_LARGE:
                 default:
+                    log.error("Unhandled error code {} for transactionalId {}, return UNKNOWN_SERVER_ERROR",
+                            status.error, transactionalId);
                     return Errors.UNKNOWN_SERVER_ERROR;
             }
         }
@@ -464,7 +466,8 @@ public class TransactionStateManager {
                         metadata.completeTransitionTo(newMetadata);
                         return errors;
                     } catch (IllegalStateException ex) {
-                        log.error("Failed to complete transition.", ex);
+                        log.error("Failed to complete transition for {}. Return UNKNOWN_SERVER_ERROR",
+                                transactionalId, ex);
                         return Errors.UNKNOWN_SERVER_ERROR;
                     }
                 }
