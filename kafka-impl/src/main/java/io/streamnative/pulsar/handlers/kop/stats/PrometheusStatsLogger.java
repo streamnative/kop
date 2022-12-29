@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.stats;
 
 import com.google.common.base.Joiner;
-import io.prometheus.client.Collector;
 import java.util.Map;
 import java.util.TreeMap;
 import org.apache.bookkeeper.stats.Counter;
@@ -78,6 +77,22 @@ public class PrometheusStatsLogger implements StatsLogger {
     }
 
     private String completeName(String name) {
-        return Collector.sanitizeMetricName(scope.isEmpty() ? name : Joiner.on('_').join(scope, name));
+        return sanitizeMetricName(scope.isEmpty() ? name : Joiner.on('_').join(scope, name));
+    }
+
+    private static String sanitizeMetricName(String metricName) {
+        int length = metricName.length();
+        char[] sanitized = new char[length];
+
+        for (int i = 0; i < length; i++) {
+            char ch = metricName.charAt(i);
+            if (ch != ':' && (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (i == 0 || ch < '0' || ch > '9')) {
+                sanitized[i] = '_';
+            } else {
+                sanitized[i] = ch;
+            }
+        }
+
+        return new String(sanitized);
     }
 }
