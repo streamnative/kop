@@ -19,8 +19,6 @@ import static org.hamcrest.core.Is.is;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
@@ -729,50 +727,44 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
 
     private <K, V> String readWindowedKeyedMessagesViaConsoleConsumer(final Deserializer<K> keyDeserializer,
                                                                       final Deserializer<V> valueDeserializer,
-                                                                      final Class innerClass,
+                                                                      final Class<?> innerClass,
                                                                       final int numMessages,
                                                                       final boolean printTimestamp) {
-        final ByteArrayOutputStream newConsole = new ByteArrayOutputStream();
-        try (final PrintStream newStream = new PrintStream(newConsole)) {
-            System.setOut(newStream);
+        final Properties props = new Properties();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "group-" + groupIdIndex.getAndIncrement());
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
-            final String keySeparator = ", ";
-            // manually construct the console consumer argument array
-            final Properties props = new Properties();
-            props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
-            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
-            props.put(ConsumerConfig.GROUP_ID_CONFIG, "group-" + groupIdIndex.getAndIncrement());
-            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        final Map<String, String> configs = new HashMap<>();
+        Serde<?> serde = Serdes.serdeFrom(innerClass);
+        configs.put(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS, serde.getClass().getName());
+        serde.close();
+        // https://issues.apache.org/jira/browse/KAFKA-10366
+        configs.put(StreamsConfig.WINDOW_SIZE_MS_CONFIG, Long.toString(Long.MAX_VALUE));
+        keyDeserializer.configure(configs, true);
 
-            final Map<String, String> configs = new HashMap<>();
-            configs.put(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS,
-                    Serdes.serdeFrom(innerClass).getClass().getName());
-            // https://issues.apache.org/jira/browse/KAFKA-10366
-            configs.put(StreamsConfig.WINDOW_SIZE_MS_CONFIG, Long.toString(Long.MAX_VALUE));
-            keyDeserializer.configure(configs, true);
-
-            final KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props);
-            consumer.subscribe(Collections.singleton(outputTopic));
-            final StringBuilder stringBuilder = new StringBuilder();
-            for (int i = 0; i < numMessages; ) {
-                final ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofSeconds(1));
-                for (ConsumerRecord<byte[], byte[]> record : records) {
-                    if (printTimestamp) {
-                        stringBuilder.append(record.timestampType());
-                        stringBuilder.append(":");
-                        stringBuilder.append(record.timestamp());
-                        stringBuilder.append(", ");
-                    }
-                    stringBuilder.append(keyDeserializer.deserialize(outputTopic, record.key()).toString());
+        final KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(Collections.singleton(outputTopic));
+        final StringBuilder stringBuilder = new StringBuilder();
+        for (int i = 0; i < numMessages; ) {
+            final ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<byte[], byte[]> record : records) {
+                if (printTimestamp) {
+                    stringBuilder.append(record.timestampType());
+                    stringBuilder.append(":");
+                    stringBuilder.append(record.timestamp());
                     stringBuilder.append(", ");
-                    stringBuilder.append(valueDeserializer.deserialize(outputTopic, record.value()).toString());
-                    stringBuilder.append("\n");
-                    i++;
                 }
+                stringBuilder.append(keyDeserializer.deserialize(outputTopic, record.key()).toString());
+                stringBuilder.append(", ");
+                stringBuilder.append(valueDeserializer.deserialize(outputTopic, record.value()).toString());
+                stringBuilder.append("\n");
+                i++;
             }
-            consumer.close();
-            return stringBuilder.toString();
         }
+        consumer.close();
+        return stringBuilder.toString();
     }
 }
