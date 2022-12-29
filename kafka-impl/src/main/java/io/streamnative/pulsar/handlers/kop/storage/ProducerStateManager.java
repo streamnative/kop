@@ -276,7 +276,6 @@ public class ProducerStateManager {
     }
 
     public long purgeAbortedTxns(long offset) {
-        boolean empty;
         AtomicLong count = new AtomicLong();
         synchronized (abortedIndexList) {
             abortedIndexList.removeIf(tx -> {
@@ -287,8 +286,7 @@ public class ProducerStateManager {
                 }
                 return toRemove;
             });
-            empty = abortedIndexList.isEmpty();
-            if (!empty) {
+            if (!abortedIndexList.isEmpty()) {
                 log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
         }
