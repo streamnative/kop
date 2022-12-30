@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
@@ -77,6 +78,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         }
     }
 
+    @SuppressFBWarnings("NP_NONNULL_PARAM_VIOLATION")
     private synchronized void discardReader(Reader<ByteBuffer> oldReader) {
         if (reader == null) {
             return;
@@ -148,7 +150,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
 
     private synchronized CompletableFuture<Void> ensureLatestData(boolean beforeWrite) {
-        if (currentReadHandle != null) {
+        if (currentReadHandle != null && !currentReadHandle.isCompletedExceptionally()) {
             if (beforeWrite) {
                 // we are inside a write loop, so
                 // we must ensure that we start to read now
