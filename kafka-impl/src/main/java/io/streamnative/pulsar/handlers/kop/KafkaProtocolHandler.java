@@ -123,7 +123,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
 
-
+    @VisibleForTesting
+    @Getter
     private OrderedExecutor recoveryExecutor;
 
     @Override
@@ -661,6 +662,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .transactionProducerIdTopicName(MetadataUtils.constructTxnProducerIdTopicBaseName(tenant, kafkaConfig))
                 .transactionProducerStateSnapshotTopicName(MetadataUtils.constructTxProducerStateTopicBaseName(tenant,
                         kafkaConfig))
+                .producerStateTopicNumPartitions(kafkaConfig.getKafkaTxnProducerStateTopicNumPartitions())
                 .abortTimedOutTransactionsIntervalMs(kafkaConfig.getKafkaTxnAbortTimedOutTransactionCleanupIntervalMs())
                 .transactionalIdExpirationMs(kafkaConfig.getKafkaTransactionalIdExpirationMs())
                 .removeExpiredTransactionalIdsIntervalMs(
@@ -682,7 +684,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                         .name("transaction-log-manager-" + tenant)
                         .numThreads(1)
                         .build(),
-                Time.SYSTEM);
+                Time.SYSTEM,
+                recoveryExecutor);
 
         transactionCoordinator.startup(kafkaConfig.isKafkaTransactionalIdExpirationEnable()).get();
 

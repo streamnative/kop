@@ -39,7 +39,8 @@ public class PulsarTopicProducerStateManagerSnapshotBufferTest extends ProducerS
 
     @Override
     protected ProducerStateManagerSnapshotBuffer createProducerStateManagerSnapshotBuffer(String topic) {
-        return new PulsarTopicProducerStateManagerSnapshotBuffer(topic, systemTopicClient);
+        return new PulsarTopicProducerStateManagerSnapshotBuffer(
+                topic, systemTopicClient, getProtocolHandler().getRecoveryExecutor());
     }
 
     @Test

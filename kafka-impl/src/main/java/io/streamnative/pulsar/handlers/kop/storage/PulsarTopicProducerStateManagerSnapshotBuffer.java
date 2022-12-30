@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.pulsar.client.api.Message;
@@ -45,6 +46,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     private final Map<String, ProducerStateManagerSnapshot> latestSnapshots = new ConcurrentHashMap<>();
     private final String topic;
     private final SystemTopicClient pulsarClient;
+    private final Executor executor;
     private CompletableFuture<Reader<ByteBuffer>> reader;
 
     private CompletableFuture<Producer<ByteBuffer>> producer;
@@ -82,10 +84,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                         return CompletableFuture.completedFuture(null);
                     } else {
                         CompletableFuture<Message<ByteBuffer>> opMessage = reader.readNextAsync();
-                        return opMessage.thenCompose(msg -> {
+                        return opMessage.thenComposeAsync(msg -> {
                             processMessage(msg);
                             return readNextMessageIfAvailable(reader);
-                        });
+                        }, executor);
                     }
                 });
     }
@@ -323,9 +325,12 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         });
     }
 
-    public PulsarTopicProducerStateManagerSnapshotBuffer(String topicName, SystemTopicClient pulsarClient) {
+    public PulsarTopicProducerStateManagerSnapshotBuffer(String topicName,
+                                                         SystemTopicClient pulsarClient,
+                                                         Executor executor) {
         this.topic = topicName;
         this.pulsarClient = pulsarClient;
+        this.executor = executor;
     }
 
 
@@ -353,5 +358,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                 }
             });
         }
+    }
+
+    @Override
+    public String toString() {
+        return "PulsarTopicProducerStateManagerSnapshotBuffer{" + topic + '}';
     }
 }

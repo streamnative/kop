@@ -18,6 +18,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -42,13 +43,15 @@ public class PulsarPartitionedTopicProducerStateManagerSnapshotBuffer implements
 
     public PulsarPartitionedTopicProducerStateManagerSnapshotBuffer(String topicName,
                                                                     SystemTopicClient pulsarClient,
+                                                                    Executor executor,
                                                                     int numPartitions) {
         TopicName fullName = TopicName.get(topicName);
         for (int i = 0; i < numPartitions; i++) {
             PulsarTopicProducerStateManagerSnapshotBuffer partition =
                     new PulsarTopicProducerStateManagerSnapshotBuffer(
                             fullName.getPartition(i).toString(),
-                            pulsarClient);
+                            pulsarClient,
+                            executor);
             partitions.add(partition);
         }
     }
