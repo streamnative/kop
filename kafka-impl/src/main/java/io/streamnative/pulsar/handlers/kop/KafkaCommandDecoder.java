@@ -21,6 +21,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.util.ReferenceCountUtil;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -113,7 +114,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             final ResponseAndRequest responseAndRequest = requestQueue.poll();
             if (responseAndRequest != null) {
                 // Trigger writeAndFlushResponseToClient immediately, but it will do nothing because isActive is false
-                responseAndRequest.getResponseFuture().cancel(true);
+                responseAndRequest.cancel();
             } else {
                 // queue is empty
                 break;
@@ -130,11 +131,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         if (log.isDebugEnabled()) {
             log.debug("Channel writability has changed to: {}", ctx.channel().isWritable());
         }
-    }
-
-    // turn input ByteBuf msg, which send from client side, into KafkaHeaderAndRequest
-    protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg) {
-        return byteBufToRequest(msg, null);
     }
 
     protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg,
@@ -577,7 +573,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected abstract void
     handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
-    public static class KafkaHeaderAndRequest implements Closeable {
+    public static class KafkaHeaderAndRequest {
 
         private static final String DEFAULT_CLIENT_HOST = "";
 
@@ -630,9 +626,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 this.header, this.request, this.remoteAddress);
         }
 
-        @Override
         public void close() {
-            this.buffer.release();
+            ReferenceCountUtil.safeRelease(this.buffer);
         }
     }
 
@@ -713,6 +708,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         public boolean expired(final int requestTimeoutMs) {
             return MathUtils.elapsedNanos(createdTimestamp) > TimeUnit.MILLISECONDS.toNanos(requestTimeoutMs);
+        }
+
+        public void cancel() {
+            responseFuture.cancel(true);
+            request.close();
         }
 
         ResponseAndRequest(CompletableFuture<AbstractResponse> response, KafkaHeaderAndRequest request) {
