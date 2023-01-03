@@ -194,7 +194,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         inputBuf.writeBytes(serializedRequest);
 
         // 2. turn Bytebuf into KafkaHeaderAndRequest.
-        KafkaHeaderAndRequest request = handler.byteBufToRequest(inputBuf);
+        KafkaHeaderAndRequest request = handler.byteBufToRequest(inputBuf, null);
 
         // 3. verify byteBufToRequest works well.
         assertEquals(request.getHeader().data(), header.data());
