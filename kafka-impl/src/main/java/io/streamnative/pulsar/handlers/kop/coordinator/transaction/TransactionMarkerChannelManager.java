@@ -16,8 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.EndPoint;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
@@ -56,6 +55,7 @@ import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.eclipse.jetty.util.BlockingArrayQueue;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
@@ -177,10 +177,11 @@ public class TransactionMarkerChannelManager {
             authentication = AuthenticationUtil.create(auth, authParams);
             authentication.start();
         }
-        eventLoopGroup = new NioEventLoopGroup();
+        eventLoopGroup = EventLoopUtil
+                .newEventLoopGroup(0, false, new DefaultThreadFactory("kop-txn"));
         bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup);
-        bootstrap.channel(NioSocketChannel.class);
+        bootstrap.channel(EventLoopUtil.getClientSocketChannelClass(eventLoopGroup));
         bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this));
     }
 
