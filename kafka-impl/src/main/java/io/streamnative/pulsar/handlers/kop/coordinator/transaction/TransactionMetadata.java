@@ -389,7 +389,7 @@ public class TransactionMetadata {
     public TxnTransitMetadata prepareProducerIdRotation(Long newProducerId,
                                   Integer newTxnTimeoutMs,
                                   Long updateTimestamp,
-                                  Boolean recordLastEpoch) {
+                                  boolean recordLastEpoch) {
         if (hasPendingTransaction()) {
             throw new IllegalStateException("Cannot rotate producer ids while a transaction is still pending");
         }
@@ -491,7 +491,7 @@ public class TransactionMetadata {
         topicPartitions.addAll(partitions);
     }
 
-    public Boolean pendingTransitionInProgress() {
+    public boolean pendingTransitionInProgress() {
         return this.pendingState.isPresent();
     }
 
