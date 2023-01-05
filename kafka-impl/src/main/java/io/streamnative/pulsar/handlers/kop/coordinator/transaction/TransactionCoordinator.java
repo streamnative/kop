@@ -553,7 +553,7 @@ public class TransactionCoordinator {
                                 Long producerId,
                                 Short producerEpoch,
                                 TransactionResult txnMarkerResult,
-                                Boolean isFromClient,
+                                boolean isFromClient,
                                 Consumer<Errors> callback) {
         AtomicBoolean isEpochFence = new AtomicBoolean(false);
         if (transactionalId == null || transactionalId.isEmpty()) {
