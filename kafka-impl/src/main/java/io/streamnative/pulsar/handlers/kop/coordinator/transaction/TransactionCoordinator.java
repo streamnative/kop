@@ -335,8 +335,10 @@ public class TransactionCoordinator {
                     false,
                     errors -> {
                         if (errors != Errors.NONE) {
+                            log.error("Cannot initProducer {} due to {} error", transactionalId, errors);
                             responseCallback.accept(initTransactionError(errors));
                         } else {
+                            // reply to client and let it backoff and retry
                             responseCallback.accept(initTransactionError(Errors.CONCURRENT_TRANSACTIONS));
                         }
                     });
@@ -596,6 +598,11 @@ public class TransactionCoordinator {
             return;
         }
 
+        if (!isFromClient) {
+            log.info("endTransaction - before endTxnPreAppend {} metadata {}",
+                    transactionalId, epochAndMetadata.get().getTransactionMetadata());
+        }
+
         Either<Errors, TxnTransitMetadata> preAppendResult = endTxnPreAppend(
                 epochAndMetadata.get(), transactionalId, producerId, isFromClient, producerEpoch,
                 txnMarkerResult, isEpochFence);
@@ -618,6 +625,13 @@ public class TransactionCoordinator {
 
                     @Override
                     public void fail(Errors errors) {
+
+                        if (!isFromClient) {
+                            log.info("endTransaction - AFTER failed appendTransactionToLog {} metadata {}"
+                                            +  "isEpochFence {}",
+                                    transactionalId, epochAndMetadata.get().getTransactionMetadata(), isEpochFence);
+                        }
+
                         log.info("Aborting sending of transaction markers and returning {} error to client for {}'s "
                                 + "EndTransaction request of {}, since appending {} to transaction log with "
                                 + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
@@ -635,6 +649,10 @@ public class TransactionCoordinator {
                             if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
                                 epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
+
+                                // this line is not present in Kafka code base ?
+                                epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
+
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
                                             + "{} to the transaction log with error {}. The epoch was increased to {} "
                                             + "but not returned to the client", transactionalId, errors,
