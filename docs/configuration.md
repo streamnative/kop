@@ -180,3 +180,11 @@ This section lists configurations about the authentication.
 |kopSslTrustmanagerAlgorithm| Kafka SSL configuration map with: SSL_TRUSTMANAGER_ALGORITHM_CONFIG = ssl.trustmanager.algorithm |SunX509|
 |kopSslSecureRandomImplementation| Kafka SSL configuration map with: SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG = ssl.secure.random.implementation  |  |
 
+## Schema Registry
+
+| Name | Description | Default |
+| ---- | ----------- | ------- |
+| kopSchemaRegistryEnable | Whether to start the Schema Registry service | false |
+| kopSchemaRegistryPort | The Schema Registry port | 8001 |
+| kopSchemaRegistryNamespace | The namespace used for storing Kafka Schema Registry | __kafka_schemaregistry | 
+| kopSchemaRegistryTopicName | The name of the topic used by the Schema Registry service | __schema-registry |
