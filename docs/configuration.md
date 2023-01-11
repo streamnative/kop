@@ -184,7 +184,7 @@ This section lists configurations about the authentication.
 
 | Name | Description | Default |
 | ---- | ----------- | ------- |
-| kopSchemaRegistryEnable | Whether to start the Schema Registry service | false |
+| kopSchemaRegistryEnable | Whether to enable the Schema Registry | false |
 | kopSchemaRegistryPort | The Schema Registry port | 8001 |
 | kopSchemaRegistryNamespace | The namespace used for storing Kafka Schema Registry | __kafka_schemaregistry | 
-| kopSchemaRegistryTopicName | The name of the topic used by the Schema Registry service | __schema-registry |
+| kopSchemaRegistryTopicName | The name of the topic used by the Schema Registry | __schema-registry |

@@ -1,14 +1,14 @@
 # Schema Registry
 
-KoP has implemented the Schema Registry to support Kafka clients with [Confluent's Schema serializers and deserializers](https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#supported-formats).
+KoP has implemented with the Schema Registry to support Kafka clients with [Confluent's Schema serializers and deserializers](https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#supported-formats).
 
-To enable the schema registry, you should add the following configuration:
+To enable the Schema Registry, you should add the following configuration:
 
 ```properties
 kopSchemaRegistryEnable=true
 ```
 
-The Schema Registry listens on the 8001 port by default, which means you should add the following property to create your Kafka producer or consumer.
+By default, the Schema Registry listens on port 8001 by default, which means you should add the following property to create your Kafka producer or consumer.
 
 ```properties
 schema.registry.url=http://<broker-ip>:8001
@@ -16,17 +16,17 @@ schema.registry.url=http://<broker-ip>:8001
 
 > **Note**
 >
-> See [here](./configuration.md) for other configurations, like how to change the port it listens on.
+> For other configurations, such as how to change the port where the Schema Registry listens on, see the [configuration guide](./configuration.md).
 
 To manage the schemas, see the [Confluent's Schema REST API](https://docs.confluent.io/platform/current/schema-registry/develop/api.html#compatibility).
 
 ## Example: Use KoP Schema Registry with Confluent's Avro serializer
 
-This section adds an example to show how to use Confluent's Avro serializer on KoP.
+This section provides an example about how to use Confluent's Avro serializer on KoP.
 
-### Enable Schema Registry in KoP standalone
+### Enable the Schema Registry on KoP
 
-Follow the **Set configuration for KoP** section in [here](./kop.md), start the KoP standalone with the following configurations:
+Start KoP with the following properties in standalone mode. For details, see [Set configuration for KoP](./kop.md#set-configuration-for-kop).
 
 ```properties
 messagingProtocols=kafka
@@ -45,7 +45,6 @@ kopSchemaRegistryEnable=true
 
 ### Define the Avro schema
 
-
 Create an Avro schema file named `User.asvc` under the `src/main/avro` directory:
 
 ```json
@@ -60,7 +59,7 @@ Create an Avro schema file named `User.asvc` under the `src/main/avro` directory
 }
 ```
 
-Add the `avro-maven-plugin` in order to generate the Java class from the Avro Schema file above.
+Add the `avro-maven-plugin` plugin to generate the Java class from the Avro schema file above.
 
 ```xml
       <plugin>
@@ -87,9 +86,9 @@ Add the `avro-maven-plugin` in order to generate the Java class from the Avro Sc
 
 With the Maven plugin above, a `User` class that has a `String` field named `name` and an `int` field named `age` will be generated under the `example.avro` package. 
 
-### Basic end-to-end example with Confluent's Avro serializer
+### Produce and consume with Confluent's Avro serializer
 
-Add the following dependencies to use Kafka client 3.3.1 with Confluent's Avro serializer 7.3.1:
+1. Add the following dependencies to use Kafka client 3.3.1 with Confluent's Avro serializer 7.3.1:
 
 ```xml
     <dependency>
@@ -105,7 +104,7 @@ Add the following dependencies to use Kafka client 3.3.1 with Confluent's Avro s
     </dependency>
 ```
 
-Run the following producer application code:
+2. Run the following producer application code:
 
 ```java
 final Properties props = new Properties();
@@ -127,7 +126,7 @@ You will see the following output:
 Sent to my-avro-kafka-topic-0@0
 ```
 
-Run the following consumer application:
+3. Run the following consumer application:
 
 ```java
 final Properties props = new Properties();
@@ -157,7 +156,7 @@ Received {"name": "alice", "age": 10} from my-avro-kafka-topic-0@0
 
 ### Query the created schema
 
-Query the schema whose id is 1 (i.e. the 1st schema):
+Query the schema whose ID is 1 (i.e. the 1st schema):
 
 ```bash
 $ curl -L http://localhost:8001/schemas/ids/1; echo
@@ -183,4 +182,4 @@ $ curl -L http://localhost:8001/subjects/my-avro-kafka-topic-value/versions/1; e
 }
 ```
 
-See [here](https://docs.confluent.io/platform/current/schema-registry/schema_registry_tutorial.html#terminology-review) for a quick start of Confluent's Schema concepts.
+For a quick start of Confluent's Schema concepts, See [Confluent documentation](https://docs.confluent.io/platform/current/schema-registry/schema_registry_tutorial.html#terminology-review) .
