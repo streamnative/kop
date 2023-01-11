@@ -17,10 +17,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_OUT;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUME_MESSAGE_CONVERSIONS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.ENTRIES_OUT;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -100,16 +97,14 @@ public class DecodeResult {
                                     RequestStats statsLogger) {
         final int numMessages = EntryFormatter.parseNumMessages(records);
 
-        final StatsLogger statsLoggerForThisPartition = statsLogger.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()));
+        final StatsLogger statsLoggerForThisPartition = statsLogger.getStatsLoggerForTopicPartition(topicPartition);
 
         statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).add(conversionCount);
         statsLoggerForThisPartition.getOpStatsLogger(CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS)
                 .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
         final StatsLogger statsLoggerForThisGroup;
         if (groupId != null) {
-            statsLoggerForThisGroup = statsLoggerForThisPartition.scopeLabel(GROUP_SCOPE, groupId);
+            statsLoggerForThisGroup = statsLogger.getStatsLoggerForTopicPartitionAndGroup(topicPartition, groupId);
         } else {
             statsLoggerForThisGroup = statsLoggerForThisPartition;
         }
