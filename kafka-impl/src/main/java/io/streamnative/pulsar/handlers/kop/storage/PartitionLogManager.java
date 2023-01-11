@@ -84,7 +84,7 @@ public class PartitionLogManager {
             initialiseResult.whenComplete((___, error) -> {
                 if (error != null) {
                     // in case of failure we have to remove the CompletableFuture from the map
-                    log.error("Recovery of {} failed", key, error);
+                    log.error("Failed to recovery of {}", key, error);
                     logMap.remove(key, partitionLog);
                 }
             });
@@ -92,7 +92,7 @@ public class PartitionLogManager {
             return partitionLog;
         });
         if (res.isInitialisationFailed()) {
-            log.error("Recovery of {} failed", kopTopic);
+            log.error("Failed to initialize of {}", kopTopic);
             logMap.remove(kopTopic, res);
         }
         return res;

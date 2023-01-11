@@ -713,13 +713,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-    /**
-     * TODO: Disable for now, we need introduce UUID for topic.
-     */
-    @Test(timeOut = 1000 * 20, enabled = false)
-    public void basicRecoveryAfterDeleteCreateTopic()
-            throws Exception {
-
+    @Test(timeOut = 1000 * 20)
+    public void basicRecoveryAfterDeleteCreateTopic() throws Exception {
         String topicName = "basicRecoveryAfterDeleteCreateTopic";
         String transactionalId = "myProducer-deleteCreate";
         String isolation = "read_committed";
@@ -733,7 +728,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
         kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
 
         producer.initTransactions();
@@ -760,6 +754,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         String secondMessage = "deleted msg 2";
         producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
         producer.flush();
+        producer.close();
 
         // verify that a non-transactional consumer can read the messages
         consumeTxnMessage(topicName, 10, secondMessage, "read_uncommitted",
@@ -988,7 +983,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileSendFirstRecord() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1009,7 +1004,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileCommitTransaction() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1037,7 +1032,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileSendOffsets() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1067,7 +1062,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileAbortAndBegin() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1093,7 +1088,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testNotFencedWithBeginTransaction() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();

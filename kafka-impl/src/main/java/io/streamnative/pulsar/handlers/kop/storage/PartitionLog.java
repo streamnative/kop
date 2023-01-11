@@ -136,6 +136,8 @@ public class PartitionLog {
 
     private volatile EntryFormatter entryFormatter;
 
+    private volatile String kafkaTopicUUID;
+
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         RequestStats requestStats,
                         Time time,
@@ -194,13 +196,14 @@ public class PartitionLog {
         CompletableFuture<Optional<PersistentTopic>> persistentTopicFuture =
                 kafkaTopicLookupService.getTopic(fullPartitionName, this);
         return persistentTopicFuture
-                .thenCompose(topic -> fetchTopicProperties(topic))
+                .thenCompose(this::fetchTopicProperties)
                 .thenAccept(properties -> {
                     this.topicProperties = properties;
                     log.info("Topic properties for {} are {}", fullPartitionName, properties);
                     this.entryFormatter = buildEntryFormatter(topicProperties);
+                    this.kafkaTopicUUID = properties.getOrDefault("kafkaTopicUUID", "NO-UUID");
                     this.producerStateManager =
-                            new ProducerStateManager(fullPartitionName,
+                            new ProducerStateManager(fullPartitionName + "@" + kafkaTopicUUID,
                                     producerStateManagerSnapshotBuffer,
                                     kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds());
                 });
@@ -490,23 +493,23 @@ public class PartitionLog {
                 }
                 final EncodeRequest encodeRequest = EncodeRequest.get(validRecords, appendInfo);
 
-                    requestStats.getPendingTopicLatencyStats().registerSuccessfulEvent(
-                            time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
+                requestStats.getPendingTopicLatencyStats().registerSuccessfulEvent(
+                        time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
 
-                    long beforeEncodingStarts = time.nanoseconds();
-                    final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                    encodeRequest.recycle();
+                long beforeEncodingStarts = time.nanoseconds();
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                encodeRequest.recycle();
 
-                    requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                            time.nanoseconds() - beforeEncodingStarts, TimeUnit.NANOSECONDS);
-                    appendRecordsContext.getStartSendOperationForThrottling()
-                            .accept(encodeResult.getEncodedByteBuf().readableBytes());
+                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                        time.nanoseconds() - beforeEncodingStarts, TimeUnit.NANOSECONDS);
+                appendRecordsContext.getStartSendOperationForThrottling()
+                        .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
-                    publishMessages(
-                            appendFuture,
-                            appendInfo,
-                            encodeResult,
-                            appendRecordsContext);
+                publishMessages(
+                        appendFuture,
+                        appendInfo,
+                        encodeResult,
+                        appendRecordsContext);
             };
 
             appendRecordsContext.getPendingTopicFuturesMap()

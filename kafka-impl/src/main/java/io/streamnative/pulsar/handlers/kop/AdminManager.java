@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -134,7 +135,8 @@ public class AdminManager {
                 }
                 return;
             }
-            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), numPartitions)
+            admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), numPartitions,
+                            Map.of("kafkaTopicUUID", UUID.randomUUID().toString()))
                     .whenComplete((ignored, e) -> {
                         if (e == null) {
                             if (log.isDebugEnabled()) {

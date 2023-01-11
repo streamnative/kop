@@ -91,6 +91,13 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
     }
 
     @Override
+    protected Properties newKafkaAdminClientProperties() {
+        final Properties adminProps = super.newKafkaAdminClientProperties();
+        addCustomizeProps(adminProps);
+        return adminProps;
+    }
+
+    @Override
     protected void addCustomizeProps(Properties properties) {
         properties.setProperty("sasl.login.callback.handler.class", OauthLoginCallbackHandler.class.getName());
         properties.setProperty("security.protocol", "SASL_PLAINTEXT");

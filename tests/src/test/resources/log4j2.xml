@@ -40,9 +40,12 @@
             <AppenderRef ref="Console" />
         </Root>
         <Logger name="org.eclipse.jetty" level="info"/>
-        <Logger name="io.streamnative" level="debug"/>
+        <Logger name="io.streamnative" level="info"/>
         <Logger name="org.apache.pulsar" level="info"/>
-        <Logger name="org.apache.bookkeeper" level="info"/>
-        <Logger name="org.apache.kafka" level="debug"/>
+<!--        <Logger name="org.apache.bookkeeper" level="info"/>-->
+        <Logger name="org.apache.kafka" level="info"/>
+        <Logger name="org.apache.kafka.clients.NetworkClient" level="trace"/>
+        <Logger name="org.apache.kafka.clients.producer.internals.TransactionManager" level="trace"/>
+        <Logger name="org.apache.kafka.clients.producer.internals.Sender" level="trace"/>
     </Loggers>
 </Configuration>
