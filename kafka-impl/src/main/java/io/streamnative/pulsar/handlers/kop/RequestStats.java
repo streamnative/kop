@@ -18,11 +18,13 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.ALIVE_CHANNEL_C
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BATCH_COUNT_PER_MEMORYRECORDS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.CATEGORY_SERVER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.FETCH_DECODE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.GROUP_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_PUBLISH;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_QUEUED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_READ;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.NETWORK_TOTAL_BYTES_OUT;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PENDING_TOPIC_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PREPARE_METADATA;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_ENCODE;
@@ -31,6 +33,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.REQUEST_QUEUE_S
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_LATENCY;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.RESPONSE_BLOCKED_TIMES;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.WAITING_FETCHES_TRIGGERED;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -47,6 +50,8 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 
 /**
@@ -152,6 +157,12 @@ public class RequestStats {
 
     private final Map<ApiKeys, StatsLogger> apiKeysToStatsLogger = new ConcurrentHashMap<>();
 
+    private final Map<TopicPartition, StatsLogger> cachedLoggersForTopicPartitions = new ConcurrentHashMap<>();
+    private final Map<Pair<TopicPartition, String>, StatsLogger> cachedLoggersForTopicPartitionsAndGroups =
+            new ConcurrentHashMap<>();
+
+    private final Map<String, RequestStats> cachedRequestStatsForTenants = new ConcurrentHashMap<>();
+
     public RequestStats(StatsLogger statsLogger) {
         this.statsLogger = statsLogger;
 
@@ -221,6 +232,20 @@ public class RequestStats {
         });
     }
 
+    public StatsLogger getStatsLoggerForTopicPartition(TopicPartition topicPartition) {
+        return cachedLoggersForTopicPartitions.computeIfAbsent(topicPartition,
+                __ -> statsLogger
+                        .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
+                        .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition())));
+    }
+
+    public StatsLogger getStatsLoggerForTopicPartitionAndGroup(TopicPartition topicPartition, String groupId) {
+        return cachedLoggersForTopicPartitionsAndGroups.computeIfAbsent(
+                Pair.of(topicPartition, groupId),
+                __ -> getStatsLoggerForTopicPartition(topicPartition)
+                        .scopeLabel(GROUP_SCOPE, groupId));
+    }
+
     /**
      * Get the stats logger for Kafka requests.
      *
@@ -240,6 +265,7 @@ public class RequestStats {
     }
 
     public RequestStats forTenant(String tenant) {
-        return new RequestStats(statsLogger.scopeLabel("tenant", tenant));
+        return cachedRequestStatsForTenants.computeIfAbsent(tenant,
+                __ -> new RequestStats(statsLogger.scopeLabel("tenant", tenant)));
     }
 }
