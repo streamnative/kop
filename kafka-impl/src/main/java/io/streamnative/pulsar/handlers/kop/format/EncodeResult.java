@@ -15,10 +15,8 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.PARTITION_SCOPE;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE_CONVERSIONS;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
@@ -89,9 +87,7 @@ public class EncodeResult {
         producer.updateRates(numMessages, numBytes);
         producer.getTopic().incrementPublishCount(numMessages, numBytes);
 
-        final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLogger()
-                .scopeLabel(TOPIC_SCOPE, topicPartition.topic())
-                .scopeLabel(PARTITION_SCOPE, String.valueOf(topicPartition.partition()));
+        final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLoggerForTopicPartition(topicPartition);
 
         statsLoggerForThisPartition.getCounter(BYTES_IN).add(numBytes);
         statsLoggerForThisPartition.getCounter(MESSAGE_IN).add(numMessages);
