@@ -8,7 +8,7 @@ To enable the Schema Registry, you should add the following configuration:
 kopSchemaRegistryEnable=true
 ```
 
-By default, the Schema Registry listens on port 8001 by default, which means you should add the following property to create your Kafka producer or consumer.
+By default, the Schema Registry listens on port 8001, which means you should add the following property to create your Kafka producer or consumer.
 
 ```properties
 schema.registry.url=http://<broker-ip>:8001
@@ -86,7 +86,7 @@ Add the `avro-maven-plugin` plugin to generate the Java class from the Avro sche
 
 With the Maven plugin above, a `User` class that has a `String` field named `name` and an `int` field named `age` will be generated under the `example.avro` package. 
 
-### Produce and consume with Confluent's Avro serializer
+### Produce and consume messages with Confluent's Avro serializer
 
 1. Add the following dependencies to use Kafka client 3.3.1 with Confluent's Avro serializer 7.3.1:
 
