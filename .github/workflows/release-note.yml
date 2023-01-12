@@ -21,6 +21,13 @@ jobs:
     - name: Login to cloudsmith
       run: docker login -u="${{ secrets.CLOUDSMITH_USERNAME }}" -p="${{ secrets.CLOUDSMITH_API_KEY
         }}" docker.cloudsmith.io
+    - uses: s4u/maven-settings-action@v2.6.0
+      with:
+        servers: '[{"id": "ossrh", "username": "${{ secrets.SONATYPE_USERNAME }}",
+          "password": "${{ secrets.SONATYPE_PASSWORD }}"}]'
+    - name: Login to cloudsmith
+      run: docker login -u="${{ secrets.CLOUDSMITH_USERNAME }}" -p="${{ secrets.CLOUDSMITH_API_KEY
+        }}" docker.cloudsmith.io
     - name: release note
       uses: toolmantim/release-drafter@v5.2.0
       env:
