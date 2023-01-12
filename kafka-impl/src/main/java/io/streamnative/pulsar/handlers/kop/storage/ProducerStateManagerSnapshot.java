@@ -23,6 +23,7 @@ import lombok.Data;
 @AllArgsConstructor
 public final class ProducerStateManagerSnapshot {
     private final String topicPartition;
+    private final String topicUUID;
     private final long offset;
     private final Map<Long, ProducerStateEntry> producers;
 

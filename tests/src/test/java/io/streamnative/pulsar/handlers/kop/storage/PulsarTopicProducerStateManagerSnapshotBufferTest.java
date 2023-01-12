@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.Test;
 
@@ -55,6 +56,7 @@ public class PulsarTopicProducerStateManagerSnapshotBufferTest extends ProducerS
             }
             ProducerStateManagerSnapshot snapshot = new ProducerStateManagerSnapshot(
                     "test-topic",
+                    UUID.randomUUID().toString(),
                     i,
                     producers,
                     ongoingTxns,

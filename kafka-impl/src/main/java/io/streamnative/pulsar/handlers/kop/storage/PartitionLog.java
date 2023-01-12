@@ -201,9 +201,9 @@ public class PartitionLog {
                     this.topicProperties = properties;
                     log.info("Topic properties for {} are {}", fullPartitionName, properties);
                     this.entryFormatter = buildEntryFormatter(topicProperties);
-                    this.kafkaTopicUUID = properties.getOrDefault("kafkaTopicUUID", "NO-UUID");
+                    this.kafkaTopicUUID = properties.get("kafkaTopicUUID");
                     this.producerStateManager =
-                            new ProducerStateManager(fullPartitionName + "@" + kafkaTopicUUID,
+                            new ProducerStateManager(fullPartitionName, kafkaTopicUUID,
                                     producerStateManagerSnapshotBuffer,
                                     kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds());
                 });
