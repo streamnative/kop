@@ -165,6 +165,7 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [Monitor KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/reference-metrics.md)
 -   [Upgrade](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/upgrade.md)
 -   [Secure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/security.md)
+-   [Schema Registry](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/schema.md)
 -   [Manage KoP with the Envoy proxy](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/envoy-proxy.md)
 -   [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/implementation.md)
 

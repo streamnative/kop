@@ -482,19 +482,19 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Start the Schema Registry service."
+            doc = "Whether to enable the Schema Registry."
     )
     private boolean kopSchemaRegistryEnable = false;
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The name of the topic used by the Schema Registry service."
+            doc = "The name of the topic used by the Schema Registry."
     )
     private String kopSchemaRegistryTopicName = "__schema-registry";
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Schema Registry port."
+            doc = "The Schema Registry port."
     )
     private int kopSchemaRegistryPort = 8001;
 
