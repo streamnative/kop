@@ -94,7 +94,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
                 final String expectedAddress = bindPortToAdvertisedAddress.get(inetSocketAddress.getPort());
 
-                final KafkaHeaderAndRequest metadataRequest = KafkaApisTest.buildRequest(
+                final KafkaHeaderAndRequest metadataRequest = KafkaCommonTestUtils.buildRequest(
                         new MetadataRequest.Builder(Collections.singletonList(topic), true),
                         inetSocketAddress);
                 final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
@@ -117,11 +117,13 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
                 Assert.assertEquals(partitionMetadataList.size(), numPartitions);
                 for (int i = 0; i < numPartitions; i++) {
                     final PartitionMetadata partitionMetadata = partitionMetadataList.get(i);
-                    Assert.assertEquals(partitionMetadata.error(), Errors.NONE);
-                    Assert.assertEquals(partitionMetadata.leader().host() + ":" + partitionMetadata.leader().port(),
+                    Assert.assertEquals(partitionMetadata.error, Errors.NONE);
+                    Node leader = metadataResponse.brokersById().get(partitionMetadata.leaderId.get());
+                    Assert.assertEquals(leader.host() + ":" + leader.port(),
                             expectedAddress);
                 }
             } catch (Exception e) {
+                log.error("Error", e + "");
                 Assert.fail(e.getMessage());
             }
         });
@@ -208,6 +210,43 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
         node = getFirst(brokers.get("kafka_external"));
         Assert.assertEquals(node.host(), "localhost");
+        Assert.assertEquals(node.port(), externalPort);
+        super.internalCleanup();
+    }
+
+    @Test(timeOut = 30000)
+    public void testIpv6ListenerName() throws Exception {
+        super.resetConfig();
+        conf.setAdvertisedAddress(null);
+        final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
+        conf.setInternalListenerName("pulsar");
+        final String kafkaProtocolMap = "kafka:PLAINTEXT,kafka_external:PLAINTEXT";
+        conf.setKafkaProtocolMap(kafkaProtocolMap);
+        int externalPort = PortManager.nextFreePort();
+        final String kafkaListeners = "kafka://[::1]:" + kafkaBrokerPort
+                + ",kafka_external://[::1]:" + externalPort;
+        conf.setKafkaListeners(kafkaListeners);
+        // Before 2.9, we must configure advertisedListeners to enable multiple listeners
+        final String advertisedListeners =
+                "pulsar:pulsar://" + localAddress + ":" + brokerPort
+                        + ",kafka:pulsar://[::1]:" + kafkaBrokerPort
+                        + ",kafka_external:pulsar://[::1]:" + externalPort;
+        conf.setAdvertisedListeners(advertisedListeners);
+        log.info("Set advertisedListeners to {}", advertisedListeners);
+        super.internalSetup();
+
+        kafkaProducerSend("[::1]:" + kafkaBrokerPort);
+        kafkaProducerSend("[::1]:" + externalPort);
+
+        final Map<String, Set<Node>> brokers = new HashMap<>(getProtocolHandler().getAdminManager().getAllBrokers());
+        Node node = getFirst(brokers.get("kafka"));
+        // However, the advertised address is not the same with the host in advertisedListeners unless we configured
+        // the kafkaAdvertisedListeners in 2.9 and later.
+        Assert.assertEquals(node.host(), "0:0:0:0:0:0:0:1");
+        Assert.assertEquals(node.port(), kafkaBrokerPort);
+
+        node = getFirst(brokers.get("kafka_external"));
+        Assert.assertEquals(node.host(), "0:0:0:0:0:0:0:1");
         Assert.assertEquals(node.port(), externalPort);
         super.internalCleanup();
     }

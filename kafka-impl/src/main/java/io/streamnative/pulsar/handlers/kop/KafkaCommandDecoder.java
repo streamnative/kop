@@ -21,6 +21,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.util.ReferenceCountUtil;
 import java.io.Closeable;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -38,7 +39,6 @@ import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -114,7 +114,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             final ResponseAndRequest responseAndRequest = requestQueue.poll();
             if (responseAndRequest != null) {
                 // Trigger writeAndFlushResponseToClient immediately, but it will do nothing because isActive is false
-                responseAndRequest.getResponseFuture().cancel(true);
+                responseAndRequest.cancel();
             } else {
                 // queue is empty
                 break;
@@ -133,24 +133,18 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    // turn input ByteBuf msg, which send from client side, into KafkaHeaderAndRequest
-    protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg) {
-        return byteBufToRequest(msg, null);
-    }
-
     protected KafkaHeaderAndRequest byteBufToRequest(ByteBuf msg,
                                                      SocketAddress remoteAddress) {
         checkArgument(msg.readableBytes() > 0);
         ByteBuffer nio = msg.nioBuffer();
         RequestHeader header = RequestHeader.parse(nio);
         if (isUnsupportedApiVersionsRequest(header)) {
-            ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest((short) 0, header.apiVersion());
+            ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest.Builder(header.apiVersion()).build();
             return new KafkaHeaderAndRequest(header, apiVersionsRequest, msg, remoteAddress);
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
-            Struct struct = apiKey.parseRequest(apiVersion, nio);
-            AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+            AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, nio).request;
             return new KafkaHeaderAndRequest(header, body, msg, remoteAddress);
         }
     }
@@ -186,7 +180,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected Boolean channelReady() {
+    protected boolean channelReady() {
         return hasAuthenticated();
     }
 
@@ -438,7 +432,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         log.debug("Write kafka cmd to client."
                                         + " request content: {}"
                                         + " responseAndRequest content: {}",
-                                request, response.toString(request.getRequest().version()));
+                                request, response);
                     }
 
                     final ByteBuf result = responseToByteBuf(response, request);
@@ -586,7 +580,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     protected abstract void
     handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
-    public static class KafkaHeaderAndRequest implements Closeable {
+    public static class KafkaHeaderAndRequest {
 
         private static final String DEFAULT_CLIENT_HOST = "";
 
@@ -639,9 +633,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 this.header, this.request, this.remoteAddress);
         }
 
-        @Override
         public void close() {
-            this.buffer.release();
+            ReferenceCountUtil.safeRelease(this.buffer);
         }
     }
 
@@ -684,7 +677,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         @Override
         public String toString() {
             return String.format("KafkaHeaderAndResponse(header=%s,responseFuture=%s)",
-                this.header.toStruct().toString(), this.response.toString(this.getApiVersion()));
+                this.header, this.response);
         }
 
         @Override
@@ -722,6 +715,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
         public boolean expired(final int requestTimeoutMs) {
             return MathUtils.elapsedNanos(createdTimestamp) > TimeUnit.MILLISECONDS.toNanos(requestTimeoutMs);
+        }
+
+        public void cancel() {
+            responseFuture.cancel(true);
+            request.close();
         }
 
         ResponseAndRequest(CompletableFuture<AbstractResponse> response, KafkaHeaderAndRequest request) {

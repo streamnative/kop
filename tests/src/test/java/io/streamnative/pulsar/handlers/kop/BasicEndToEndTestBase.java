@@ -215,7 +215,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         while (numMessages > 0) {
             for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
                 if (log.isDebugEnabled()) {
-                    log.debug("KafkaConsumer receive: {}", record.value());
+                    log.debug("KafkaConsumer receive: {} from partition {}", record.value(), record.partition());
                 }
                 values.add(record.value());
                 numMessages--;

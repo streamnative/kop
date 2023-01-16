@@ -16,8 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.EndPoint;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
@@ -27,7 +26,6 @@ import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -56,6 +55,7 @@ import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.eclipse.jetty.util.BlockingArrayQueue;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
@@ -77,7 +77,8 @@ public class TransactionMarkerChannelManager {
 
     private final Bootstrap bootstrap;
 
-    private Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap = new HashMap<>();
+    private final Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap =
+            new ConcurrentHashMap<>();
 
     private TransactionStateManager txnStateManager;
 
@@ -176,10 +177,11 @@ public class TransactionMarkerChannelManager {
             authentication = AuthenticationUtil.create(auth, authParams);
             authentication.start();
         }
-        eventLoopGroup = new NioEventLoopGroup();
+        eventLoopGroup = EventLoopUtil
+                .newEventLoopGroup(0, false, new DefaultThreadFactory("kop-txn"));
         bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup);
-        bootstrap.channel(NioSocketChannel.class);
+        bootstrap.channel(EventLoopUtil.getClientSocketChannelClass(eventLoopGroup));
         bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this));
     }
 
@@ -268,7 +270,7 @@ public class TransactionMarkerChannelManager {
         Integer txnTopicPartition = txnStateManager.partitionFor(transactionalId);
 
         Map<InetSocketAddress, List<TopicPartition>> addressAndPartitionMap = new ConcurrentHashMap<>();
-        List<TopicPartition> unknownBrokerTopicList = new ArrayList<>();
+        List<TopicPartition> unknownBrokerTopicList = new CopyOnWriteArrayList<>();
 
         List<CompletableFuture<Void>> addressFutureList = new ArrayList<>();
         for (TopicPartition topicPartition : topicPartitions) {
@@ -372,8 +374,10 @@ public class TransactionMarkerChannelManager {
         TransactionMetadata.TxnTransitMetadata newMetadata = pendingCompleteTxn.newMetadata;
         int coordinatorEpoch = pendingCompleteTxn.coordinatorEpoch;
 
-        log.info("Completed sending transaction markers for {}; begin transition to {}",
-                transactionalId, newMetadata.getTxnState());
+        if (log.isDebugEnabled()) {
+            log.debug("Completed sending transaction markers for {}; begin transition to {}",
+                    transactionalId, newMetadata.getTxnState());
+        }
 
         Either<Errors, Optional<TransactionStateManager.CoordinatorEpochAndTxnMetadata>> errorsAndData =
                 txnStateManager.getTransactionState(transactionalId);
@@ -418,8 +422,12 @@ public class TransactionMarkerChannelManager {
                 txnLogAppend.newMetadata, new TransactionStateManager.ResponseCallback() {
             @Override
             public void complete() {
-                log.info("Completed transaction for {} with coordinator epoch {}, final state after commit: {}",
-                    txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch, txnLogAppend.txnMetadata.getState());
+                if (log.isDebugEnabled()) {
+                    log.debug("Completed transaction for {} with coordinator epoch {}, "
+                                    + "final state after commit: {}",
+                            txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch,
+                            txnLogAppend.txnMetadata.getState());
+                }
             }
 
             @Override
@@ -507,18 +515,18 @@ public class TransactionMarkerChannelManager {
         }
 
         for (TxnMarkerQueue txnMarkerQueue : markersQueuePerBroker.values()) {
-            txnIdAndMarkerEntries.clear();
-            txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntries));
-            if (!txnIdAndMarkerEntries.isEmpty()) {
+            List<TxnIdAndMarkerEntry> txnIdAndMarkerEntriesForMarker = new ArrayList<>();
+            txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntriesForMarker));
+            if (!txnIdAndMarkerEntriesForMarker.isEmpty()) {
                 getChannel(txnMarkerQueue.address).whenComplete((channelHandler, throwable) -> {
 
                     List<TxnMarkerEntry> sendEntries = new ArrayList<>();
-                    for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntries) {
+                    for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntriesForMarker) {
                         sendEntries.add(txnIdAndMarkerEntry.entry);
                     }
                     channelHandler.enqueueWriteTxnMarkers(sendEntries,
                             new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
-                                    txnIdAndMarkerEntries, namespacePrefixForUserTopics));
+                                    txnIdAndMarkerEntriesForMarker, namespacePrefixForUserTopics));
                 });
             }
         }

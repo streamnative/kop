@@ -281,7 +281,10 @@ public class TransactionMetadata {
                             + "from the cache, not to persist the " + toState + "in the");
             }
 
-            log.info("TransactionalId {} complete transition from {} to {}", transactionalId, state, transitMetadata);
+            if (log.isDebugEnabled()) {
+                log.debug("TransactionalId {} complete transition from {} to {}", transactionalId, state,
+                        transitMetadata);
+            }
             this.txnLastUpdateTimestamp = transitMetadata.txnLastUpdateTimestamp;
             this.pendingState = Optional.empty();
             this.state = toState;
@@ -368,8 +371,7 @@ public class TransactionMetadata {
                 log.info("Expected producer epoch {} does not match current "
                         + "producer epoch {} or previous producer epoch {}",
                         expectedProducerEpoch, producerEpoch, lastProducerEpoch);
-                // TODO the error should be Errors.PRODUCER_FENCED
-                errorsOrBumpEpochResult = Either.left(Errors.INVALID_PRODUCER_EPOCH);
+                errorsOrBumpEpochResult = Either.left(Errors.PRODUCER_FENCED);
             }
         }
 
@@ -387,7 +389,7 @@ public class TransactionMetadata {
     public TxnTransitMetadata prepareProducerIdRotation(Long newProducerId,
                                   Integer newTxnTimeoutMs,
                                   Long updateTimestamp,
-                                  Boolean recordLastEpoch) {
+                                  boolean recordLastEpoch) {
         if (hasPendingTransaction()) {
             throw new IllegalStateException("Cannot rotate producer ids while a transaction is still pending");
         }
@@ -489,7 +491,7 @@ public class TransactionMetadata {
         topicPartitions.addAll(partitions);
     }
 
-    public Boolean pendingTransitionInProgress() {
+    public boolean pendingTransitionInProgress() {
         return this.pendingState.isPresent();
     }
 

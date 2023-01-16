@@ -67,6 +67,7 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     messagingProtocols=kafka
     protocolHandlerDirectory=./protocols
     allowAutoTopicCreationType=partitioned
+    narExtractionDirectory=/path/to/nar
     ```
 
     | Property | Default value | Proposed value |
@@ -74,8 +75,11 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     | `messagingProtocols` |  | kafka |
     | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
     | `allowAutoTopicCreationType`| non-partitioned | partitioned |
+    | `narExtractionDirectory` | `/tmp/pulsar-nar` | Location of unpacked KoP NAR file |
 
     By default, `allowAutoTopicCreationType` is set to `non-partitioned`. Since topics are partitioned by default in Kafka, it's better to avoid creating non-partitioned topics for Kafka clients unless Kafka clients need to interact with existing non-partitioned topics.
+
+    By default, the `/tmp/pulsar-nar` directory is under the `/tmp` directory. If we unpackage the KoP NAR file into the `/tmp` directory, some classes could be automatically deleted by the system, which will generate a`ClassNotFoundException` or `NoClassDefFoundError` error. Therefore, it is recommended to set the `narExtractionDirectory` option to another path.
 
 2. Set Kafka listeners.
 
@@ -161,6 +165,7 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [Monitor KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/reference-metrics.md)
 -   [Upgrade](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/upgrade.md)
 -   [Secure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/security.md)
+-   [Schema Registry](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/schema.md)
 -   [Manage KoP with the Envoy proxy](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/envoy-proxy.md)
 -   [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/implementation.md)
 

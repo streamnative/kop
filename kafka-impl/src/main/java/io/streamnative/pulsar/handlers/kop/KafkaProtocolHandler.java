@@ -25,8 +25,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
-import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
+import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -102,10 +102,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
     private SchemaRegistryManager schemaRegistryManager;
+    private MigrationManager migrationManager;
+    private ReplicaManager replicaManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private final Map<String, ReplicaManager> replicaManagerByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -122,22 +123,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
     }
 
-    @Override
-    public ReplicaManager getReplicaManager(String tenant) {
-        return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            EntryFormatter entryFormatter;
-            try {
-                entryFormatter = EntryFormatterFactory.create(kafkaConfig);
-            } catch (IllegalArgumentException e) {
-                log.error("Failed to init create enter formatter {}", tenant, e);
-                throw new IllegalStateException(e);
-            }
-            return new ReplicaManager(
-                    kafkaConfig,
-                    Time.SYSTEM,
-                    entryFormatter,
-                    producePurgatory);
-        });
+    public ReplicaManager getReplicaManager() {
+        return replicaManager;
     }
 
     @Override
@@ -147,7 +134,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public boolean accept(String protocol) {
-        return PROTOCOL_NAME.equals(protocol.toLowerCase());
+        return PROTOCOL_NAME.equalsIgnoreCase(protocol);
     }
 
     @Override
@@ -239,6 +226,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             @Override
             public void whenUnload(TopicName topicName) {
                 invalidateBundleCache(topicName);
+                invalidatePartitionLog(topicName);
             }
 
             @Override
@@ -249,7 +237,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             private void invalidateBundleCache(TopicName topicName) {
                 kafkaTopicManagerSharedState.deReference(topicName.toString());
                 if (!topicName.isPartitioned()) {
-                    kafkaTopicManagerSharedState.deReference(topicName.getPartition(0).toString());
+                    String nonPartitionedTopicName = topicName.getPartition(0).toString();
+                    kafkaTopicManagerSharedState.deReference(nonPartitionedTopicName);
+                }
+            }
+
+            private void invalidatePartitionLog(TopicName topicName) {
+                getReplicaManager().removePartitionLog(topicName.toString());
+                if (!topicName.isPartitioned()) {
+                    getReplicaManager().removePartitionLog(topicName.getPartition(0).toString());
                 }
             }
         });
@@ -280,6 +276,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
                 brokerService.getAuthenticationService());
+        migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -395,6 +392,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getPulsar(),
                 kafkaConfig,
                 this,
+                replicaManager,
                 kopBrokerLookupManager,
                 adminManager,
                 producePurgatory,
@@ -413,14 +411,22 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
 
-        producePurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        producePurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("produce")
                 .timeoutTimer(SystemTimer.builder().executorName("produce").build())
                 .build();
-        fetchPurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        fetchPurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
+
+        replicaManager = new ReplicaManager(
+                kafkaConfig,
+                requestStats,
+                Time.SYSTEM,
+                brokerService.getEntryFilters(),
+                producePurgatory,
+                fetchPurgatory);
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
@@ -430,10 +436,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
+
+            Optional<HttpChannelInitializer> migrationChannelInitializer = migrationManager.build();
+            migrationChannelInitializer.ifPresent(
+                    initializer -> builder.put(migrationManager.getAddress(),
+                            initializer));
+
             Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
-            if (schemaRegistryChannelInitializer.isPresent()) {
-                builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
-            }
+            schemaRegistryChannelInitializer.ifPresent(
+                    registryChannelInitializer -> builder.put(schemaRegistryManager.getAddress(),
+                            registryChannelInitializer));
             channelInitializerMap = builder.build();
             return channelInitializerMap;
         } catch (Exception e){

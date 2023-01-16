@@ -90,9 +90,9 @@ public class PrometheusTextFormatUtil {
     }
 
     private static void writeQuantile(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
-                                      Boolean success, double quantile) {
+                                      boolean success, double quantile) {
         w.write(name)
-                .write("{success=\"").write(success.toString())
+                .write("{success=\"").write(success)
                 .write("\",quantile=\"").write(Double.toString(quantile));
         if (!opStat.getLabels().isEmpty()) {
             w.write("\", ");
@@ -105,8 +105,8 @@ public class PrometheusTextFormatUtil {
     }
 
     private static void writeCount(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
-                                   Boolean success) {
-        w.write(name).write("_count{success=\"").write(success.toString());
+                                   boolean success) {
+        w.write(name).write("_count{success=\"").write(success);
         if (!opStat.getLabels().isEmpty()) {
             w.write("\", ");
             writeLabelsNoBraces(w, opStat.getLabels());
@@ -118,8 +118,8 @@ public class PrometheusTextFormatUtil {
     }
 
     private static void writeSum(SimpleTextOutputStream w, DataSketchesOpStatsLogger opStat, String name,
-                                 Boolean success) {
-        w.write(name).write("_sum{success=\"").write(success.toString());
+                                 boolean success) {
+        w.write(name).write("_sum{success=\"").write(success);
         if (!opStat.getLabels().isEmpty()) {
             w.write("\", ");
             writeLabelsNoBraces(w, opStat.getLabels());

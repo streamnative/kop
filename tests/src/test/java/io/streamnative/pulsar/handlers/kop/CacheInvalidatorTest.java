@@ -75,6 +75,7 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         }
 
         assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
+        log.info("Before unload, ReplicaManager log size: {}", getProtocolHandler().getReplicaManager().size());
 
         log.info("Before unload, LOOKUP_CACHE is {}", KopBrokerLookupManager.LOOKUP_CACHE);
         String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
@@ -94,6 +95,10 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
 
         Awaitility.await().untilAsserted(() -> {
             assertTrue(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
+        });
+
+        Awaitility.await().untilAsserted(() -> {
+            assertEquals(getProtocolHandler().getReplicaManager().size(), 0);
         });
 
     }

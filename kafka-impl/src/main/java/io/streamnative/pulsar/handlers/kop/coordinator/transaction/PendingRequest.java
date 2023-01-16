@@ -20,6 +20,7 @@ import lombok.Getter;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.RequestHeader;
 
 public class PendingRequest {
@@ -41,12 +42,11 @@ public class PendingRequest {
     }
 
     public ByteBuffer serialize() {
-        return request.serialize(requestHeader);
+        return KopResponseUtils.serializeRequest(requestHeader, request);
     }
 
     public AbstractResponse parseResponse(final ByteBuffer buffer) {
-        return AbstractResponse.parseResponse(requestHeader.apiKey(),
-                requestHeader.apiKey().parseResponse(requestHeader.apiVersion(), buffer));
+        return AbstractResponse.parseResponse(buffer, requestHeader);
     }
 
     public short getApiVersion() {

@@ -22,6 +22,7 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
@@ -44,6 +45,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KafkaServiceConfiguration kafkaConfig;
     @Getter
     private final TenantContextManager tenantContextManager;
+    private final ReplicaManager replicaManager;
     @Getter
     private final KopBrokerLookupManager kopBrokerLookupManager;
     @Getter
@@ -68,6 +70,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     public KafkaChannelInitializer(PulsarService pulsarService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    TenantContextManager tenantContextManager,
+                                   ReplicaManager replicaManager,
                                    KopBrokerLookupManager kopBrokerLookupManager,
                                    AdminManager adminManager,
                                    DelayedOperationPurgatory<DelayedOperation> producePurgatory,
@@ -82,6 +85,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.tenantContextManager = tenantContextManager;
+        this.replicaManager = replicaManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.adminManager = adminManager;
         this.producePurgatory = producePurgatory;
@@ -120,18 +124,19 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @VisibleForTesting
     public KafkaRequestHandler newCnx() throws Exception {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
-                tenantContextManager, kopBrokerLookupManager, adminManager,
+                tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
                 kafkaTopicManagerSharedState);
     }
 
     @VisibleForTesting
-    public KafkaRequestHandler newCnxWithoutStats(final TenantContextManager tenantContextManager) throws Exception {
+    public KafkaRequestHandler newCnx(final TenantContextManager tenantContextManager) throws Exception {
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
-                tenantContextManager, kopBrokerLookupManager, adminManager,
+                tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
-                enableTls, advertisedEndPoint, skipMessagesWithoutIndex, RequestStats.NULL_INSTANCE,
+                enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
+                requestStats,
                 sendResponseScheduler,
                 kafkaTopicManagerSharedState);
     }

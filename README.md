@@ -56,6 +56,7 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [Monitor KoP](docs/reference-metrics.md)
 -   [Upgrade](docs/upgrade.md)
 -   [Secure KoP](docs/security.md)
+-   [Schema Registry](docs/schema.md)
 -   [Manage KoP with the Envoy proxy](docs/envoy-proxy.md)
 -   [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
 

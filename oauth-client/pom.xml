@@ -30,9 +30,8 @@
   <description>OAuth 2.0 login callback handler for Kafka client</description>
 
   <properties>
-    <jackson.version>2.13.2</jackson.version>
     <async-http-client.version>2.12.1</async-http-client.version>
-    <guava.version>31.0.1-jre</guava.version>
+    <guava.version>31.1-jre</guava.version>
   </properties>
 
   <!-- include the dependencies -->
@@ -51,13 +50,11 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-annotations</artifactId>
-      <version>${jackson.version}</version>
       <scope>provided</scope>
     </dependency>
 

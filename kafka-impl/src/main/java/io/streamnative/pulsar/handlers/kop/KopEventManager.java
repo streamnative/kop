@@ -39,7 +39,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
-import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -240,16 +239,15 @@ public class KopEventManager {
         HashMap<String, Set<Node>> nodesMap = Maps.newHashMap();
         String[] kopBrokerArr = kopBrokerStrs.split(EndPoint.END_POINT_SEPARATOR);
         for (String kopBrokerStr : kopBrokerArr) {
-            final String errorMessage = "kopBrokerStr " + kopBrokerStr + " is invalid";
-            final Matcher matcher = EndPoint.matcherListener(kopBrokerStr, errorMessage);
-            String listenerName = matcher.group(1);
-            String host = matcher.group(2);
-            String port = matcher.group(3);
+            final AdvertisedListener advertisedListener = AdvertisedListener.create(kopBrokerStr);
+            String listenerName = advertisedListener.getListenerName();
+            String host = advertisedListener.getHostname();
+            int port = advertisedListener.getPort();
             Set<Node> nodeSet = nodesMap.computeIfAbsent(listenerName, s -> new HashSet<>());
             nodeSet.add(new Node(
                     Murmur3_32Hash.getInstance().makeHash((host + port).getBytes(StandardCharsets.UTF_8)),
                     host,
-                    Integer.parseInt(port)));
+                    port));
             nodesMap.put(listenerName, nodeSet);
         }
 

@@ -36,6 +36,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgato
 import io.streamnative.pulsar.handlers.kop.utils.timer.Timer;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -367,6 +368,7 @@ public class GroupCoordinator {
                                     memberId,
                                     group.generationId(),
                                     group.protocolOrNull(),
+                                    group.protocolTypeOrNull(),
                                     group.leaderOrNull(),
                                     Errors.NONE
                                 )
@@ -408,6 +410,7 @@ public class GroupCoordinator {
                                 memberId,
                                 group.generationId(),
                                 group.protocolOrNull(),
+                                group.protocolTypeOrNull(),
                                 group.leaderOrNull(),
                                 Errors.NONE));
                         }
@@ -555,20 +558,24 @@ public class GroupCoordinator {
 
     public CompletableFuture<Errors> handleLeaveGroup(
         String groupId,
-        String memberId
+        Set<String> members
     ) {
         return validateGroupStatus(groupId, ApiKeys.LEAVE_GROUP).map(CompletableFuture::completedFuture
         ).orElseGet(() -> groupManager.getGroup(groupId).map(group -> group.inLock(() -> {
-            if (group.is(Dead) || !group.has(memberId)) {
+            if (group.is(Dead)) {
+                return CompletableFuture.completedFuture(Errors.COORDINATOR_NOT_AVAILABLE);
+            } else if (!members.stream().allMatch(group::has)) {
                 return CompletableFuture.completedFuture(Errors.UNKNOWN_MEMBER_ID);
             } else {
-                MemberMetadata member = group.get(memberId);
-                removeHeartbeatForLeavingMember(member);
-                if (log.isDebugEnabled()) {
-                    log.debug("Member {} in group {} has left, removing it from the group",
-                        member.memberId(), group.groupId());
+                for (String memberId : members) {
+                    MemberMetadata member = group.get(memberId);
+                    removeHeartbeatForLeavingMember(member);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Member {} in group {} has left, removing it from the group",
+                                member.memberId(), group.groupId());
+                    }
+                    removeMemberAndUpdateGroup(group, member);
                 }
-                removeMemberAndUpdateGroup(group, member);
                 return CompletableFuture.completedFuture(Errors.NONE);
             }
         })).orElseGet(() -> {
@@ -580,7 +587,7 @@ public class GroupCoordinator {
         }));
     }
 
-    public Map<String, Errors> handleDeleteGroups(Set<String> groupIds) {
+    public Map<String, Errors> handleDeleteGroups(Collection<String> groupIds) {
         Map<String, Errors> groupErrors = Collections.synchronizedMap(new HashMap<>());
         List<GroupMetadata> groupsEligibleForDeletion = new ArrayList<>();
 
@@ -1012,7 +1019,8 @@ public class GroupCoordinator {
             Collections.emptyMap(),
             memberId,
             0,
-            GroupCoordinator.NoProtocol,
+            NoProtocol,
+            NoProtocolType,
             GroupCoordinator.NoLeader,
             error);
     }
@@ -1115,13 +1123,14 @@ public class GroupCoordinator {
             delayedRebalance = new DelayedJoin(this, group, group.rebalanceTimeoutMs());
         }
 
-        group.transitionTo(PreparingRebalance);
-
-        log.info("Preparing to rebalance group {} with old generation {} ({}-{})",
+        log.info("Preparing to rebalance group {} ({}) with old generation {} ({}-{})",
             group.groupId(),
+            group.currentState().name(),
             group.generationId(),
             Topic.GROUP_METADATA_TOPIC_NAME,
             groupManager.partitionFor(group.groupId()));
+
+        group.transitionTo(PreparingRebalance);
 
         GroupKey groupKey = new GroupKey(group.groupId());
         joinPurgatory.tryCompleteElseWatch(delayedRebalance, Lists.newArrayList(groupKey));
@@ -1212,6 +1221,7 @@ public class GroupCoordinator {
                             member.memberId(),
                             group.generationId(),
                             group.protocolOrNull(),
+                            group.protocolTypeOrNull(),
                             group.leaderOrNull(),
                             Errors.NONE);
 

@@ -22,7 +22,6 @@ import com.google.common.util.concurrent.MoreExecutors;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.lang.reflect.Field;
@@ -372,10 +371,10 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected void setupBrokerMocks(PulsarService pulsar) throws Exception {
         // Override default providers with mocked ones
-        doReturn(createLocalMetadataStore()).when(pulsar).createLocalMetadataStore();
+        doReturn(createLocalMetadataStore()).when(pulsar).createLocalMetadataStore(null);
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
-        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore();
-        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore(null);
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore(null);
 
         Supplier<NamespaceService> namespaceServiceSupplier = () -> spy(new NamespaceService(pulsar));
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
@@ -805,8 +804,6 @@ public abstract class KopProtocolHandlerTestBase {
         final GroupCoordinator groupCoordinator = handler.getGroupCoordinator(conf.getKafkaMetadataTenant());
         final TransactionCoordinator transactionCoordinator =
                 handler.getTransactionCoordinator(conf.getKafkaMetadataTenant());
-        final ReplicaManager replicaManager =
-                handler.getReplicaManager(conf.getKafkaMetadataTenant());
 
         return handler
                 .getChannelInitializerMap()
@@ -816,7 +813,7 @@ public abstract class KopProtocolHandlerTestBase {
                 .map(f -> ((KafkaChannelInitializer) f))
                 .findFirst()
                 .get()
-                .newCnxWithoutStats(new TenantContextManager() {
+                .newCnx(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
                         return groupCoordinator;
@@ -825,11 +822,6 @@ public abstract class KopProtocolHandlerTestBase {
                     @Override
                     public TransactionCoordinator getTransactionCoordinator(String tenant) {
                         return transactionCoordinator;
-                    }
-
-                    @Override
-                    public ReplicaManager getReplicaManager(String tenant) {
-                        return replicaManager;
                     }
                 });
     }

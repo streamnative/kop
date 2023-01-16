@@ -32,6 +32,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.network.ChannelBuilder;
 import org.apache.kafka.common.network.KafkaChannel;
+import org.apache.kafka.common.network.NetworkSend;
 import org.apache.kafka.common.network.Selector;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.MetadataRequest;
@@ -115,7 +116,8 @@ public class DelayAuthorizationFailedCloseTest extends KopProtocolHandlerTestBas
         Metrics metrics = new Metrics(time);
         ProducerConfiguration producerConfiguration = producerConfiguration();
         ChannelBuilder channelBuilder =
-                ClientUtils.createChannelBuilder(new ProducerConfig(producerConfiguration.toProperties()));
+                ClientUtils.createChannelBuilder(
+                        new ProducerConfig(producerConfiguration.toProperties()), time, new LogContext());
         String clientId = "clientId";
         selector = new Selector(
                 DEFAULT_CONNECTION_MAX_IDLE_MS,
@@ -153,8 +155,8 @@ public class DelayAuthorizationFailedCloseTest extends KopProtocolHandlerTestBas
         // Send Metadata request
         MetadataRequest.Builder builder = MetadataRequest.Builder.allTopics();
         AbstractRequest request = builder.build();
-        selector.send(request.toSend(id,
-                new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0)));
+        selector.send(new NetworkSend(id, request.toSend(
+                new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0))));
 
         Awaitility.await().until(() -> {
             poll(selector);

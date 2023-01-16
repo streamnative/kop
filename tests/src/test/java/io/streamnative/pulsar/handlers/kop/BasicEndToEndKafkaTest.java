@@ -44,6 +44,7 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
+import org.awaitility.Awaitility;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -408,14 +409,12 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
 
-        @Cleanup
-        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        @Cleanup final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
 
         List<String> expectValues = Arrays.asList("a", "b", "c");
 
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        @Cleanup final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic, "the-group");
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
         assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
 
@@ -429,12 +428,30 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaProducer.send(new ProducerRecord<>(topic, 0, null, "i")).get();
 
         pulsar.getAdminClient().topics().delete(topic + "-partition-1", true);
+
+        Awaitility.await().untilAsserted(() -> {
+            try {
+                pulsar.getAdminClient().topics().getInternalStats(topic + "-partition-1");
+                fail("topic still exists....");
+            } catch (PulsarAdminException.NotFoundException notFound) {
+                log.info("Topic is confirmed to be deleted from Pulsar");
+            }
+        });
+
         // "h" is written to Partition 1, so deleting partition-1 means that we lose "h"
         expectValues = Arrays.asList("g", "i");
 
-        kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
-        assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
+        // kafkaConsume could have pre-fetched some messages
+        // we use a new consumer in order to see the message from the partition that has been deleted
+        kafkaConsumer.close();
 
+        @Cleanup final KafkaConsumer<String, String> kafkaConsumer2 = newKafkaConsumer(topic, "the-group");
+        kafkaReceives = receiveMessages(kafkaConsumer2, expectValues.size());
+        assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues,
+                "Expected " + expectValues
+                        + " but received " + kafkaReceives.stream().sorted().collect(Collectors.toList()));
+
+        pulsar.getAdminClient().topics().deletePartitionedTopic(topic);
     }
 
 

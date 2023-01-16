@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.getListOffsetsPartitionResponse;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -25,8 +26,6 @@ import static org.testng.Assert.assertTrue;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.DefaultEventLoop;
@@ -38,7 +37,6 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -48,15 +46,21 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.message.CreatePartitionsResponseData;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.MetadataRequestData;
+import org.apache.kafka.common.message.OffsetCommitRequestData;
+import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
@@ -66,9 +70,8 @@ import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreatePartitionsResponse;
-import org.apache.kafka.common.requests.IsolationLevel;
-import org.apache.kafka.common.requests.ListOffsetRequest;
-import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
@@ -76,6 +79,7 @@ import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
@@ -204,8 +208,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createNonPartitionedTopic("persistent://" + TENANT + "/" + NAMESPACE + "/" + topic);
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest(Collections.singletonList(topic), false, version);
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.singletonList(new MetadataRequestData.MetadataRequestTopic()
+                        .setName(topic)))
+                .setAllowAutoTopicCreation(false);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         handler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
@@ -225,8 +233,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 .when(spyHandler)
                 .authorize(eq(AclOperation.DESCRIBE), eq(Resource.of(ResourceType.TOPIC, topic)));
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, version, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest(Collections.singletonList(topic), true, version);
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.singletonList(new MetadataRequestData.MetadataRequestTopic()
+                        .setName(topic)))
+                .setAllowAutoTopicCreation(true);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, version);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
@@ -250,8 +262,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         }
 
         final RequestHeader header = new RequestHeader(ApiKeys.METADATA, (short) 1, "client", 0);
-        final MetadataRequest request =
-                new MetadataRequest(Collections.emptyList(), true, (short) 0);
+        MetadataRequestData data = new MetadataRequestData()
+                .setTopics(Collections.emptyList())
+                .setAllowAutoTopicCreation(true);
+        // TO NOT USE the MetadataRequest.Builder, otherwise you cannot use version = 0
+        final MetadataRequest request = new MetadataRequest(data, (short) 0);
         final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleTopicMetadataRequest(
                 new KafkaCommandDecoder.KafkaHeaderAndRequest(
@@ -261,9 +276,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         String localName = TopicName.get(topic).getLocalName();
 
         HashMap<String, MetadataResponse.TopicMetadata> topicMap = new HashMap<>();
-        response.topicMetadata().forEach(metadata -> {
-            topicMap.put(metadata.topic(), metadata);
-        });
+        response.topicMetadata().forEach(metadata -> topicMap.put(metadata.topic(), metadata));
         assertTrue(topicMap.containsKey(localName));
         assertEquals(topicMap.get(localName).partitionMetadata().size(), DEFAULT_PARTITION_NUM);
         assertNull(response.errors().get(localName));
@@ -278,17 +291,59 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     @Test(timeOut = 20000)
     public void testHandleProduceRequest() throws ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
-        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
-        final ProduceRequest request = createProduceRequest(TOPIC);
-        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
+        final String topic = TOPIC;
+        final String topic2 = "topic2";
+
+        // Build input params
+        Map<TopicPartition, MemoryRecords> partitionRecords = new HashMap<>();
+        TopicPartition topicPartition1 = new TopicPartition(topic, 0);
+        TopicPartition topicPartition2 = new TopicPartition(topic2, 0);
+        partitionRecords.put(topicPartition1,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
+        partitionRecords.put(topicPartition2,
+                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test2".getBytes())));
+        ProduceRequestData requestData = new ProduceRequestData()
+                .setAcks((short) 1)
+                .setTimeoutMs(5000);
+        requestData.topicData().add(new ProduceRequestData.TopicProduceData()
+                .setName(topicPartition1.topic())
+                .setPartitionData(Collections.singletonList(new ProduceRequestData.PartitionProduceData()
+                        .setIndex(topicPartition1.partition())
+                        .setRecords(partitionRecords.get(topicPartition1))))
+                );
+        requestData.topicData().add(new ProduceRequestData.TopicProduceData()
+                .setName(topicPartition2.topic())
+                .setPartitionData(Collections.singletonList(new ProduceRequestData.PartitionProduceData()
+                        .setIndex(topicPartition2.partition())
+                        .setRecords(partitionRecords.get(topicPartition2))))
+        );
+        final ProduceRequest request =
+                new ProduceRequest.Builder(ApiKeys.PRODUCE.latestVersion(),
+                        ApiKeys.PRODUCE.latestVersion(), requestData).build();
+
+        // authorize topic2
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.WRITE),
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition2,
+                                handler.currentNamespacePrefix())))
+                );
+
+        // Handle request
+        final RequestHeader header = new RequestHeader(ApiKeys.PRODUCE, (short) 1, "client", 0);
+        final CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleProduceRequest(new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
                 PulsarByteBufAllocator.DEFAULT.heapBuffer(),
                 null), responseFuture);
-        AbstractResponse response = responseFuture.get();
-        assertEquals((int) response.errorCounts().get(Errors.TOPIC_AUTHORIZATION_FAILED), 1);
+        final ProduceResponse response = (ProduceResponse) responseFuture.get();
+
+        //Topic: "topic2" authorize success. Error is not TOPIC_AUTHORIZATION_FAILED
+        assertEquals(response.responses().get(topicPartition2).error, Errors.NOT_LEADER_OR_FOLLOWER);
+        //Topic: `TOPIC` authorize failed.
+        assertEquals(response.responses().get(topicPartition1).error, Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     @Test(timeOut = 20000)
@@ -328,20 +383,22 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         }
 
         // Test for ListOffset request verify Earliest get earliest
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
                 .setTargetTimes(KafkaCommonTestUtils
-                        .newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
+                        .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
-        assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);
-        assertEquals(listOffsetResponse.responseData().get(tp).timestamp, Long.valueOf(0));
+        ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.NONE.code());
+        assertEquals(listOffsetsPartitionResponse.offset(), 0L);
+        assertEquals(listOffsetsPartitionResponse.timestamp(), 0L);
     }
 
     @Test(timeOut = 20000)
@@ -354,18 +411,20 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createPartitionedTopic(topicName, 1);
         TopicPartition tp = new TopicPartition(topicName, 0);
 
-        ListOffsetRequest.Builder builder = ListOffsetRequest.Builder
+        ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
                 .setTargetTimes(KafkaCommonTestUtils
-                        .newListOffsetTargetTimes(tp, ListOffsetRequest.EARLIEST_TIMESTAMP));
+                        .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
         spyHandler.handleListOffsetRequest(request, responseFuture);
 
         AbstractResponse response = responseFuture.get();
-        ListOffsetResponse listOffsetResponse = (ListOffsetResponse) response;
-        assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        ListOffsetsResponse listOffsetResponse = (ListOffsetsResponse) response;
+        ListOffsetsResponseData.ListOffsetsPartitionResponse listOffsetsPartitionResponse =
+                getListOffsetsPartitionResponse(tp, listOffsetResponse.data());
+        assertEquals(listOffsetsPartitionResponse.errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
     }
 
 
@@ -388,7 +447,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                                 handler.currentNamespacePrefix()).getFullName()))
                 );
         OffsetFetchRequest.Builder builder =
-                new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
+                new OffsetFetchRequest.Builder(groupId, false,
+                        Collections.singletonList(tp), false);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -401,9 +461,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
         assertEquals(offsetFetchResponse.responseData().size(), 1);
         assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
-            assertEquals(partitionData.error, Errors.NONE);
-        });
+        offsetFetchResponse.responseData()
+                .forEach((topicPartition, partitionData) -> assertEquals(partitionData.error, Errors.NONE));
     }
 
     @Test(timeOut = 20000)
@@ -419,7 +478,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition tp = new TopicPartition(new KopTopic(topicName,
                 handler.currentNamespacePrefix()).getFullName(), 0);
         OffsetFetchRequest.Builder builder =
-                new OffsetFetchRequest.Builder(groupId, Collections.singletonList(tp));
+                new OffsetFetchRequest.Builder(groupId, false, Collections.singletonList(tp), false);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
@@ -432,9 +491,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
         assertEquals(offsetFetchResponse.responseData().size(), 1);
         assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
-            assertEquals(partitionData.error, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> assertEquals(partitionData.error,
+                Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)
@@ -444,11 +502,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition topicPartition = new TopicPartition("test", 1);
 
         // Build input params
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
-        offsetData.put(topicPartition,
-                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
-        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
-                .setMemberId(memberId);
+        OffsetCommitRequestData offsetData = new OffsetCommitRequestData()
+                .setGroupId(group).setMemberId(memberId);
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition, 1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Handle request
@@ -457,10 +515,13 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         AbstractResponse response = responseFuture.get();
         assertTrue(response instanceof OffsetCommitResponse);
         OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
-        assertEquals(offsetCommitResponse.responseData().size(), 1);
+        assertEquals(offsetCommitResponse.data().topics().size(), 1);
+        assertEquals(offsetCommitResponse.data().topics().get(0).partitions().size(), 1);
         assertFalse(offsetCommitResponse.errorCounts().isEmpty());
-        offsetCommitResponse.responseData().forEach((__, error) -> {
-            assertEquals(error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        offsetCommitResponse.data().topics().forEach(topic -> {
+            topic.partitions()
+                .forEach((partitionResult) -> assertEquals(partitionResult.errorCode(),
+                        Errors.TOPIC_AUTHORIZATION_FAILED.code()));
         });
     }
 
@@ -473,16 +534,17 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition topicPartition3 = new TopicPartition("test2", 3);
 
         // Build input params
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
-        offsetData.put(topicPartition1,
-                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(1L, ""));
-        offsetData.put(topicPartition2,
-                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(2L, ""));
-        offsetData.put(topicPartition3,
-                KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(3L, ""));
+        OffsetCommitRequestData offsetData = new OffsetCommitRequestData()
+                .setGroupId(group).setMemberId(memberId);
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition1, 1L, ""));
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition2, 2L, ""));
+        offsetData.topics().add(KafkaCommonTestUtils
+                .newOffsetCommitRequestPartitionData(topicPartition3, 3L, ""));
+        offsetData.setGroupId(group);
 
-        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
-                .setMemberId(memberId);
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Topic: `test` authorize success.
@@ -501,10 +563,18 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         AbstractResponse response = responseFuture.get();
         assertTrue(response instanceof OffsetCommitResponse);
         OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
-        assertEquals(offsetCommitResponse.responseData().size(), 3);
+        assertEquals(offsetCommitResponse.data().topics().size(), 3);
         assertEquals(offsetCommitResponse.errorCounts().size(), 2);
-        assertEquals(offsetCommitResponse.responseData().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
-        assertEquals(offsetCommitResponse.responseData().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(offsetCommitResponse.data().topics().stream()
+                .filter(t->t.name().equals(topicPartition2.topic())).findFirst().get()
+                .partitions().stream()
+                .filter(p->p.partitionIndex() == topicPartition2.partition())
+                .findFirst().get().errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
+        assertEquals(offsetCommitResponse.data().topics().stream()
+                .filter(t->t.name().equals(topicPartition3.topic())).findFirst().get()
+                .partitions().stream()
+                .filter(p->p.partitionIndex() == topicPartition3.partition())
+                .findFirst().get().errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
 
     }
 
@@ -516,7 +586,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetData.put(topicPartition, KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
-                        "1", group, 1, (short) 1, offsetData);
+                        "1", group, 1, (short) 1, offsetData, false);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Handle request
@@ -527,9 +597,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TxnOffsetCommitResponse txnOffsetCommitResponse = (TxnOffsetCommitResponse) response;
 
         assertEquals(txnOffsetCommitResponse.errorCounts().size(), 1);
-        txnOffsetCommitResponse.errors().values().forEach(errors -> {
-            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        txnOffsetCommitResponse.errors().values()
+                .forEach(errors -> assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)
@@ -549,7 +618,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
-                        "1", group, 1, (short) 1, offsetData);
+                        "1", group, 1, (short) 1, offsetData, false);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Topic: `test1` authorize success.
@@ -626,9 +695,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         AddPartitionsToTxnResponse addPartitionsToTxnResponse = (AddPartitionsToTxnResponse) response;
 
         assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 1);
-        addPartitionsToTxnResponse.errors().values().forEach(errors -> {
-            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
-        });
+        addPartitionsToTxnResponse.errors().values()
+                .forEach(errors -> assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED));
     }
 
     @Test(timeOut = 20000)
@@ -640,7 +708,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
-                KafkaCommonTestUtils.newPartitionsMap(fullTopic, 10), 5000, false);
+                KafkaCommonTestUtils.newPartitionsMap(fullTopic, 10)
+                        .setTimeoutMs(5000)
+                        .setValidateOnly(false));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -652,8 +722,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertTrue(response instanceof CreatePartitionsResponse);
         CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
         assertEquals(createPartitionsResponse.errorCounts().size(), 1);
-        assertTrue(createPartitionsResponse.errors().containsKey(fullTopic));
-        assertEquals(createPartitionsResponse.errors().get(fullTopic).error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+        Map<String, CreatePartitionsResponseData.CreatePartitionsTopicResult> errors =
+                createPartitionsResponse.data().results().stream()
+                .collect(Collectors.toMap(r -> r.name(), r -> r));
+        assertTrue(errors.containsKey(fullTopic));
+        assertEquals(errors.get(fullTopic).errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
 
     }
 
@@ -672,8 +745,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         admin.topics().createPartitionedTopic(fullTopic3, oldPartitions);
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
-                KafkaCommonTestUtils.newPartitionsMap(Arrays.asList(fullTopic1, fullTopic2, fullTopic3), 10),
-                5000, false);
+                KafkaCommonTestUtils.newPartitionsMap(Arrays.asList(fullTopic1, fullTopic2, fullTopic3), 10)
+                        .setTimeoutMs(5000)
+                        .setValidateOnly(false));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -692,10 +766,13 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertTrue(response instanceof CreatePartitionsResponse);
         CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
         assertEquals(createPartitionsResponse.errorCounts().size(), 2);
-        assertEquals(createPartitionsResponse.errors().size(), 3);
-        assertEquals(createPartitionsResponse.errors().get(fullTopic1).error(), Errors.NONE);
-        assertEquals(createPartitionsResponse.errors().get(fullTopic2).error(), Errors.TOPIC_AUTHORIZATION_FAILED);
-        assertEquals(createPartitionsResponse.errors().get(fullTopic3).error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+        Map<String, CreatePartitionsResponseData.CreatePartitionsTopicResult> errors =
+                createPartitionsResponse.data().results().stream()
+                .collect(Collectors.toMap(r -> r.name(), r -> r));
+        assertEquals(errors.size(), 3);
+        assertEquals(errors.get(fullTopic1).errorCode(), Errors.NONE.code());
+        assertEquals(errors.get(fullTopic2).errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
+        assertEquals(errors.get(fullTopic3).errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
 
     }
 
@@ -715,7 +792,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 );
 
         CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
-                KafkaCommonTestUtils.newPartitionsMap(fullTopic, 10), 5000, false);
+                KafkaCommonTestUtils.newPartitionsMap(fullTopic, 10)
+                        .setTimeoutMs(5000)
+                        .setValidateOnly(false));
 
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -726,41 +805,14 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         AbstractResponse response = responseFuture.get();
         assertTrue(response instanceof CreatePartitionsResponse);
         CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
-        assertEquals(createPartitionsResponse.errors().size(), 1);
-        assertTrue(createPartitionsResponse.errors().containsKey(fullTopic));
-        assertEquals(createPartitionsResponse.errors().get(fullTopic).error(), Errors.NONE);
+        assertEquals(createPartitionsResponse.data().results().size(), 1);
+        assertTrue(createPartitionsResponse.data().results().stream()
+                .anyMatch(r->r.name().equals(fullTopic)
+                        && r.errorCode() == Errors.NONE.code()));
 
     }
-
-    KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
-        AbstractRequest request = builder.build();
-        builder.apiKey();
-
-        ByteBuffer serializedRequest = request
-                .serialize(new RequestHeader(
-                        builder.apiKey(),
-                        request.version(),
-                        "fake_client_id",
-                        0)
-                );
-
-        ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
-
-        RequestHeader header = RequestHeader.parse(serializedRequest);
-
-        ApiKeys apiKey = header.apiKey();
-        short apiVersion = header.apiVersion();
-        Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
-        return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
-    }
-
-    private ProduceRequest createProduceRequest(String topic) {
-        Map<TopicPartition, MemoryRecords> partitionRecords = new HashMap<>();
-        TopicPartition topicPartition = new TopicPartition(topic, 0);
-        partitionRecords.put(topicPartition,
-                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
-        return ProduceRequest.Builder.forCurrentMagic((short) 1, 5000, partitionRecords).build();
+    private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
     }
 
     private void handleGroupImmigration() {

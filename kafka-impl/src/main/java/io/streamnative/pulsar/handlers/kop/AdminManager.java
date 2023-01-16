@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
-import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -46,9 +45,10 @@ import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.message.CreatePartitionsRequestData;
+import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
-import org.apache.kafka.common.requests.CreatePartitionsRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.MetadataResponse;
@@ -56,10 +56,10 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 
 @Slf4j
-class AdminManager {
+public class AdminManager {
 
     private final DelayedOperationPurgatory<DelayedOperation> topicPurgatory =
-            DelayedOperationPurgatory.<DelayedOperation>builder()
+            DelayedOperationPurgatory.builder()
                     .purgatoryName("topic")
                     .timeoutTimer(SystemTimer.builder().executorName("topic").build())
                     .build();
@@ -83,9 +83,10 @@ class AdminManager {
         topicPurgatory.shutdown();
     }
 
-    CompletableFuture<Map<String, ApiError>> createTopicsAsync(Map<String, TopicDetails> createInfo,
-                                                               int timeoutMs,
-                                                               String namespacePrefix) {
+    public CompletableFuture<Map<String, ApiError>> createTopicsAsync(
+            Map<String, CreateTopicsRequestData.CreatableTopic> createInfo,
+            int timeoutMs,
+            String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
         final AtomicInteger numTopics = new AtomicInteger(createInfo.size());
         final CompletableFuture<Map<String, ApiError>> resultFuture = new CompletableFuture<>();
@@ -119,7 +120,7 @@ class AdminManager {
                 }
                 return;
             }
-            int numPartitions = detail.numPartitions;
+            int numPartitions = detail.numPartitions();
             if (numPartitions == CreateTopicsRequest.NO_NUM_PARTITIONS) {
                 numPartitions = defaultNumPartitions;
             }
@@ -245,11 +246,10 @@ class AdminManager {
     }
 
     private DescribeConfigsResponse.ConfigEntry buildDummyEntryConfig(String configName, String configValue) {
-        DescribeConfigsResponse.ConfigEntry configEntry = new DescribeConfigsResponse.ConfigEntry(
+        return new DescribeConfigsResponse.ConfigEntry(
                 configName, configValue,
                 DescribeConfigsResponse.ConfigSource.DEFAULT_CONFIG, true, true,
                 Collections.emptyList());
-        return configEntry;
     }
 
     public void deleteTopic(String topicToDelete,
@@ -297,7 +297,7 @@ class AdminManager {
     }
 
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(
-            Map<String, CreatePartitionsRequest.PartitionDetails> createInfo,
+            Map<String, CreatePartitionsRequestData.CreatePartitionsTopic> createInfo,
             int timeoutMs,
             String namespacePrefix) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();
@@ -326,7 +326,7 @@ class AdminManager {
             try {
                 KopTopic kopTopic = new KopTopic(topic, namespacePrefix);
 
-                int numPartitions = newPartitions.totalCount();
+                int numPartitions = newPartitions.count();
                 if (numPartitions < 0) {
                     errorFuture.complete(ApiError.fromThrowable(
                             new InvalidPartitionsException("The partition '" + numPartitions + "' is negative")));
@@ -334,12 +334,17 @@ class AdminManager {
                     if (numTopics.decrementAndGet() == 0) {
                         complete.run();
                     }
-                } else if (newPartitions.newAssignments() != null
-                        && !newPartitions.newAssignments().isEmpty()) {
+                } else if (newPartitions.assignments() != null
+                        && !newPartitions.assignments().isEmpty()) {
                     errorFuture.complete(ApiError.fromThrowable(
                             new InvalidRequestException(
                                     "Kop server currently doesn't support manual assignment replica sets '"
-                                    + newPartitions.newAssignments() + "' the number of partitions must be specified ")
+                                            + newPartitions
+                                            .assignments()
+                                            .stream()
+                                            .map(CreatePartitionsRequestData.CreatePartitionsAssignment::brokerIds)
+                                            .map(String::valueOf).collect(Collectors.joining(", ", "[", "]"))
+                                            + "' the number of partitions must be specified ")
                     ));
 
                     if (numTopics.decrementAndGet() == 0) {
@@ -361,6 +366,7 @@ class AdminManager {
                 }
             }
         });
+
 
         if (timeoutMs <= 0) {
             complete.run();

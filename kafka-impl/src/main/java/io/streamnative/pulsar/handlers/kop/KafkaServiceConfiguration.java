@@ -19,19 +19,17 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
 
@@ -470,6 +468,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "KOP Enable the group level consumer metrics. (Default: false)"
+    )
+    private boolean kopEnableGroupLevelConsumerMetrics = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "The allowed namespaces to list topics with a comma separator.\n"
                     + " For example, \"public/default,public/kafka\".\n"
                     + "If it's not set or empty, the allowed namespaces will be \"<kafkaTenant>/<kafkaNamespace>\"."
@@ -478,21 +482,33 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Start the Schema Registry service."
+            doc = "Whether to enable the Schema Registry."
     )
     private boolean kopSchemaRegistryEnable = false;
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The name of the topic used by the Schema Registry service."
+            doc = "The name of the topic used by the Schema Registry."
     )
     private String kopSchemaRegistryTopicName = "__schema-registry";
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Schema Registry port."
+            doc = "The Schema Registry port."
     )
     private int kopSchemaRegistryPort = 8001;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Start the Migration service."
+    )
+    private boolean kopMigrationEnable = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Migration service port."
+    )
+    private int kopMigrationServicePort = 8002;
 
     @FieldContext(
             category = CATEGORY_KOP,
@@ -513,29 +529,21 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
-            final String errorMessage = "listener '" + listener + "' is invalid";
-            final Matcher matcher = EndPoint.matcherListener(listener, errorMessage);
-            String hostname = matcher.group(2);
-            if (hostname.isEmpty()) {
-                try {
-                    hostname = InetAddress.getLocalHost().getCanonicalHostName();
-                    listenersReBuilder.append(matcher.group(1))
-                            .append("://")
-                            .append(hostname)
-                            .append(":")
-                            .append(matcher.group(3));
-                } catch (UnknownHostException e) {
-                    throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
-                }
-            } else if (hostname.equals("advertisedAddress")) {
-                hostname = getAdvertisedAddress();
-                listenersReBuilder.append(matcher.group(1))
+            AdvertisedListener advertisedListener = AdvertisedListener.create(listener);
+            String hostname = advertisedListener.getHostname();
+            if (hostname.equals("advertisedAddress")) {
+                hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(getAdvertisedAddress());
+                listenersReBuilder.append(advertisedListener.getListenerName())
                         .append("://")
                         .append(hostname)
                         .append(":")
-                        .append(matcher.group(3));
+                        .append(advertisedListener.getPort());
             } else {
-                listenersReBuilder.append(listener);
+                listenersReBuilder.append(advertisedListener.getListenerName())
+                        .append("://")
+                        .append(advertisedListener.getHostname())
+                        .append(":")
+                        .append(advertisedListener.getPort());
             }
             listenersReBuilder.append(EndPoint.END_POINT_SEPARATOR);
         }

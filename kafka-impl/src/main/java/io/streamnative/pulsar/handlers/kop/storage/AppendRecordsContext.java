@@ -13,10 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
-import io.streamnative.pulsar.handlers.kop.RequestStats;
 import java.util.Map;
 import java.util.function.Consumer;
 import lombok.Getter;
@@ -35,10 +35,10 @@ public class AppendRecordsContext {
 
     private final Recycler.Handle<AppendRecordsContext> recyclerHandle;
     private KafkaTopicManager topicManager;
-    private RequestStats requestStats;
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
+    private ChannelHandlerContext ctx;
 
     private AppendRecordsContext(Recycler.Handle<AppendRecordsContext> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
@@ -46,27 +46,27 @@ public class AppendRecordsContext {
 
     // recycler and get for this object
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
-                                           final RequestStats requestStats,
                                            final Consumer<Integer> startSendOperationForThrottling,
                                            final Consumer<Integer> completeSendOperationForThrottling,
-                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap,
+                                           final ChannelHandlerContext ctx) {
         AppendRecordsContext context = RECYCLER.get();
         context.topicManager = topicManager;
-        context.requestStats = requestStats;
         context.startSendOperationForThrottling = startSendOperationForThrottling;
         context.completeSendOperationForThrottling = completeSendOperationForThrottling;
         context.pendingTopicFuturesMap = pendingTopicFuturesMap;
+        context.ctx = ctx;
 
         return context;
     }
 
     public void recycle() {
         topicManager = null;
-        requestStats = null;
         startSendOperationForThrottling = null;
         completeSendOperationForThrottling = null;
         pendingTopicFuturesMap = null;
         recyclerHandle.recycle(this);
+        ctx = null;
     }
 
 }

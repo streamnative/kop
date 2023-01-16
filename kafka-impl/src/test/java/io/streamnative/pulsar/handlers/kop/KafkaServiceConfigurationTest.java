@@ -39,6 +39,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.resources.NamespaceResources;
 import org.apache.pulsar.broker.resources.PulsarResources;
 import org.testng.annotations.Test;
@@ -88,13 +89,27 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
-    public void testKafkaListenersWithAdvertisedListener() throws UnknownHostException {
+    public void testKafkaListenersWithAdvertisedListener() {
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
         configuration.setAdvertisedAddress("advertise-me");
         configuration.setKafkaListeners("PLAINTEXT://0.0.0.0:9092");
         configuration.setKafkaAdvertisedListeners("PLAINTEXT://advertisedAddress:9092");
         assertEquals(configuration.getListeners(), "PLAINTEXT://0.0.0.0:9092");
         String expectAdvertisedListeners = "PLAINTEXT://advertise-me:9092";
+        assertEquals(configuration.getKafkaAdvertisedListeners(), expectAdvertisedListeners);
+    }
+
+    @Test
+    public void testKafkaListenersWithAdvertisedListenerComputedByPulsar() {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        // do not set the advertisedAddress on broker.conf
+        // Pulsar computes it in its own way
+        configuration.setAdvertisedAddress(null);
+        configuration.setKafkaListeners("PLAINTEXT://0.0.0.0:9092");
+        configuration.setKafkaAdvertisedListeners("PLAINTEXT://advertisedAddress:9092");
+        assertEquals(configuration.getListeners(), "PLAINTEXT://0.0.0.0:9092");
+        final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
+        String expectAdvertisedListeners = "PLAINTEXT://" + localAddress + ":9092";
         assertEquals(configuration.getKafkaAdvertisedListeners(), expectAdvertisedListeners);
     }
 
@@ -152,8 +167,8 @@ public class KafkaServiceConfigurationTest {
             ConfigurationUtils.create(stream, KafkaServiceConfiguration.class);
 
         assertNotNull(kafkaServiceConfig);
-        assertEquals(kafkaServiceConfig.getMetadataStoreUrl(), zkServer);
-        assertEquals(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled(), true);
+        assertEquals(kafkaServiceConfig.getMetadataStoreUrl(), "zk:" + zkServer);
+        assertTrue(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled());
         assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18.0);
         assertEquals(kafkaServiceConfig.getClusterName(), "usc");
         assertEquals(kafkaServiceConfig.getBrokerClientAuthenticationParameters(), "role:my-role");
@@ -257,5 +272,15 @@ public class KafkaServiceConfigurationTest {
                         "logged", pulsarService).get(),
                 Arrays.asList("logged/one", "logged/two"));
 
+    }
+
+    @Test
+    public void testKopMigrationServiceConfiguration() {
+        int port = 8005;
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setKopMigrationEnable(true);
+        configuration.setKopMigrationServicePort(port);
+        assertTrue(configuration.isKopMigrationEnable());
+        assertEquals(port, configuration.getKopMigrationServicePort());
     }
 }
