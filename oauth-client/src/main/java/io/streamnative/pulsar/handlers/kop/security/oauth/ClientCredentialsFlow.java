@@ -21,7 +21,9 @@ import com.google.common.annotations.VisibleForTesting;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
@@ -30,13 +32,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import lombok.Getter;
-import org.asynchttpclient.AsyncHttpClient;
-import org.asynchttpclient.DefaultAsyncHttpClient;
-import org.asynchttpclient.DefaultAsyncHttpClientConfig;
-import org.asynchttpclient.Response;
 
 /**
  * The OAuth 2.0 client credential flow.
@@ -52,47 +49,56 @@ public class ClientCredentialsFlow implements Closeable {
     private final Duration connectTimeout = Duration.ofSeconds(10);
     private final Duration readTimeout = Duration.ofSeconds(30);
     private final ClientConfig clientConfig;
-    private final AsyncHttpClient httpClient;
 
     public ClientCredentialsFlow(ClientConfig clientConfig) {
         this.clientConfig = clientConfig;
-        this.httpClient = new DefaultAsyncHttpClient(new DefaultAsyncHttpClientConfig.Builder()
-                .setFollowRedirect(true)
-                .setConnectTimeout((int) connectTimeout.toMillis())
-                .setReadTimeout((int) readTimeout.toMillis())
-                .build());
     }
 
     public OAuthBearerTokenImpl authenticate() throws IOException {
         final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
         final ClientInfo clientInfo = loadPrivateKey();
+        final URL url = new URL(tokenEndPoint);
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
         try {
+            con.setReadTimeout((int) readTimeout.toMillis());
+            con.setConnectTimeout((int) connectTimeout.toMillis());
+            con.setDoOutput(true);
+            con.setRequestMethod("POST");
+            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            con.setRequestProperty("Accept", "application/json");
             final String body = buildClientCredentialsBody(clientInfo);
-            final Response response = httpClient.preparePost(tokenEndPoint)
-                    .setHeader("Accept", "application/json")
-                    .setHeader("Content-Type", "application/x-www-form-urlencoded")
-                    .setBody(body)
-                    .execute()
-                    .get();
-            switch (response.getStatusCode()) {
-                case 200:
-                    return TOKEN_RESULT_READER.readValue(response.getResponseBodyAsBytes());
-                case 400: // Bad request
-                case 401: // Unauthorized
-                    throw new IOException(OBJECT_MAPPER.writeValueAsString(
-                            TOKEN_ERROR_READER.readValue(response.getResponseBodyAsBytes())));
-                default:
-                    throw new IOException("Failed to perform HTTP request:  "
-                            + response.getStatusCode() + " " + response.getStatusText());
+            try (OutputStream o = con.getOutputStream()) {
+                o.write(body.getBytes(StandardCharsets.UTF_8));
             }
-        } catch (UnsupportedEncodingException | InterruptedException | ExecutionException e) {
-            throw new IOException(e);
+            try (InputStream in = con.getInputStream()) {
+                return TOKEN_RESULT_READER.readValue(in);
+            }
+        } catch (IOException err) {
+            switch (con.getResponseCode()) {
+                case 400: // Bad request
+                case 401: { // Unauthorized
+                    IOException error;
+                    try {
+                        error =  new IOException(OBJECT_MAPPER.writeValueAsString(
+                                TOKEN_ERROR_READER.readValue(con.getErrorStream())));
+                        error.addSuppressed(err);
+                    } catch (Exception ignoreJsonError) {
+                        err.addSuppressed(ignoreJsonError);
+                        throw err;
+                    }
+                    throw error;
+                }
+                default:
+                    throw new IOException("Failed to perform HTTP request to " + tokenEndPoint
+                            + ":" + con.getResponseCode() + " " + con.getResponseMessage(), err);
+            }
+        } finally {
+            con.disconnect();
         }
     }
 
     @Override
     public void close() throws IOException {
-        httpClient.close();
     }
 
     @VisibleForTesting
@@ -100,13 +106,17 @@ public class ClientCredentialsFlow implements Closeable {
         // See RFC-8414 for this well-known URI
         final URL wellKnownMetadataUrl = URI.create(clientConfig.getIssuerUrl().toExternalForm()
                 + "/.well-known/openid-configuration").normalize().toURL();
-        final URLConnection connection = wellKnownMetadataUrl.openConnection();
-        connection.setConnectTimeout((int) connectTimeout.toMillis());
-        connection.setReadTimeout((int) readTimeout.toMillis());
-        connection.setRequestProperty("Accept", "application/json");
+        final HttpURLConnection connection = (HttpURLConnection) wellKnownMetadataUrl.openConnection();
+        try {
+            connection.setConnectTimeout((int) connectTimeout.toMillis());
+            connection.setReadTimeout((int) readTimeout.toMillis());
+            connection.setRequestProperty("Accept", "application/json");
 
-        try (InputStream inputStream = connection.getInputStream()) {
-            return METADATA_READER.readValue(inputStream);
+            try (InputStream inputStream = connection.getInputStream()) {
+                return METADATA_READER.readValue(inputStream);
+            }
+        } finally {
+            connection.disconnect();
         }
     }
 
