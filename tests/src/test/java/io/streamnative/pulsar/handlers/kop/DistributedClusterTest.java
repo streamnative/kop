@@ -641,11 +641,6 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         DescribeClusterResult describeClusterResult = admin.describeCluster();
         assertEquals(describeClusterResult.clusterId().get(), conf.getClusterName());
         assertNotNull(describeClusterResult.controller().get());
-        if (isProxyStarted()) {
-            // proxy hides the complexity of the cluster
-            assertEquals(1, describeClusterResult.nodes().get().size());
-        } else {
-            assertEquals(2, describeClusterResult.nodes().get().size());
-        }
+        assertEquals(2, describeClusterResult.nodes().get().size());
     }
 }
