@@ -23,7 +23,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
-import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;

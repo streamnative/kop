@@ -85,7 +85,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -1132,7 +1131,8 @@ public class PartitionLog {
                     }
 
 
-                    final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offsetToStart);
+                    final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture =
+                            tcm.removeCursorFuture(offsetToStart);
 
                     if (cursorFuture == null) {
                         // tcm is closed, just return a NONE error because the channel may be still active

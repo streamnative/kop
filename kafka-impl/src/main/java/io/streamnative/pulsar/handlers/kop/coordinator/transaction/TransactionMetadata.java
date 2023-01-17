@@ -480,9 +480,9 @@ public class TransactionMetadata {
     public void removePartition(TopicPartition topicPartition) {
         if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT) {
             throw new IllegalStateException(
-                    String.format("Transaction metadata's current state is %s, and its pending state is %s while "
-                                    + "trying to remove partitions whose txn marker has been sent, this is not expected",
-                            state, pendingState));
+                String.format("Transaction metadata's current state is %s, and its pending state is %s while "
+                                + "trying to remove partitions whose txn marker has been sent, this is not expected",
+                        state, pendingState));
         }
         Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
         newTopicPartitions.remove(topicPartition);
@@ -493,7 +493,8 @@ public class TransactionMetadata {
         if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT) {
             throw new IllegalStateException(
                     String.format("Transaction metadata's current state is %s, and its pending state is %s while "
-                                    + "trying to remove partitions whose txn marker has been sent, this is not expected",
+                                    + "trying to remove partitions whose txn marker has been sent, "
+                                    + "this is not expected",
                             state, pendingState));
         }
         Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);

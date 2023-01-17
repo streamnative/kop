@@ -19,14 +19,6 @@ import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
-import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
-import org.apache.pulsar.common.util.FutureUtil;
-
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -41,6 +33,14 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.common.util.FutureUtil;
+
 
 @Slf4j
 public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerStateManagerSnapshotBuffer {

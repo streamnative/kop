@@ -443,7 +443,8 @@ public class TransactionMarkerChannelManager {
                         switch (errors) {
                             case NOT_COORDINATOR:
                                 log.info("No longer the coordinator for transactionalId: {} while trying to append to "
-                                        + "transaction log, skip writing to transaction log", txnLogAppend.transactionalId);
+                                        + "transaction log, skip writing to transaction log",
+                                        txnLogAppend.transactionalId);
                                 break;
                             case COORDINATOR_NOT_AVAILABLE:
                                 log.info("Not available to append {}: possible causes include {}, {}, {} and {}; "
@@ -455,13 +456,14 @@ public class TransactionMarkerChannelManager {
                                 txnLogAppendRetryQueue.add(txnLogAppend);
                                 break;
                             case COORDINATOR_LOAD_IN_PROGRESS:
-                                log.info("Coordinator is loading the partition {} and hence cannot complete append of {}; "
-                                                + "skip writing to transaction log as the loading process should complete it",
+                                log.info("Coordinator is loading the partition {} and hence cannot complete append of "
+                                                + "{}; skip writing to transaction log as the loading process should "
+                                                + "complete it",
                                         txnStateManager.partitionFor(txnLogAppend.transactionalId), txnLogAppend);
                                 break;
                             default:
-                                String errorMsg = String.format("Unexpected error %s while appending to transaction log for %s",
-                                        errors.exceptionName(), txnLogAppend.transactionalId);
+                                String errorMsg = String.format("Unexpected error %s while appending to transaction "
+                                                + "log for %s", errors.exceptionName(), txnLogAppend.transactionalId);
                                 log.error(errorMsg);
                                 throw new IllegalStateException(errorMsg);
                         }

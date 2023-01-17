@@ -15,13 +15,12 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.common.naming.TopicName;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.common.naming.TopicName;
 
 @Slf4j
 public class PulsarPartitionedTopicProducerStateManagerSnapshotBuffer implements ProducerStateManagerSnapshotBuffer {

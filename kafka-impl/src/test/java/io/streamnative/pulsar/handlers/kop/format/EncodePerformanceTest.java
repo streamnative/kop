@@ -13,11 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static org.mockito.Mockito.mock;
+
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
-import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Optional;
@@ -30,9 +31,6 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.Time;
-
-import static org.mockito.Mockito.mock;
-
 
 /**
  * The performance test for {@link EntryFormatter#encode(EncodeRequest)}.

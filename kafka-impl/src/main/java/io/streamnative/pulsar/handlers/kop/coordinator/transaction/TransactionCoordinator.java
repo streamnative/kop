@@ -647,7 +647,8 @@ public class TransactionCoordinator {
                                 epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
 
                                 log.warn("The coordinator failed to write an epoch fence transition for producer "
-                                                + "{} to the transaction log with error {}. The epoch was increased to {} "
+                                                + "{} to the transaction log with error {}. "
+                                                + "The epoch was increased to {} "
                                                 + "but not returned to the client", transactionalId, errors,
                                         preAppendResult.getRight().getProducerEpoch());
                             }

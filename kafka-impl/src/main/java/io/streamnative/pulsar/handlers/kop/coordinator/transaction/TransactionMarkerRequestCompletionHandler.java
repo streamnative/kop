@@ -79,7 +79,8 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         break;
                     case COORDINATOR_LOAD_IN_PROGRESS:
                         log.info("I am loading the transaction partition that contains {} which means the current "
-                                        + "markers have to be obsoleted; cancel sending transaction markers {} to the brokers",
+                                        + "markers have to be obsoleted; cancel sending transaction markers {} to the "
+                                        + "brokers",
                                 transactionalId, txnMarker);
                         txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
                         break;
@@ -171,8 +172,8 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         case UNKNOWN_SERVER_ERROR:
                         case KAFKA_STORAGE_ERROR: // these are retriable errors
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
-                                            + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
-                                    error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
+                                            + "retrying with current coordinator epoch {}", transactionalId,
+                                    topicPartition, error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case LEADER_NOT_AVAILABLE:
@@ -190,8 +191,9 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         case TRANSACTION_COORDINATOR_FENCED:
                             log.info("Sending {}'s transaction marker for partition {} has permanently failed "
                                             + "with error {} with the current coordinator epoch {}; cancel sending any "
-                                            + "more transaction markers {} to the brokers", transactionalId, topicPartition,
-                                    error.exceptionName(), epochAndMetadata.getCoordinatorEpoch(), txnMarker);
+                                            + "more transaction markers {} to the brokers", transactionalId,
+                                    topicPartition, error.exceptionName(),
+                                    epochAndMetadata.getCoordinatorEpoch(), txnMarker);
                             txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
                             abortSendingAndRetryPartitions.abortSending.set(true);
                             break;

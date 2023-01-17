@@ -73,30 +73,30 @@ public class KafkaTopicManager {
             return CompletableFuture.completedFuture(null);
         }
         return requestHandler.getKafkaTopicManagerSharedState().getKafkaTopicConsumerManagerCache().computeIfAbsent(
-                topicName,
-                remoteAddress,
-                () -> {
-                    final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
-                    getTopic(topicName).whenComplete((persistentTopic, throwable) -> {
-                        if (throwable == null && persistentTopic.isPresent()) {
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
-                                        requestHandler.ctx.channel(), topicName, persistentTopic);
-                            }
-                            tcmFuture.complete(new KafkaTopicConsumerManager(requestHandler, persistentTopic.get()));
-                        } else {
-                            if (throwable != null) {
-                                log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' throws {}",
-                                        requestHandler.ctx.channel(), topicName, throwable.getMessage());
-                            } else { // persistentTopic == null
-                                log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' returns empty",
-                                        requestHandler.ctx.channel(), topicName);
-                            }
-                            tcmFuture.complete(null);
+            topicName,
+            remoteAddress,
+            () -> {
+                final CompletableFuture<KafkaTopicConsumerManager> tcmFuture = new CompletableFuture<>();
+                getTopic(topicName).whenComplete((persistentTopic, throwable) -> {
+                    if (throwable == null && persistentTopic.isPresent()) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}] Call getTopicConsumerManager for {}, and create TCM for {}.",
+                                    requestHandler.ctx.channel(), topicName, persistentTopic);
                         }
-                    });
-                    return tcmFuture;
-                }
+                        tcmFuture.complete(new KafkaTopicConsumerManager(requestHandler, persistentTopic.get()));
+                    } else {
+                        if (throwable != null) {
+                            log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' throws {}",
+                                    requestHandler.ctx.channel(), topicName, throwable.getMessage());
+                        } else { // persistentTopic == null
+                            log.error("[{}] Failed to getTopicConsumerManager caused by getTopic '{}' returns empty",
+                                    requestHandler.ctx.channel(), topicName);
+                        }
+                        tcmFuture.complete(null);
+                    }
+                });
+                return tcmFuture;
+            }
         );
     }
 
