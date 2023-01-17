@@ -607,6 +607,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .transactionLogNumPartitions(kafkaConfig.getKafkaTxnLogTopicNumPartitions())
                 .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
                 .transactionProducerIdTopicName(MetadataUtils.constructTxnProducerIdTopicBaseName(tenant, kafkaConfig))
+                .transactionProducerStateSnapshotTopicName(MetadataUtils.constructTxProducerStateTopicBaseName(tenant,
+                        kafkaConfig))
+                .producerStateTopicNumPartitions(kafkaConfig.getKafkaTxnProducerStateTopicNumPartitions())
                 .abortTimedOutTransactionsIntervalMs(kafkaConfig.getKafkaTxnAbortTimedOutTransactionCleanupIntervalMs())
                 .transactionalIdExpirationMs(kafkaConfig.getKafkaTransactionalIdExpirationMs())
                 .removeExpiredTransactionalIdsIntervalMs(
