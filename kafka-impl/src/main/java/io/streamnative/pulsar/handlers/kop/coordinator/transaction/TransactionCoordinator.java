@@ -20,24 +20,28 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMetadata.TxnTransitMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.PulsarPartitionedTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -68,6 +72,9 @@ public class TransactionCoordinator {
     @Getter
     private final TransactionStateManager txnManager;
     private final TransactionMarkerChannelManager transactionMarkerChannelManager;
+
+    @Getter
+    private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
     private final ScheduledExecutorService scheduler;
 
@@ -106,7 +113,9 @@ public class TransactionCoordinator {
                                      TransactionStateManager txnManager,
                                      Time time,
                                      String namespacePrefixForMetadata,
-                                     String namespacePrefixForUserTopics) {
+                                     String namespacePrefixForUserTopics,
+                                     Function<TransactionConfig, ProducerStateManagerSnapshotBuffer>
+                                             producerStateManagerSnapshotBufferFactory) {
         this.namespacePrefixForMetadata = namespacePrefixForMetadata;
         this.namespacePrefixForUserTopics = namespacePrefixForUserTopics;
         this.transactionConfig = transactionConfig;
@@ -115,6 +124,7 @@ public class TransactionCoordinator {
         this.transactionMarkerChannelManager = transactionMarkerChannelManager;
         this.scheduler = scheduler;
         this.time = time;
+        this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBufferFactory.apply(transactionConfig);
     }
 
     public static TransactionCoordinator of(String tenant,
@@ -124,7 +134,8 @@ public class TransactionCoordinator {
                                             MetadataStoreExtended metadataStore,
                                             KopBrokerLookupManager kopBrokerLookupManager,
                                             ScheduledExecutorService scheduler,
-                                            Time time) throws Exception {
+                                            Time time,
+                                            Executor recoveryExecutor) throws Exception {
         String namespacePrefixForMetadata = MetadataUtils.constructMetadataNamespace(tenant, kafkaConfig);
         String namespacePrefixForUserTopics = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
         TransactionStateManager transactionStateManager =
@@ -146,7 +157,11 @@ public class TransactionCoordinator {
                 transactionStateManager,
                 time,
                 namespacePrefixForMetadata,
-                namespacePrefixForUserTopics);
+                namespacePrefixForUserTopics,
+                (config) -> new PulsarPartitionedTopicProducerStateManagerSnapshotBuffer(
+                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient, recoveryExecutor,
+                        config.getProducerStateTopicNumPartitions())
+        );
     }
 
     /**
@@ -263,7 +278,7 @@ public class TransactionCoordinator {
                                 .producerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                                 .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                                 .state(TransactionState.EMPTY)
-                                .topicPartitions(Sets.newHashSet())
+                                .topicPartitions(Collections.emptySet())
                                 .txnLastUpdateTimestamp(time.milliseconds())
                                 .build();
                         epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));
@@ -310,7 +325,7 @@ public class TransactionCoordinator {
             return;
         }
         if (errorsOrEpochAndTransitMetadata.isLeft()) {
-            log.error("Failed to init producerId: {}", errorsOrEpochAndTransitMetadata.getLeft());
+            log.error("Failed to init producerId {} : {}", transactionalId, errorsOrEpochAndTransitMetadata.getLeft());
             responseCallback.accept(initTransactionError(errorsOrEpochAndTransitMetadata.getLeft()));
             return;
         }
@@ -323,8 +338,10 @@ public class TransactionCoordinator {
                     false,
                     errors -> {
                         if (errors != Errors.NONE) {
+                            log.error("Cannot initProducer {} due to {} error", transactionalId, errors);
                             responseCallback.accept(initTransactionError(errors));
                         } else {
+                            // reply to client and let it backoff and retry
                             responseCallback.accept(initTransactionError(Errors.CONCURRENT_TRANSACTIONS));
                         }
                     });
@@ -574,6 +591,11 @@ public class TransactionCoordinator {
             return;
         }
 
+        if (!isFromClient) {
+            log.info("endTransaction - before endTxnPreAppend {} metadata {}",
+                    transactionalId, epochAndMetadata.get().getTransactionMetadata());
+        }
+
         Either<Errors, TxnTransitMetadata> preAppendResult = endTxnPreAppend(
                 epochAndMetadata.get(), transactionalId, producerId, isFromClient, producerEpoch,
                 txnMarkerResult, isEpochFence);
@@ -596,9 +618,16 @@ public class TransactionCoordinator {
 
                     @Override
                     public void fail(Errors errors) {
+
+                        if (!isFromClient) {
+                            log.info("endTransaction - AFTER failed appendTransactionToLog {} metadata {}"
+                                            +  "isEpochFence {}",
+                                    transactionalId, epochAndMetadata.get().getTransactionMetadata(), isEpochFence);
+                        }
+
                         log.info("Aborting sending of transaction markers and returning {} error to client for {}'s "
-                                + "EndTransaction request of {}, since appending {} to transaction log with "
-                                + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
+                                        + "EndTransaction request of {}, since appending {} to transaction log with "
+                                        + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
                                 preAppendResult.getRight(), coordinatorEpoch);
 
                         if (isEpochFence.get()) {
@@ -611,12 +640,16 @@ public class TransactionCoordinator {
                             }
                             CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getRight().get();
                             if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
-                                    // This was attempted epoch fence that failed, so mark this state on the metadata
+                                // This was attempted epoch fence that failed, so mark this state on the metadata
                                 epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
-                                    log.warn("The coordinator failed to write an epoch fence transition for producer "
-                                            + "{} to the transaction log with error {}. The epoch was increased to {} "
-                                            + "but not returned to the client", transactionalId, errors,
-                                            preAppendResult.getRight().getProducerEpoch());
+
+                                // this line is not present in Kafka code base ?
+                                epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
+
+                                log.warn("The coordinator failed to write an epoch fence transition for producer "
+                                                + "{} to the transaction log with error {}. The epoch was increased to {} "
+                                                + "but not returned to the client", transactionalId, errors,
+                                        preAppendResult.getRight().getProducerEpoch());
                             }
                         }
 
@@ -627,13 +660,13 @@ public class TransactionCoordinator {
     }
 
     private Either<Errors, TxnTransitMetadata> endTxnPreAppend(
-                                                        CoordinatorEpochAndTxnMetadata epochAndMetadata,
-                                                        String transactionalId,
-                                                        long producerId,
-                                                        boolean isFromClient,
-                                                        short producerEpoch,
-                                                        TransactionResult txnMarkerResult,
-                                                        AtomicBoolean isEpochFence) {
+            CoordinatorEpochAndTxnMetadata epochAndMetadata,
+            String transactionalId,
+            long producerId,
+            boolean isFromClient,
+            short producerEpoch,
+            TransactionResult txnMarkerResult,
+            AtomicBoolean isEpochFence) {
         TransactionMetadata txnMetadata = epochAndMetadata.getTransactionMetadata();
 
         return txnMetadata.inLock(() -> {
@@ -815,8 +848,8 @@ public class TransactionCoordinator {
     }
 
     private Errors logInvalidStateTransitionAndReturnError(String transactionalId,
-                                                         TransactionState transactionState,
-                                                         TransactionResult transactionResult) {
+                                                           TransactionState transactionState,
+                                                           TransactionResult transactionResult) {
         log.debug("TransactionalId: {}'s state is {}, but received transaction marker result to send: {}",
                 transactionalId, transactionState, transactionResult);
         return Errors.INVALID_TXN_STATE;
@@ -899,6 +932,7 @@ public class TransactionCoordinator {
         producerIdManager.shutdown();
         txnManager.shutdown();
         transactionMarkerChannelManager.close();
+        producerStateManagerSnapshotBuffer.shutdown();
         scheduler.shutdown();
         // TODO shutdown txn
         log.info("Shutdown transaction coordinator complete.");

@@ -52,6 +52,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 import org.apache.pulsar.client.api.Authentication;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
@@ -207,16 +208,16 @@ public class TransactionMarkerChannelManager {
     public void channelFailed(InetSocketAddress socketAddress, TransactionMarkerChannelHandler handler) {
         log.error("channelFailed {} {}", socketAddress, handler);
         handlerMap.computeIfPresent(socketAddress, (kek, value) -> {
-           if (value.isCompletedExceptionally() || value.isCancelled()) {
-               return null;
-           }
-           final TransactionMarkerChannelHandler currentValue = value.getNow(null);
-           if (currentValue == handler) {
-               log.error("channelFailed removing {} {}", socketAddress, handler);
-               // remove the entry only if it is the expected value
-               return null;
-           }
-           return value;
+            if (value.isCompletedExceptionally() || value.isCancelled()) {
+                return null;
+            }
+            final TransactionMarkerChannelHandler currentValue = value.getNow(null);
+            if (currentValue == handler) {
+                log.error("channelFailed removing {} {}", socketAddress, handler);
+                // remove the entry only if it is the expected value
+                return null;
+            }
+            return value;
         });
     }
 
@@ -278,6 +279,7 @@ public class TransactionMarkerChannelManager {
                     .getPartitionName(topicPartition.partition());
             CompletableFuture<Void> addFuture = new CompletableFuture<>();
             addressFutureList.add(addFuture);
+
             kopBrokerLookupManager.isTopicExists(pulsarTopic)
                     .thenAccept(isTopicExists -> {
                         if (!isTopicExists) {
@@ -286,7 +288,7 @@ public class TransactionMarkerChannelManager {
                             if (transactionState.isLeft()) {
                                 log.info("Encountered {} trying to fetch transaction metadata for {} with coordinator "
                                                 + "epoch {}; cancel sending markers to its partition leaders"
-                                , transactionState.getLeft(), transactionalId, coordinatorEpoch);
+                                        , transactionState.getLeft(), transactionalId, coordinatorEpoch);
                                 transactionsWithPendingMarkers.remove(transactionalId);
                                 addFuture.complete(null);
                                 return;
@@ -308,7 +310,7 @@ public class TransactionMarkerChannelManager {
                                     TransactionMetadata txnMetadata =
                                             epochAndTxnMetadata.get().getTransactionMetadata();
                                     txnMetadata.inLock(() -> {
-                                        topicPartitions.forEach(txnMetadata::removePartition);
+                                        txnMetadata.removePartitions(topicPartitions);
                                         return null;
                                     });
                                     maybeWriteTxnCompletion(transactionalId);
@@ -329,7 +331,13 @@ public class TransactionMarkerChannelManager {
 
                         addressFuture.whenComplete((address, throwable) -> {
                             if (throwable != null) {
-                                log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
+                                if (throwable instanceof PulsarClientException.LookupException
+                                        || throwable.getCause() instanceof PulsarClientException.LookupException) {
+                                    log.warn("Failed to find broker for topic partition {} - {}", topicPartition,
+                                            throwable + "");
+                                } else {
+                                    log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
+                                }
                                 unknownBrokerTopicList.add(topicPartition);
                                 addFuture.complete(null);
                                 return;
@@ -420,45 +428,45 @@ public class TransactionMarkerChannelManager {
         // try to append to the transaction log
         txnStateManager.appendTransactionToLog(txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch,
                 txnLogAppend.newMetadata, new TransactionStateManager.ResponseCallback() {
-            @Override
-            public void complete() {
-                if (log.isDebugEnabled()) {
-                    log.debug("Completed transaction for {} with coordinator epoch {}, "
-                                    + "final state after commit: {}",
-                            txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch,
-                            txnLogAppend.txnMetadata.getState());
-                }
-            }
+                    @Override
+                    public void complete() {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Completed transaction for {} with coordinator epoch {}, "
+                                            + "final state after commit: {}",
+                                    txnLogAppend.transactionalId, txnLogAppend.coordinatorEpoch,
+                                    txnLogAppend.txnMetadata.getState());
+                        }
+                    }
 
-            @Override
-            public void fail(Errors errors) {
-                switch (errors) {
-                    case NOT_COORDINATOR:
-                        log.info("No longer the coordinator for transactionalId: {} while trying to append to "
-                                + "transaction log, skip writing to transaction log", txnLogAppend.transactionalId);
-                        break;
-                    case COORDINATOR_NOT_AVAILABLE:
-                        log.info("Not available to append {}: possible causes include {}, {}, {} and {}; "
-                                + "retry appending", txnLogAppend, Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                Errors.NOT_ENOUGH_REPLICAS, Errors.NOT_ENOUGH_REPLICAS_AFTER_APPEND,
-                                Errors.REQUEST_TIMED_OUT);
+                    @Override
+                    public void fail(Errors errors) {
+                        switch (errors) {
+                            case NOT_COORDINATOR:
+                                log.info("No longer the coordinator for transactionalId: {} while trying to append to "
+                                        + "transaction log, skip writing to transaction log", txnLogAppend.transactionalId);
+                                break;
+                            case COORDINATOR_NOT_AVAILABLE:
+                                log.info("Not available to append {}: possible causes include {}, {}, {} and {}; "
+                                                + "retry appending", txnLogAppend, Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                        Errors.NOT_ENOUGH_REPLICAS, Errors.NOT_ENOUGH_REPLICAS_AFTER_APPEND,
+                                        Errors.REQUEST_TIMED_OUT);
 
-                        // enqueue for retry
-                        txnLogAppendRetryQueue.add(txnLogAppend);
-                        break;
-                    case COORDINATOR_LOAD_IN_PROGRESS:
-                        log.info("Coordinator is loading the partition {} and hence cannot complete append of {}; "
-                                + "skip writing to transaction log as the loading process should complete it",
-                                txnStateManager.partitionFor(txnLogAppend.transactionalId), txnLogAppend);
-                        break;
-                    default:
-                        String errorMsg = String.format("Unexpected error %s while appending to transaction log for %s",
-                                errors.exceptionName(), txnLogAppend.transactionalId);
-                        log.error(errorMsg);
-                        throw new IllegalStateException(errorMsg);
-                }
-            }
-        }, null);
+                                // enqueue for retry
+                                txnLogAppendRetryQueue.add(txnLogAppend);
+                                break;
+                            case COORDINATOR_LOAD_IN_PROGRESS:
+                                log.info("Coordinator is loading the partition {} and hence cannot complete append of {}; "
+                                                + "skip writing to transaction log as the loading process should complete it",
+                                        txnStateManager.partitionFor(txnLogAppend.transactionalId), txnLogAppend);
+                                break;
+                            default:
+                                String errorMsg = String.format("Unexpected error %s while appending to transaction log for %s",
+                                        errors.exceptionName(), txnLogAppend.transactionalId);
+                                log.error(errorMsg);
+                                throw new IllegalStateException(errorMsg);
+                        }
+                    }
+                }, null);
     }
 
     public void removeMarkersForTxnTopicPartition(Integer txnTopicPartitionId) {

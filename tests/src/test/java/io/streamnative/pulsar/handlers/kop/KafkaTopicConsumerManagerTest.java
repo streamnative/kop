@@ -27,6 +27,7 @@ import static org.testng.Assert.fail;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -58,6 +59,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterMethod;
@@ -77,9 +79,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
-        // Perform topic lookup to let broker acquire the ownership of namespace bundles so that
-        // `BrokerService#getOrCreateTopic` won't fail with "Namespace bundle not served by this instance".
-        this.triggerTopicLookup(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace() + "/setup-topic", 16);
+        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
+                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
         kafkaRequestHandler = newRequestHandler();
 
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
@@ -87,7 +88,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         doReturn(mockChannel).when(mockCtx).channel();
         kafkaRequestHandler.ctx = mockCtx;
 
-        kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler);
+        kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler,
+                new KafkaTopicLookupService(pulsar.getBrokerService()));
         kafkaTopicManager.setRemoteAddress(InternalServerCnx.MOCKED_REMOTE_ADDRESS);
     }
 
@@ -99,10 +101,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
     private void registerPartitionedTopic(final String topic) throws PulsarAdminException {
         admin.topics().createPartitionedTopic(topic, 1);
-        pulsar.getBrokerService().getOrCreateTopic(topic).exceptionally(e -> {
-            log.error("Failed to create topic {}", topic, e);
-            return null;
-        });
+        pulsar.getBrokerService().getOrCreateTopic(topic);
     }
 
     @Test
@@ -243,7 +242,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         }
 
         CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager
-            .getTopicConsumerManager(pulsarPartitionName);
+                .getTopicConsumerManager(pulsarPartitionName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
@@ -290,34 +289,34 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         AtomicLong backlog = new AtomicLong(0);
         AtomicInteger cursorCount = new AtomicInteger(0);
         retryStrategically(
-            ((test) -> {
-                backlog.set(persistentTopic.getStats(true, true, true).backlogSize);
-                return backlog.get() == expectedBacklog;
-            }),
-            5,
-            200);
+                ((test) -> {
+                    backlog.set(persistentTopic.getStats(true, true, true).backlogSize);
+                    return backlog.get() == expectedBacklog;
+                }),
+                5,
+                200);
 
         if (log.isDebugEnabled()) {
             TopicStats topicStats = persistentTopic.getStats(true, true, true);
             log.info(" dump topicStats for topic : {}, storageSize: {}, backlogSize: {}, expected: {}",
-                persistentTopic.getName(),
-                topicStats.getStorageSize(), topicStats.getBacklogSize(), expectedBacklog);
+                    persistentTopic.getName(),
+                    topicStats.getStorageSize(), topicStats.getBacklogSize(), expectedBacklog);
 
             topicStats.getSubscriptions().forEach((subname, substats) -> {
                 log.debug(" dump sub: subname - {}, activeConsumerName {}, "
-                        + "consumers {}, msgBacklog {}, unackedMessages {}.",
-                    subname,
-                    substats.getActiveConsumerName(), substats.getConsumers(),
-                    substats.getMsgBacklog(), substats.getUnackedMessages());
+                                + "consumers {}, msgBacklog {}, unackedMessages {}.",
+                        subname,
+                        substats.getActiveConsumerName(), substats.getConsumers(),
+                        substats.getMsgBacklog(), substats.getUnackedMessages());
             });
         }
 
         persistentTopic.getManagedLedger().getCursors().forEach(cursor -> {
             if (log.isDebugEnabled()) {
                 log.debug(" dump cursor: cursor - {}, durable: {}, numberEntryis: {},"
-                        + " readPosition: {}, markdeletePosition: {}",
-                    cursor.getName(), cursor.isDurable(), cursor.getNumberOfEntries(),
-                    cursor.getReadPosition(), cursor.getMarkDeletedPosition());
+                                + " readPosition: {}, markdeletePosition: {}",
+                        cursor.getName(), cursor.isDurable(), cursor.getNumberOfEntries(),
+                        cursor.getReadPosition(), cursor.getMarkDeletedPosition());
             }
             cursorCount.incrementAndGet();
         });

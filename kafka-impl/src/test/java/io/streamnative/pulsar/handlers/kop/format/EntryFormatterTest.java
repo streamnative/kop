@@ -20,6 +20,8 @@ import static org.mockito.Mockito.mock;
 
 import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.io.DataOutputStream;
@@ -80,7 +82,8 @@ public class EntryFormatterTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            mock(KafkaTopicLookupService.class),
+            new MemoryProducerStateManagerSnapshotBuffer());
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

@@ -48,6 +48,11 @@ public class MetadataUtils {
                 + "/" + Topic.TRANSACTION_STATE_TOPIC_NAME;
     }
 
+    public static String constructTxProducerStateTopicBaseName(String tenant, KafkaServiceConfiguration conf) {
+        return tenant + "/" + conf.getKafkaMetadataNamespace()
+                + "/__transaction_producer_state";
+    }
+
     public static String constructTxnProducerIdTopicBaseName(String tenant, KafkaServiceConfiguration conf) {
         return tenant + "/" + conf.getKafkaMetadataNamespace()
                 + "/__transaction_producerid_generator";
@@ -85,6 +90,10 @@ public class MetadataUtils {
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf, kopTopic,
                 conf.getKafkaTxnLogTopicNumPartitions(), false);
+        KopTopic kopTopicProducerState = new KopTopic(constructTxProducerStateTopicBaseName(tenant, conf),
+                constructMetadataNamespace(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf,
+                kopTopicProducerState, conf.getKafkaTxnProducerStateTopicNumPartitions(), false);
         if (conf.isKafkaTransactionProducerIdsStoredOnPulsar()) {
             KopTopic producerIdKopTopic = new KopTopic(constructTxnProducerIdTopicBaseName(tenant, conf),
                     constructMetadataNamespace(tenant, conf));

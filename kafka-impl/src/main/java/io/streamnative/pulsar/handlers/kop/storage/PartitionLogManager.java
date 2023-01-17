@@ -16,52 +16,125 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Manage {@link PartitionLog}.
  */
 @AllArgsConstructor
+@Slf4j
 public class PartitionLogManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
-    private final Map<String, PartitionLog> logMap;
+    private final Map<String, CompletableFuture<PartitionLog>> logMap;
     private final Time time;
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
+
+    private final KafkaTopicLookupService kafkaTopicLookupService;
+
+    private final Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer;
+
+    private final OrderedExecutor recoveryExecutor;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                RequestStats requestStats,
                                final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
-                               Time time) {
+                               Time time,
+                               KafkaTopicLookupService kafkaTopicLookupService,
+                               Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
+                               OrderedExecutor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
         this.entryfilterMap = entryfilterMap;
         this.time = time;
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
+        this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
+        this.recoveryExecutor = recoveryExecutor;
     }
 
-    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
+        String tenant = TopicName.get(kopTopic).getTenant();
+        ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
+        CompletableFuture<PartitionLog> res =  logMap.computeIfAbsent(kopTopic, key -> {
+            log.info("init getLog {}", key);
+            CompletableFuture<PartitionLog> result = new PartitionLog(kafkaConfig, requestStats,
+                    time, topicPartition, key, entryfilterMap,
+                    kafkaTopicLookupService,
+                    prodPerTenant)
+                    .initialise(recoveryExecutor);
 
-        return logMap.computeIfAbsent(kopTopic, key -> {
-                return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryfilterMap,
-                        new ProducerStateManager(kopTopic));
+            result.whenComplete((___, error) -> {
+                if (error != null) {
+                    // in case of failure we have to remove the CompletableFuture from the map
+                    log.error("Recovery of {} failed", key, error);
+                    logMap.remove(key, result);
+                }
+            });
+
+            return result;
         });
+        if (res.isCompletedExceptionally()) {
+            logMap.remove(kopTopic, res);
+        }
+        return res;
     }
 
-    public PartitionLog removeLog(String topicName) {
+    public CompletableFuture<PartitionLog> removeLog(String topicName) {
+        log.info("removePartitionLog {}", topicName);
         return logMap.remove(topicName);
     }
 
     public int size() {
         return logMap.size();
+    }
+
+    public CompletableFuture<Void> takeProducerStateSnapshots() {
+        List<CompletableFuture<Void>> handles = new ArrayList<>();
+        logMap.values().forEach(log -> {
+            if (log.isDone() && !log.isCompletedExceptionally()) {
+                PartitionLog partitionLog = log.getNow(null);
+                if (partitionLog != null) {
+                    handles.add(partitionLog
+                            .getProducerStateManager()
+                            .takeSnapshot(recoveryExecutor)
+                            .thenApply(___ -> null));
+                }
+            }
+        });
+        return FutureUtil.waitForAll(handles);
+    }
+
+    public CompletableFuture<?> purgeAbortedTxns() {
+        List<CompletableFuture<Long>> handles = new ArrayList<>();
+        logMap.values().forEach(log -> {
+            if (log.isDone() && !log.isCompletedExceptionally()) {
+                PartitionLog partitionLog = log.getNow(null);
+                if (partitionLog != null) {
+                    handles.add(partitionLog
+                            .purgeAbortedTxns());
+                }
+            }
+        });
+        return FutureUtil
+                .waitForAll(handles);
     }
 }
 

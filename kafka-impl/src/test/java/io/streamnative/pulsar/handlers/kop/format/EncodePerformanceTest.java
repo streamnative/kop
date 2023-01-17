@@ -14,6 +14,8 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
@@ -28,6 +30,8 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.Time;
+
+import static org.mockito.Mockito.mock;
 
 
 /**
@@ -48,7 +52,8 @@ public class EncodePerformanceTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            mock(KafkaTopicLookupService.class),
+            new MemoryProducerStateManagerSnapshotBuffer());
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

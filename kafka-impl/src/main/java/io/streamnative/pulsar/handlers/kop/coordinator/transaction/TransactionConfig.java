@@ -26,6 +26,7 @@ import lombok.Data;
 public class TransactionConfig {
 
     public static final String DefaultTransactionMetadataTopicName = "public/default/__transaction_state";
+    public static final String DefaultProducerStateSnapshotTopicName = "public/default/__transaction_producer_state";
     public static final String DefaultProducerIdTopicName = "public/default/__transaction_producerid_generator";
     public static final long DefaultTransactionsMaxTimeoutMs = TimeUnit.MINUTES.toMillis(15);
     public static final long DefaultTransactionalIdExpirationMs = TimeUnit.DAYS.toMillis(7);
@@ -34,6 +35,7 @@ public class TransactionConfig {
     public static final int DefaultTransactionCoordinatorSchedulerNum = 1;
     public static final int DefaultTransactionStateManagerSchedulerNum = 1;
     public static final int DefaultTransactionLogNumPartitions = 8;
+    public static final int DefaultTransactionStateNumPartitions = 8;
 
     @Default
     private int brokerId = 1;
@@ -42,11 +44,15 @@ public class TransactionConfig {
     @Default
     private String transactionMetadataTopicName = DefaultTransactionMetadataTopicName;
     @Default
+    private String transactionProducerStateSnapshotTopicName = DefaultProducerStateSnapshotTopicName;
+    @Default
     private long transactionMaxTimeoutMs = DefaultTransactionsMaxTimeoutMs;
     @Default
     private long transactionalIdExpirationMs = DefaultTransactionalIdExpirationMs;
     @Default
     private int transactionLogNumPartitions = DefaultTransactionLogNumPartitions;
+    @Default
+    private int producerStateTopicNumPartitions = DefaultTransactionStateNumPartitions;
     @Default
     private long abortTimedOutTransactionsIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;
     @Default

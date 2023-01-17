@@ -128,13 +128,13 @@ public class TransactionMetadata {
     }
 
     public TxnTransitMetadata prepareTransitionTo(TransactionState newState,
-                                     long newProducerId,
-                                     short newEpoch,
-                                     short newLastEpoch,
-                                     int newTxnTimeoutMs,
-                                     Set<TopicPartition> newTopicPartitions,
-                                     long newTxnStartTimestamp,
-                                     long updateTimestamp) {
+                                                  long newProducerId,
+                                                  short newEpoch,
+                                                  short newLastEpoch,
+                                                  int newTxnTimeoutMs,
+                                                  Set<TopicPartition> newTopicPartitions,
+                                                  long newTxnStartTimestamp,
+                                                  long updateTimestamp) {
         if (pendingState.isPresent()) {
             throw new IllegalStateException("Preparing transaction state transition to " + newState
                     + " while it already a pending state " + pendingState.get());
@@ -157,7 +157,7 @@ public class TransactionMetadata {
                     .lastProducerEpoch(newLastEpoch)
                     .txnTimeoutMs(newTxnTimeoutMs)
                     .txnState(newState)
-                    .topicPartitions(newTopicPartitions)
+                    .topicPartitions(Collections.unmodifiableSet(newTopicPartitions))
                     .txnStartTimestamp(newTxnStartTimestamp)
                     .txnLastUpdateTimestamp(updateTimestamp).build();
             if (log.isDebugEnabled()) {
@@ -236,7 +236,7 @@ public class TransactionMetadata {
                         throwStateTransitionFailure(transitMetadata);
                     } else {
                         txnStartTimestamp = transitMetadata.txnStartTimestamp;
-                        topicPartitions.addAll(transitMetadata.topicPartitions);
+                        addPartitions(transitMetadata.topicPartitions);
                     }
                     break;
                 case PREPARE_ABORT: // from endTxn
@@ -258,7 +258,7 @@ public class TransactionMetadata {
                         throwStateTransitionFailure(transitMetadata);
                     } else {
                         this.txnStartTimestamp = transitMetadata.txnStartTimestamp;
-                        this.topicPartitions.clear();
+                        this.topicPartitions = Collections.emptySet();
                     }
                     break;
                 case PREPARE_EPOCH_FENCE:
@@ -369,7 +369,7 @@ public class TransactionMetadata {
             } else {
                 // Otherwise, the producer has a fenced epoch and should receive an PRODUCER_FENCED error
                 log.info("Expected producer epoch {} does not match current "
-                        + "producer epoch {} or previous producer epoch {}",
+                                + "producer epoch {} or previous producer epoch {}",
                         expectedProducerEpoch, producerEpoch, lastProducerEpoch);
                 errorsOrBumpEpochResult = Either.left(Errors.PRODUCER_FENCED);
             }
@@ -387,9 +387,9 @@ public class TransactionMetadata {
     }
 
     public TxnTransitMetadata prepareProducerIdRotation(Long newProducerId,
-                                  Integer newTxnTimeoutMs,
-                                  Long updateTimestamp,
-                                  boolean recordLastEpoch) {
+                                                        Integer newTxnTimeoutMs,
+                                                        Long updateTimestamp,
+                                                        boolean recordLastEpoch) {
         if (hasPendingTransaction()) {
             throw new IllegalStateException("Cannot rotate producer ids while a transaction is still pending");
         }
@@ -481,14 +481,30 @@ public class TransactionMetadata {
         if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT) {
             throw new IllegalStateException(
                     String.format("Transaction metadata's current state is %s, and its pending state is %s while "
-                                + "trying to remove partitions whose txn marker has been sent, this is not expected",
-                                state, pendingState));
+                                    + "trying to remove partitions whose txn marker has been sent, this is not expected",
+                            state, pendingState));
         }
-        topicPartitions.remove(topicPartition);
+        Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
+        newTopicPartitions.remove(topicPartition);
+        this.topicPartitions = Collections.unmodifiableSet(newTopicPartitions);
+    }
+
+    public void removePartitions(Set<TopicPartition> topicPartitions) {
+        if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT) {
+            throw new IllegalStateException(
+                    String.format("Transaction metadata's current state is %s, and its pending state is %s while "
+                                    + "trying to remove partitions whose txn marker has been sent, this is not expected",
+                            state, pendingState));
+        }
+        Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
+        newTopicPartitions.removeAll(topicPartitions);
+        this.topicPartitions = Collections.unmodifiableSet(newTopicPartitions);
     }
 
     public void addPartitions(Set<TopicPartition> partitions) {
-        topicPartitions.addAll(partitions);
+        Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
+        newTopicPartitions.addAll(partitions);
+        this.topicPartitions = Collections.unmodifiableSet(newTopicPartitions);
     }
 
     public boolean pendingTransitionInProgress() {

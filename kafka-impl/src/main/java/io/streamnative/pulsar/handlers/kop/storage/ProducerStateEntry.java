@@ -30,7 +30,7 @@ import org.apache.kafka.common.record.RecordBatch;
 @AllArgsConstructor
 public class ProducerStateEntry {
 
-    private Long producerId;
+    private long producerId;
     private Short producerEpoch;
     private Integer coordinatorEpoch;
     private Long lastTimestamp;
@@ -38,7 +38,8 @@ public class ProducerStateEntry {
 
 
     public boolean maybeUpdateProducerEpoch(Short producerEpoch) {
-        if (!this.producerEpoch.equals(producerEpoch)) {
+        if (this.producerEpoch == null
+                || !this.producerEpoch.equals(producerEpoch)) {
             this.producerEpoch = producerEpoch;
             return true;
         } else {
@@ -52,7 +53,7 @@ public class ProducerStateEntry {
         this.lastTimestamp(nextEntry.lastTimestamp);
     }
 
-    public static ProducerStateEntry empty(Long producerId){
+    public static ProducerStateEntry empty(long producerId){
         return new ProducerStateEntry(producerId,
                 RecordBatch.NO_PRODUCER_EPOCH, -1, RecordBatch.NO_TIMESTAMP, Optional.empty());
     }

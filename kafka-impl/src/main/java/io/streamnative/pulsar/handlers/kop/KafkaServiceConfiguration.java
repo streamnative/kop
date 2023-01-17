@@ -55,6 +55,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private static final int OffsetsMessageTTL = 3 * 24 * 3600;
     // txn configuration
     public static final int DefaultTxnLogTopicNumPartitions = 50;
+    public static final int DefaultTxnProducerStateLogTopicNumPartitions = 8;
     public static final int DefaultTxnCoordinatorSchedulerNum = 1;
     public static final int DefaultTxnStateManagerSchedulerNum = 1;
     public static final long DefaultAbortTimedOutTransactionsIntervalMs = TimeUnit.SECONDS.toMillis(10);
@@ -415,9 +416,39 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
+            doc = "Flag to enable disable producer state recovery"
+    )
+    private boolean kafkaTransactionStateProducerRecoveryEnabled = true;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
             doc = "Number of partitions for the transaction log topic"
     )
     private int kafkaTxnLogTopicNumPartitions = DefaultTxnLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Number of partitions for the transaction producer state topic"
+    )
+    private int kafkaTxnProducerStateTopicNumPartitions = DefaultTxnProducerStateLogTopicNumPartitions;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Interval for taking snapshots of the status of pending transactions"
+    )
+    private int kafkaTxnProducerStateTopicSnapshotIntervalSeconds = 300;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Interval for purging aborted transactions from memory (requires reads from storage)"
+    )
+    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 0;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Number of threads dedicated to transaction recovery"
+    )
+    private int kafkaTransactionRecoveryNumThreads = 8;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,

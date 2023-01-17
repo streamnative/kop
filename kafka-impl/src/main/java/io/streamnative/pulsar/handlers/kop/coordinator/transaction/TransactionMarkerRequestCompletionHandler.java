@@ -79,7 +79,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         break;
                     case COORDINATOR_LOAD_IN_PROGRESS:
                         log.info("I am loading the transaction partition that contains {} which means the current "
-                                + "markers have to be obsoleted; cancel sending transaction markers {} to the brokers",
+                                        + "markers have to be obsoleted; cancel sending transaction markers {} to the brokers",
                                 transactionalId, txnMarker);
                         txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
                         break;
@@ -163,15 +163,15 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                             throw new IllegalStateException("Received fatal error " + error.exceptionName()
                                     + " while sending txn marker for " + transactionalId);
                         case UNKNOWN_TOPIC_OR_PARTITION:
-                        // this error was introduced in newer kafka client version,
-                        // recover this condition after bump the kafka client version
-                        // case NOT_LEADER_OR_FOLLOWER:
+                            // this error was introduced in newer kafka client version,
+                            // recover this condition after bump the kafka client version
                         case NOT_ENOUGH_REPLICAS:
                         case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
                         case REQUEST_TIMED_OUT:
+                        case UNKNOWN_SERVER_ERROR:
                         case KAFKA_STORAGE_ERROR: // these are retriable errors
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
-                                    + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
+                                            + "retrying with current coordinator epoch {}", transactionalId, topicPartition,
                                     error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
@@ -189,8 +189,8 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                             // producer or coordinator epoch has changed, this txn can now be ignored
                         case TRANSACTION_COORDINATOR_FENCED:
                             log.info("Sending {}'s transaction marker for partition {} has permanently failed "
-                                    + "with error {} with the current coordinator epoch {}; cancel sending any "
-                                    + "more transaction markers {} to the brokers", transactionalId, topicPartition,
+                                            + "with error {} with the current coordinator epoch {}; cancel sending any "
+                                            + "more transaction markers {} to the brokers", transactionalId, topicPartition,
                                     error.exceptionName(), epochAndMetadata.getCoordinatorEpoch(), txnMarker);
                             txnMarkerChannelManager.removeMarkersForTxnId(transactionalId);
                             abortSendingAndRetryPartitions.abortSending.set(true);

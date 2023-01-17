@@ -46,11 +46,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     private final Long producerId = 1L;
     private final MockTime time = new MockTime();
     private ProducerStateManager stateManager;
+    private ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        this.conf.setKafkaTransactionCoordinatorEnabled(false);
+        this.conf.setTransactionCoordinatorEnabled(false);
         super.internalSetup();
 
         admin.topics().createPartitionedTopic("public/default/sys-topic-producer-state", 1);
@@ -59,7 +60,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     protected void setUp() {
-        stateManager = new ProducerStateManager(partition.toString());
+        producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
+        stateManager = new ProducerStateManager(partition.toString(), null,
+                producerStateManagerSnapshotBuffer);
     }
 
     @AfterMethod
@@ -208,7 +211,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = defaultTestTimeout)
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
-        stateManager = new ProducerStateManager(partition.toString());
+        stateManager = new ProducerStateManager(partition.toString(), null,
+                producerStateManagerSnapshotBuffer);
         short epoch = 0;
         append(stateManager, producerId, epoch, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);
@@ -246,12 +250,12 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     }
 
     private Optional<CompletedTxn> appendEndTxnMarker(ProducerStateManager mapping,
-                                                                           Long producerId,
-                                                                           Short producerEpoch,
-                                                                           ControlRecordType controlType,
-                                                                           Long offset,
-                                                                           Integer coordinatorEpoch,
-                                                                           Long timestamp) {
+                                                      Long producerId,
+                                                      Short producerEpoch,
+                                                      ControlRecordType controlType,
+                                                      Long offset,
+                                                      Integer coordinatorEpoch,
+                                                      Long timestamp) {
         ProducerAppendInfo producerAppendInfo = stateManager.prepareUpdate(
                 producerId, PartitionLog.AppendOrigin.Coordinator);
         EndTransactionMarker endTxnMarker = new EndTransactionMarker(controlType, coordinatorEpoch);
