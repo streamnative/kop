@@ -14,13 +14,12 @@
 package org.apache.kafka.common.requests;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufOutputStream;
-import java.io.DataOutputStream;
+import java.nio.ByteBuffer;
+import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Message;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
-import org.apache.kafka.common.protocol.Writable;
-import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 
 /**
  * Provide util classes to access protected fields in kafka structures.
@@ -60,14 +59,12 @@ public class KopResponseUtils {
 
         int headerSize = header.size(cache, headerVersion);
         int messageSize = apiMessage.size(cache, apiVersion);
-        ByteBuf result = PulsarByteBufAllocator.DEFAULT.directBuffer(headerSize + messageSize);
-
-        Writable writable = new KopDataOutputStreamWritable(new DataOutputStream(new ByteBufOutputStream(result)));
-
+        ByteBuffer result = ByteBuffer.allocate(headerSize + messageSize);
+        ByteBufferAccessor writable = new ByteBufferAccessor(result);
         header.write(writable, cache, headerVersion);
         apiMessage.write(writable, cache, apiVersion);
-
-        return result;
+        result.flip();
+        return Unpooled.wrappedBuffer(result);
     }
 
 }
