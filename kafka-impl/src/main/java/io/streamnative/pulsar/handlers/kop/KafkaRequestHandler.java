@@ -1657,7 +1657,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 new FetchResponse<>(
                                     Errors.NONE,
                                     partitions,
-                                    THROTTLE_TIME_MS,
+                                    0,
                                     request.metadata().sessionId()),
                                 () -> resultMap.forEach((__, readRecordsResult) -> {
                                     readRecordsResult.recycle();
