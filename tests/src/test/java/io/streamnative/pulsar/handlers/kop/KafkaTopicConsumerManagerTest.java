@@ -57,8 +57,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.TopicStats;
 import org.awaitility.Awaitility;
@@ -99,21 +99,28 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    private void registerPartitionedTopic(final String topic) throws PulsarAdminException {
+    private String registerPartitionedTopic(final String topic) throws Exception {
         admin.topics().createPartitionedTopic(topic, 1);
-        pulsar.getBrokerService().getOrCreateTopic(topic);
+        admin.lookups().lookupPartitionedTopic(topic);
+        String partitionName = TopicName.get(topic).getPartition(0).toString();
+        CompletableFuture<Topic> handle =
+                pulsar.getBrokerService().getOrCreateTopic(partitionName);
+        handle.get();
+        return partitionName;
     }
 
     @Test
     public void testGetTopicConsumerManager() throws Exception {
         String topicName = "persistent://public/default/testGetTopicConsumerManager";
-        registerPartitionedTopic(topicName);
-        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
+        String fullTopicName = registerPartitionedTopic(topicName);
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
+        assertNotNull(topicConsumerManager);
 
         // 1. verify another get with same topic will return same tcm
-        tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
+        tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
+        assertNotNull(topicConsumerManager2);
 
         assertTrue(topicConsumerManager == topicConsumerManager2);
         assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
@@ -121,9 +128,10 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
 
         // 2. verify another get with different topic will return different tcm
         String topicName2 = "persistent://public/default/testGetTopicConsumerManager2";
-        registerPartitionedTopic(topicName2);
-        tcm = kafkaTopicManager.getTopicConsumerManager(topicName2);
+        String fullTopicName2 = registerPartitionedTopic(topicName2);
+        tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName2);
         topicConsumerManager2 = tcm.get();
+        assertNotNull(topicConsumerManager2);
         assertTrue(topicConsumerManager != topicConsumerManager2);
         assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
                 .getKafkaTopicConsumerManagerCache().getCount(), 2);
@@ -133,7 +141,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testTopicConsumerManagerRemoveAndAdd() throws Exception {
         String topicName = "persistent://public/default/testTopicConsumerManagerRemoveAndAdd";
-        registerPartitionedTopic(topicName);
+        String fullTopicName = registerPartitionedTopic(topicName);
         final Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
@@ -150,7 +158,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
             offset = producer.send(new ProducerRecord<>(topicName, i, message)).get().offset();
         }
 
-        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(topicName);
+        CompletableFuture<KafkaTopicConsumerManager> tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
         KafkaTopicConsumerManager topicConsumerManager = tcm.get();
 
         // before a read, first get cursor of offset.
