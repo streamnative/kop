@@ -70,13 +70,13 @@ This section lists configurations that may affect the performance.
 
 ### Choose the proper `entryFormat`
 
-The `entryFormat` values as below in the KoP.
+This table lists `entryFormat` values that are supported in KoP.
 
-| Name        | Description                                                                                                                                                                                                                                                                                           |
-|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| pulsar      | The default `entryFormat` in the KoP. It's a tool to use for encoding/decoding between Kafka messages format and Pulsar messages format. So the performance is the worst. The advantage is both Kafka client and Pulsar client consumers can consume the messages from the Pulsar cluster.            |
-| kafka       | If we set the `entryFormat=kafka`, the KoP will not encode/decode the Kafka messages. The messages will be stored in the bookie cluster in entries format. So the performance is the best. Because the messages keep the Kafka message format, the Pulsar client consumers can not parse the messages. |
-| mixed_kafka | It likes the `kafka` entryFormat. But they have some differences. It supports some non-official Kafka client implementations. This format is compatible with other non-official clients when encoding/decoding Kafka messages. The performance is less than `kafka` format.                            |
+| Name        | Description                                                                                                                                                                                                                                                                                                 |
+|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| pulsar      | `pulsar` is the default `entryFormat` in KoP. It is used to encode or decode formats between the Kafka message and the Pulsar message. Therefore, the performance is the worst. The benefit is that both the Kafka client and the Pulsar client consumers can consume the messages from the Pulsar cluster. |
+| kafka       | When you set the `entryFormat` option to `kafka`, KoP does not encode or decode Kafka messages. The messages will be directly stored in the bookie cluster in entries format, and the Pulsar client can not parse these messages. Therefore, the performance is the best.                                   |
+| mixed_kafka | The `mixed_kafka` format works similarly to the `kafka` format.  You can set this option for some non-official Kafka clients for encoding or decoding Kafka messages. The performance is medium.                                                                                                            |
 
 You can run the `io.streamnative.pulsar.handlers.kop.format.EncodePerformanceTest.java` to get the performance result among the above formats.
 
