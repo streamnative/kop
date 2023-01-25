@@ -105,4 +105,10 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
     public void basicRecoveryAbortedTransactionDueToProducerTimedOut(boolean takeSnapshotBeforeRecovery) {
         // this test is disabled in this suite because the token expires
     }
+
+    @Test(enabled = false)
+    @Override
+    public void basicRecoveryAfterDeleteCreateTopic() {
+        // this test is disabled in this suite because the token expires
+    }
 }
