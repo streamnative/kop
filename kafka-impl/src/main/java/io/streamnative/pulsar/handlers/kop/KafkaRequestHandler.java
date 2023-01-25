@@ -872,7 +872,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         PartitionLog.AppendOrigin.Client,
                         appendRecordsContext
                 ).whenComplete((response, ex) -> {
-                    appendRecordsContext.recycle();
                     if (ex != null) {
                         resultFuture.completeExceptionally(ex.getCause());
                         return;
@@ -2384,7 +2383,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     PartitionLog.AppendOrigin.Coordinator,
                     appendRecordsContext
             ).whenComplete((result, ex) -> {
-                appendRecordsContext.recycle();
                 if (ex != null) {
                     log.error("[{}] Append txn marker ({}) failed.", ctx.channel(), marker, ex);
                     Map<TopicPartition, Errors> currentErrors = new HashMap<>();

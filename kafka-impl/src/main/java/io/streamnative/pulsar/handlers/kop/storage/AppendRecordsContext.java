@@ -14,35 +14,27 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import java.util.Map;
 import java.util.function.Consumer;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 
 /**
  * AppendRecordsContext is use for pass parameters to ReplicaManager, to avoid long parameter lists.
  */
+@Slf4j
+@AllArgsConstructor
 @Getter
 public class AppendRecordsContext {
-    private static final Recycler<AppendRecordsContext> RECYCLER = new Recycler<AppendRecordsContext>() {
-        protected AppendRecordsContext newObject(Handle<AppendRecordsContext> handle) {
-            return new AppendRecordsContext(handle);
-        }
-    };
-
-    private final Recycler.Handle<AppendRecordsContext> recyclerHandle;
     private KafkaTopicManager topicManager;
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
     private ChannelHandlerContext ctx;
-
-    private AppendRecordsContext(Recycler.Handle<AppendRecordsContext> recyclerHandle) {
-        this.recyclerHandle = recyclerHandle;
-    }
 
     // recycler and get for this object
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
@@ -50,23 +42,11 @@ public class AppendRecordsContext {
                                            final Consumer<Integer> completeSendOperationForThrottling,
                                            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap,
                                            final ChannelHandlerContext ctx) {
-        AppendRecordsContext context = RECYCLER.get();
-        context.topicManager = topicManager;
-        context.startSendOperationForThrottling = startSendOperationForThrottling;
-        context.completeSendOperationForThrottling = completeSendOperationForThrottling;
-        context.pendingTopicFuturesMap = pendingTopicFuturesMap;
-        context.ctx = ctx;
-
-        return context;
-    }
-
-    public void recycle() {
-        topicManager = null;
-        startSendOperationForThrottling = null;
-        completeSendOperationForThrottling = null;
-        pendingTopicFuturesMap = null;
-        recyclerHandle.recycle(this);
-        ctx = null;
+        return new AppendRecordsContext(topicManager,
+                startSendOperationForThrottling,
+                completeSendOperationForThrottling,
+                pendingTopicFuturesMap,
+                ctx);
     }
 
 }
