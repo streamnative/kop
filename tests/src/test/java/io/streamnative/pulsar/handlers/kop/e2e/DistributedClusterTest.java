@@ -44,6 +44,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TopicType;
@@ -537,7 +538,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         pulsarService1.getAdminClient().topics().createPartitionedTopic(pulsarTopicName, 1);
         try {
             // 1. check lookup result.
-            String result = admin.lookups().lookupTopic(pulsarTopicName);
+            String result = admin.lookups()
+                    .lookupTopic(TopicName.get("persistent://public/default/" + kafkaTopicName)
+                    .getPartition(0).toString());
             log.info("Server address:{}", result);
             int kafkaPort;
             if (result.endsWith(String.valueOf(primaryBrokerPort))) {
