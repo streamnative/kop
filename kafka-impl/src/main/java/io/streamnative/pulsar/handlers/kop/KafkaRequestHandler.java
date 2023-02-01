@@ -2097,8 +2097,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(describeConfigs.getRequest() instanceof DescribeClusterRequest);
         DescribeClusterResponseData data = new DescribeClusterResponseData();
-        List<Node> allNodes = Collections.synchronizedList(
-                new ArrayList<>(adminManager.getBrokers(advertisedEndPoint.getListenerName())));
+        List<Node> allNodes = new ArrayList<>(adminManager.getBrokers(advertisedEndPoint.getListenerName()));
 
         // Each Pulsar broker can manage metadata like controller in Kafka,
         // Kafka's AdminClient needs to find a controller node for metadata management.
