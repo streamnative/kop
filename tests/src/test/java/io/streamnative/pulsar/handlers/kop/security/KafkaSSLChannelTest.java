@@ -84,20 +84,22 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
      * @param withCertHost the keystore with certHost or not.
      */
     private void setSslConfigurations(boolean withCertHost) {
-        String path = "./src/test/resources/ssl/certificate" + (withCertHost ? "2" : "") + "/";
-        if (!withCertHost) {
+        String path = "./src/test/resources/ssl/certificate" + (withCertHost ? "" : "2") + "/";
+        if (withCertHost) {
             this.kopSslKeystoreLocation = path + "broker.keystore.jks";
             this.kopSslKeystorePassword = "broker";
             this.kopSslTruststoreLocation = path + "broker.truststore.jks";
             this.kopSslTruststorePassword = "broker";
+            this.kopClientTruststoreLocation = path + "broker.truststore.jks";
+            this.kopClientTruststorePassword = "broker";
         } else {
             this.kopSslKeystoreLocation = path + "server.keystore.jks";
             this.kopSslKeystorePassword = "server";
             this.kopSslTruststoreLocation = path + "server.truststore.jks";
             this.kopSslTruststorePassword = "server";
+            kopClientTruststorePassword = "client";
+            kopClientTruststoreLocation = path + "client.truststore.jks";
         }
-        kopClientTruststoreLocation = path + "client.truststore.jks";
-        kopClientTruststorePassword = "client";
     }
 
     @Factory
@@ -111,6 +113,10 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     }
 
     protected void sslSetUpForBroker() throws Exception {
+
+        // require TLS verification when hostname is on certificate
+        conf.setTlsHostnameVerificationEnabled(withCertHost);
+
         conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setKopTlsEnabledWithBroker(true);
         conf.setKopSslKeystoreType("JKS");
@@ -153,7 +159,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
 
         @Cleanup
-        SslProducer kProducer = new SslProducer(topicName, getKafkaBrokerPortTls(),
+        SslProducer kProducer = new SslProducer(topicName, getKafkaBrokerPortTls(), withCertHost,
                 kopClientTruststoreLocation, kopClientTruststorePassword);
 
         for (int i = 0; i < totalMsgs; i++) {
@@ -188,7 +194,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         private final KafkaProducer<Integer, String> producer;
         private final String topic;
 
-        public SslProducer(String topic, int port, String truststoreLocation, String truststorePassword) {
+        public SslProducer(String topic, int port, boolean withCertHost, String truststoreLocation,
+                           String truststorePassword) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducerSSL");
@@ -201,7 +208,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
             props.put("ssl.truststore.password", truststorePassword);
 
             // default is https, here need to set empty.
-            props.put("ssl.endpoint.identification.algorithm", "");
+            props.put("ssl.endpoint.identification.algorithm", withCertHost ? "HTTPS" : "");
 
             producer = new KafkaProducer<>(props);
             this.topic = topic;
@@ -233,7 +240,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         producerProps.put("ssl.truststore.password", kopClientTruststorePassword);
 
         // default is https, here need to set empty.
-        producerProps.put("ssl.endpoint.identification.algorithm", "");
+        producerProps.put("ssl.endpoint.identification.algorithm", withCertHost ? "HTTPS" : "");
 
         @Cleanup
         KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps);
@@ -292,7 +299,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         consumerProps.put("ssl.truststore.password", kopClientTruststorePassword);
 
         // default is https, here need to set empty.
-        consumerProps.put("ssl.endpoint.identification.algorithm", "");
+        consumerProps.put("ssl.endpoint.identification.algorithm", withCertHost ? "HTTPS" : "");
 
         @Cleanup
         KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(consumerProps);

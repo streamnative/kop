@@ -47,14 +47,11 @@ public class KafkaSSLChannelWithClientAuthTest extends KopProtocolHandlerTestBas
     static {
         final HostnameVerifier defaultHostnameVerifier = javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier();
 
-        final HostnameVerifier localhostAcceptedHostnameVerifier = new HostnameVerifier() {
-
-            public boolean verify(String hostname, javax.net.ssl.SSLSession sslSession) {
-                if (hostname.equals("localhost")) {
-                    return true;
-                }
-                return defaultHostnameVerifier.verify(hostname, sslSession);
+        final HostnameVerifier localhostAcceptedHostnameVerifier = (hostname, sslSession) -> {
+            if (hostname.equals("localhost")) {
+                return true;
             }
+            return defaultHostnameVerifier.verify(hostname, sslSession);
         };
         javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier(localhostAcceptedHostnameVerifier);
     }
@@ -71,13 +68,13 @@ public class KafkaSSLChannelWithClientAuthTest extends KopProtocolHandlerTestBas
         };
     }
 
-    protected void sslSetUpForBroker() throws Exception {
-        ((KafkaServiceConfiguration) conf).setKopSslClientAuth("required");
-        ((KafkaServiceConfiguration) conf).setKopSslKeystoreType("JKS");
-        ((KafkaServiceConfiguration) conf).setKopSslKeystoreLocation(kopSslKeystoreLocation);
-        ((KafkaServiceConfiguration) conf).setKopSslKeystorePassword(kopSslKeystorePassword);
-        ((KafkaServiceConfiguration) conf).setKopSslTruststoreLocation(kopSslTruststoreLocation);
-        ((KafkaServiceConfiguration) conf).setKopSslTruststorePassword(kopSslTruststorePassword);
+    protected void sslSetUpForBroker() {
+        conf.setKopSslClientAuth("required");
+        conf.setKopSslKeystoreType("JKS");
+        conf.setKopSslKeystoreLocation(kopSslKeystoreLocation);
+        conf.setKopSslKeystorePassword(kopSslKeystorePassword);
+        conf.setKopSslTruststoreLocation(kopSslTruststoreLocation);
+        conf.setKopSslTruststorePassword(kopSslTruststorePassword);
     }
 
     @BeforeMethod
@@ -160,9 +157,6 @@ public class KafkaSSLChannelWithClientAuthTest extends KopProtocolHandlerTestBas
             props.put("ssl.truststore.password", "broker");
             props.put("ssl.keystore.location", "./src/test/resources/ssl/certificate/client.keystore.jks");
             props.put("ssl.keystore.password", "client");
-
-            // default is https, here need to set empty.
-            props.put("ssl.endpoint.identification.algorithm", "");
 
             producer = new KafkaProducer<>(props);
             this.topic = topic;
