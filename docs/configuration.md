@@ -70,6 +70,16 @@ This section lists configurations that may affect the performance.
 
 ### Choose the proper `entryFormat`
 
+This table lists `entryFormat` values that are supported in KoP.
+
+| Name        | Description                                                                                                                                                                                                                                                                                                 |
+|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| pulsar      | `pulsar` is the default `entryFormat` in KoP. It is used to encode or decode formats between the Kafka message and the Pulsar message. Therefore, the performance is the worst. The benefit is that both the Kafka client and the Pulsar client consumers can consume the messages from the Pulsar cluster. |
+| kafka       | When you set the `entryFormat` option to `kafka`, KoP does not encode or decode Kafka messages. The messages will be directly stored in the bookie cluster in entries format, and the Pulsar client can not parse these messages. Therefore, the performance is the best.                                   |
+| mixed_kafka | The `mixed_kafka` format works similarly to the `kafka` format.  You can set this option for some non-official Kafka clients for encoding or decoding Kafka messages. The performance is medium.                                                                                                            |
+
+You can run the `io.streamnative.pulsar.handlers.kop.format.EncodePerformanceTest.java` to get the performance result among the above formats.
+
 Generally, if you don't have Pulsar consumers that consume messages from Kafka producers, `kafka` format is perferred because **it has much higher performance** when Kafka consumers interact with Kafka producers.
 
 However, some non-official Kafka clients might not work for `kafka` format. For example, old [Golang Sarama](https://github.com/Shopify/sarama) client didn't assign relative offsets in compressed message sets before [Shopify/sarama #1002](https://github.com/Shopify/sarama/pull/1002). In this case, the broker has to assign relative offsets and then do recompression. Since this behavior leads to some performance loss, KoP adds the `mixed_kafka` format to perform the conversion. The `mixed_kafka` format should be chosen when you have such an old Kafka client. Like `kafka` format, in this case, Pulsar consumers still cannot consume messages from Kafka producers.
