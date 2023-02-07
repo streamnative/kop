@@ -136,7 +136,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
     For the `OAUTHBEARER` mechanism, you can use `AuthenticationProviderToken` or custom your authentication provider to process the access tokens from OAuth 2.0 server.
 
-    KoP provides a built-in `AuthenticateCallbackHandler` that uses the authentication provider of Pulsar for authentication. You need to configure the following properties in the Pulsar broker's configuration file (`conf/broker.conf`)
+    KoP provides a built-in `AuthenticateCallbackHandler` that uses the authentication provider of Pulsar for authentication. You need to configure the following properties in the Pulsar broker's configuration file (e.g. `conf/broker.conf`)
 
     ```properties
     # Use KoP's built-in handler
