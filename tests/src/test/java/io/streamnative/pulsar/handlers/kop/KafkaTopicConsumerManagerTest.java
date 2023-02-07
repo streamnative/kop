@@ -87,7 +87,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         doReturn(mockChannel).when(mockCtx).channel();
         kafkaRequestHandler.ctx = mockCtx;
 
-        kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler);
+        kafkaTopicManager = new KafkaTopicManager(kafkaRequestHandler,
+                new KafkaTopicLookupService(pulsar.getBrokerService()));
         kafkaTopicManager.setRemoteAddress(InternalServerCnx.MOCKED_REMOTE_ADDRESS);
     }
 

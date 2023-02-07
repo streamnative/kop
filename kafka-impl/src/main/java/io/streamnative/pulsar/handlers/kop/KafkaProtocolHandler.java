@@ -80,6 +80,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SystemTopicClient txnTopicClient;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+    private KafkaTopicLookupService kafkaTopicLookupService;
     private LookupClient lookupClient;
     @VisibleForTesting
     @Getter
@@ -400,6 +401,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 requestStats,
                 sendResponseScheduler,
                 kafkaTopicManagerSharedState,
+                kafkaTopicLookupService,
                 lookupClient);
     }
 
@@ -417,6 +419,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
+
+        kafkaTopicLookupService = new KafkaTopicLookupService(brokerService);
 
         replicaManager = new ReplicaManager(
                 kafkaConfig,
