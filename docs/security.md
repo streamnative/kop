@@ -157,7 +157,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
         ```
    as it has the following code in it:
 
-         ```
+         ```java
              @Override
              public String getAuthMethodName() {
                  return "athenz";
