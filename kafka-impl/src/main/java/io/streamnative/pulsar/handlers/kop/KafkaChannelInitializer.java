@@ -50,6 +50,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KopBrokerLookupManager kopBrokerLookupManager;
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+    private final LookupClient lookupClient;
 
     private final AdminManager adminManager;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
@@ -80,13 +81,15 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler,
-                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
+                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                                   LookupClient lookupClient) {
         super();
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.tenantContextManager = tenantContextManager;
         this.replicaManager = replicaManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
+        this.lookupClient = lookupClient;
         this.adminManager = adminManager;
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
@@ -127,7 +130,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, lookupClient);
     }
 
     @VisibleForTesting
@@ -138,6 +141,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, lookupClient);
     }
 }
