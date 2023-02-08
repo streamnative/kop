@@ -41,13 +41,16 @@ import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
+import org.apache.pulsar.client.api.PulsarClientException;
 
 /**
  * Used to append records. Mapping to Kafka ReplicaManager.scala.
@@ -76,14 +79,15 @@ public class ReplicaManager {
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
-    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
+    public PartitionLog getPartitionLog(TopicPartition topicPartition,
+                                        String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
     public void removePartitionLog(String topicName) {
-        CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
+        PartitionLog partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
-            log.debug("PartitionLog: {} has bean removed.", partitionLog);
+            log.debug("PartitionLog: {} has bean removed.", topicName);
         }
     }
 
@@ -113,7 +117,7 @@ public class ReplicaManager {
                 }
             });
             if (log.isDebugEnabled()) {
-                log.debug("Complete handle appendRecords.");
+                log.debug("Complete handle appendRecords. {}", responseMap);
             }
             completableFuture.complete(responseMap);
 
@@ -136,64 +140,97 @@ public class ReplicaManager {
             final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture =
                 new CompletableFuture<>();
-        final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
-        final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
+        try {
+            final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
+            final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
 
-        PendingProduceCallback complete =
-                new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
-        BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
-                (topicPartition, response) -> {
-                    responseMap.put(topicPartition, response);
-                    // reset topicPartitionNum
-                    int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-                    if (restTopicPartitionNum < 0) {
-                        return;
-                    }
-                    if (restTopicPartitionNum == 0) {
-                        // If all tasks are sent, cancel the timer tasks to avoid full gc or oom
-                        producePurgatory.checkAndComplete(
-                                new DelayedOperationKey.TopicPartitionOperationKey(topicPartition));
-                        complete.run();
-                    }
-                };
-        entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
-            String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-            // reject appending to internal topics if it is not allowed
-            if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName, metadataNamespace)) {
-                addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
-                        Errors.forException(new InvalidTopicException(
-                                String.format("Cannot append to internal topic %s", topicPartition.topic())))));
-            } else {
-                getPartitionLog(topicPartition, namespacePrefix).thenCompose(partitionLog -> {
-                    if (requiredAcks == 0) {
-                        partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext);
-                        return CompletableFuture.completedFuture(null);
-                    }
-                    return partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
+            PendingProduceCallback complete =
+                    new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
+            BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
+                    (topicPartition, response) -> {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Completed produce for {}", topicPartition);
+                        }
+                        responseMap.put(topicPartition, response);
+                        // reset topicPartitionNum
+                        int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
+                        if (restTopicPartitionNum < 0) {
+                            return;
+                        }
+                        if (restTopicPartitionNum == 0) {
+                            complete.run();
+                        }
+                    };
+            entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
+                String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+                // reject appending to internal topics if it is not allowed
+                if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName, metadataNamespace)) {
+                    addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
+                            Errors.forException(new InvalidTopicException(
+                                    String.format("Cannot append to internal topic %s", topicPartition.topic())))));
+                } else {
+                    PartitionLog partitionLog =
+                            getPartitionLog(topicPartition, namespacePrefix);
+                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                             .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)));
-                }).exceptionally(ex -> {
-                    addPartitionResponse.accept(topicPartition,
-                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
-                    return null;
-                });
+                                    new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
+                            .exceptionally(ex -> {
+                                if (isCannotLoadTopicError(ex)) {
+                                    log.error("Cannot load topic error while handling append for {}",
+                                            fullPartitionName, ex);
+                                    addPartitionResponse.accept(topicPartition,
+                                            new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
+                                } else if (ex.getCause() instanceof BrokerServiceException.PersistenceException) {
+                                    log.error("Persistence error while handling append for {}", fullPartitionName, ex);
+                                    // BrokerServiceException$PersistenceException:
+                                    // org.apache.bookkeeper.mledger.ManagedLedgerException:
+                                    // org.apache.bookkeeper.mledger.ManagedLedgerException$BadVersionException:
+                                    // org.apache.pulsar.metadata.api.MetadataStoreExcept
+
+                                    addPartitionResponse.accept(topicPartition,
+                                            new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
+                                } else if (ex.getCause() instanceof PulsarClientException) {
+                                    log.error("Error on Pulsar Client while handling append for {}",
+                                            fullPartitionName, ex);
+
+                                    addPartitionResponse.accept(topicPartition,
+                                            new ProduceResponse.PartitionResponse(Errors.BROKER_NOT_AVAILABLE));
+                                } else if (ex.getCause() instanceof NotLeaderOrFollowerException) {
+                                    addPartitionResponse.accept(topicPartition,
+                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                } else {
+                                    log.error("System error while handling append for {}", fullPartitionName, ex);
+                                    addPartitionResponse.accept(topicPartition,
+                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                }
+                                return null;
+                            });
+                }
+            });
+            // delay produce
+            if (timeout <= 0) {
+                complete.run();
+            } else {
+                // producePurgatory will retain a reference to the callback for timeout ms,
+                // even if the operation succeeds
+                List<Object> delayedCreateKeys =
+                        entriesPerPartition.keySet().stream()
+                                .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+                DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeout, topicPartitionNum,
+                        complete);
+                producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
             }
-        });
-        // delay produce
-        if (timeout <= 0) {
-            complete.run();
-        } else {
-            // producePurgatory will retain a reference to the callback for timeout ms,
-            // even if the operation succeeds
-            List<Object> delayedCreateKeys =
-                    entriesPerPartition.keySet().stream()
-                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
-            DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeout, topicPartitionNum, complete);
-            producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
+        } catch (Throwable error) {
+            log.error("Internal error", error);
+            completableFuture.completeExceptionally(error);
         }
         return completableFuture;
     }
 
+    private static boolean isCannotLoadTopicError(Throwable error) {
+        String asString = error + "";
+        return asString.contains("Failed to load topic within timeout");
+    }
 
     public CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> fetchMessage(
             final long timeout,
@@ -267,6 +304,7 @@ public class ReplicaManager {
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             getPartitionLog(tp, context.getNamespacePrefix())
+                    .awaitInitialisation()
                     .thenCompose(partitionLog ->{
                         return partitionLog
                                 .readRecords(fetchInfo, readCommitted,

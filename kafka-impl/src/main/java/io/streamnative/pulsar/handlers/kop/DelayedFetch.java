@@ -110,7 +110,7 @@ public class DelayedFetch extends DelayedOperation {
             TopicPartition tp = entry.getKey();
             PartitionLog.ReadRecordsResult result = entry.getValue();
             PartitionLog partitionLog = result.partitionLog();
-            PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
+            PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition();
             if (currLastPosition.compareTo(PositionImpl.EARLIEST) == 0) {
                 HAS_ERROR_UPDATER.set(this, true);
                 return forceComplete();

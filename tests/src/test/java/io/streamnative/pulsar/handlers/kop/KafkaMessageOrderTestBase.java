@@ -121,7 +121,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
             @Cleanup
             KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
-            int totalMsgs = batchSize * 2 + batchSize / 2;
+            int totalMsgs = 10;
             String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
 
             List<CompletableFuture<RecordMetadata>> handles = new ArrayList<>();

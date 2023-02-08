@@ -41,7 +41,7 @@ public class PartitionLogManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
-    private final Map<String, CompletableFuture<PartitionLog>> logMap;
+    private final Map<String, PartitionLog> logMap;
     private final Time time;
     private final List<EntryFilter> entryFilters;
 
@@ -68,30 +68,38 @@ public class PartitionLogManager {
         this.recoveryExecutor = recoveryExecutor;
     }
 
-    public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
-        return logMap.computeIfAbsent(kopTopic, key -> {
-            CompletableFuture<PartitionLog> result = new PartitionLog(kafkaConfig, requestStats,
-                    time, topicPartition, kopTopic, entryFilters,
+        PartitionLog res =  logMap.computeIfAbsent(kopTopic, key -> {
+            PartitionLog partitionLog = new PartitionLog(kafkaConfig, requestStats,
+                    time, topicPartition, key, entryFilters,
                     kafkaTopicLookupService,
-                    prodPerTenant)
-                    .recoverTransactions(recoveryExecutor);
+                    prodPerTenant);
 
-            result.exceptionally(error -> {
-                // in case of failure we have to remove the CompletableFuture from the map
-                log.error("Recovery of {} failed", key, error);
-                logMap.remove(key, result);
-                return null;
+            CompletableFuture<PartitionLog> initialiseResult = partitionLog
+                    .initialise(recoveryExecutor);
+
+            initialiseResult.whenComplete((___, error) -> {
+                if (error != null) {
+                    // in case of failure we have to remove the CompletableFuture from the map
+                    log.error("Recovery of {} failed", key, error);
+                    logMap.remove(key, partitionLog);
+                }
             });
 
-            return result;
+            return partitionLog;
         });
+        if (res.isInitialisationFailed()) {
+            log.error("Recovery of {} failed", kopTopic);
+            logMap.remove(kopTopic, res);
+        }
+        return res;
     }
 
-    public CompletableFuture<PartitionLog> removeLog(String topicName) {
-        log.info("removeLog {}", topicName);
+    public PartitionLog removeLog(String topicName) {
+        log.info("removePartitionLog {}", topicName);
         return logMap.remove(topicName);
     }
 
@@ -102,14 +110,11 @@ public class PartitionLogManager {
     public CompletableFuture<Void> takeProducerStateSnapshots() {
         List<CompletableFuture<Void>> handles = new ArrayList<>();
         logMap.values().forEach(log -> {
-            if (log.isDone() && !log.isCompletedExceptionally()) {
-                PartitionLog partitionLog = log.getNow(null);
-                if (partitionLog != null) {
-                    handles.add(partitionLog
-                            .getProducerStateManager()
-                            .takeSnapshot()
-                            .thenApply(___ -> null));
-                }
+            if (log.isInitialised()) {
+                handles.add(log
+                        .getProducerStateManager()
+                        .takeSnapshot(recoveryExecutor)
+                        .thenApply(___ -> null));
             }
         });
         return FutureUtil.waitForAll(handles);
