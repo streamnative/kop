@@ -150,7 +150,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
    - If you use `AuthenticationProviderToken`, set `oauth.validate.method` to `token` (since `AuthenticationProviderToken#getAuthMethodName()` returns `token`).
 
-   - If you use other providers, set the `oauth.validate.method` as the result of `getAuthMethodName()` of your `AuthenticationProvider` chosen implementation. For example, if my authentication provider in Pulsar is `AuthenticationProviderAthenz` then I would set the following: 
+   - If you use other providers, set the `oauth.validate.method` as the result of `getAuthMethodName()` of your `AuthenticationProvider`. For example, if your authentication provider in Pulsar is `AuthenticationProviderAthenz`, then set the following: 
 
         ```properties
         oauth.validate.method=athenz
