@@ -241,7 +241,7 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected void createClient() throws Exception {
-        this.pulsarClient = KafkaProtocolHandler.getLookupClient(pulsar).getPulsarClient();
+        this.pulsarClient = new LookupClient(pulsar, conf).getPulsarClient();
     }
 
     protected String getAdvertisedAddress() {

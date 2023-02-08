@@ -193,6 +193,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final TenantContextManager tenantContextManager;
     private final ReplicaManager replicaManager;
     private final KopBrokerLookupManager kopBrokerLookupManager;
+
+    @Getter
+    private final LookupClient lookupClient;
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
@@ -296,12 +299,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
-                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               LookupClient lookupClient) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
         this.replicaManager = replicaManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
+        this.lookupClient = lookupClient;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();

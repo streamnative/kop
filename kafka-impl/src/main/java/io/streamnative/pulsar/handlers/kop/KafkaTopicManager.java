@@ -46,7 +46,7 @@ public class KafkaTopicManager {
         PulsarService pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
-        this.lookupClient = KafkaProtocolHandler.getLookupClient(pulsarService);
+        this.lookupClient = kafkaRequestHandler.getLookupClient();
         this.kafkaTopicLookupService = new KafkaTopicLookupService(pulsarService.getBrokerService());
      }
 
