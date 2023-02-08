@@ -30,12 +30,6 @@ public class LookupClient extends AbstractPulsarClient {
         super(createPulsarClient(pulsarService, kafkaConfig, conf -> {}));
     }
 
-    public LookupClient(final PulsarService pulsarService) {
-        super(createPulsarClient(pulsarService));
-        log.warn("This constructor should not be called, it's only called "
-                + "when the PulsarService doesn't exist in KafkaProtocolHandlers.LOOKUP_CLIENT_UP");
-    }
-
     public CompletableFuture<InetSocketAddress> getBrokerAddress(final TopicName topicName) {
         return getPulsarClient().getLookup().getBroker(topicName).thenApply(Pair::getLeft);
     }
