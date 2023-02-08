@@ -148,7 +148,7 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
 (3) Specify the Authentication Method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file. By default, it uses the `token` authentication method (`AuthenticationProviderToken`). 
 
-   - If you use `AuthenticationProviderToken` set `oauth.validate.method` to `token` (since `AuthenticationProviderToken#getAuthMethodName()` returns `token`).
+   - If you use `AuthenticationProviderToken`, set `oauth.validate.method` to `token` (since `AuthenticationProviderToken#getAuthMethodName()` returns `token`).
 
    - If you use other providers, set the `oauth.validate.method` as the result of `getAuthMethodName()` of your `AuthenticationProvider` chosen implementation. For example, if my authentication provider in Pulsar is `AuthenticationProviderAthenz` then I would set the following: 
 
