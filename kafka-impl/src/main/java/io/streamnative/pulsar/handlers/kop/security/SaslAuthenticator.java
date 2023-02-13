@@ -131,9 +131,9 @@ public class SaslAuthenticator {
     private static <T> T safeGetProperty(final SaslServer saslServer, final String propertyName) {
         try {
             final Object property = saslServer.getNegotiatedProperty(propertyName);
-            if (property == null) {
-                throw new NoExpectedPropertyException(propertyName, "property not found");
-            }
+//            if (property == null) {
+//                throw new NoExpectedPropertyException(propertyName, "property not found");
+//            }
             return (T) property;
         } catch (ClassCastException e) {
             throw new NoExpectedPropertyException(propertyName, e.getMessage());
@@ -302,7 +302,7 @@ public class SaslAuthenticator {
                 throw new IllegalArgumentException("No OAuth2CallbackHandler found when mechanism is "
                         + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM);
             }
-            saslServer = new KopOAuthBearerSaslServer(oauth2CallbackHandler, defaultKafkaMetadataTenant);
+            saslServer = new KopOAuthBearerSaslServer(oauth2CallbackHandler);
         } else {
             throw new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");
         }

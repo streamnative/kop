@@ -40,6 +40,10 @@ public class OAuthBearerTokenImpl implements OAuthBearerToken {
         return accessToken;
     }
 
+    public void setTenant(String tenant) {
+        this.accessToken = tenant + "__delimiter__" + accessToken;
+    }
+
     @Override
     public Set<String> scope() {
         return (scope != null)

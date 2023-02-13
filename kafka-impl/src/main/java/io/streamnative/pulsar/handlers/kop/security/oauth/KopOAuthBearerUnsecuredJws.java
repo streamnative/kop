@@ -51,4 +51,9 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
     public AuthenticationDataSource authDataSource() {
         return authData;
     }
+
+    @Override
+    public String tenant() {
+        return null;
+    }
 }

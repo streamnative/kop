@@ -41,19 +41,17 @@ public class KopOAuthBearerSaslServer implements SaslServer {
             "Authentication could not be performed due to an internal error on the server";
 
     private final AuthenticateCallbackHandler callbackHandler;
-    private final String defaultKafkaMetadataTenant;
 
     private boolean complete;
     private KopOAuthBearerToken tokenForNegotiatedProperty = null;
     private String errorMessage = null;
 
-    public KopOAuthBearerSaslServer(CallbackHandler callbackHandler, String defaultKafkaMetadataTenant) {
+    public KopOAuthBearerSaslServer(CallbackHandler callbackHandler) {
         if (!(Objects.requireNonNull(callbackHandler) instanceof AuthenticateCallbackHandler)) {
             throw new IllegalArgumentException(String.format("Callback handler must be castable to %s: %s",
                     AuthenticateCallbackHandler.class.getName(), callbackHandler.getClass().getName()));
         }
         this.callbackHandler = (AuthenticateCallbackHandler) callbackHandler;
-        this.defaultKafkaMetadataTenant = defaultKafkaMetadataTenant;
     }
 
     /**
@@ -111,7 +109,7 @@ public class KopOAuthBearerSaslServer implements SaslServer {
             return tokenForNegotiatedProperty.authDataSource();
         }
         if (USER_NAME_PROP.equals(propName)) {
-            return defaultKafkaMetadataTenant;
+            return tokenForNegotiatedProperty.tenant();
         }
         return NEGOTIATED_PROPERTY_KEY_TOKEN.equals(propName) ? tokenForNegotiatedProperty : null;
     }
