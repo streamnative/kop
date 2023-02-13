@@ -14,10 +14,15 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -118,5 +123,44 @@ public class PendingTopicFuturesTest {
         Assert.assertTrue(index > 0);
         Assert.assertEquals(changesOfPendingCount.subList(0, index), range(1, index + 1));
         Assert.assertEquals(changesOfPendingCount.subList(index, 10), fill(10 - index, 0));
+    }
+
+    @Test(timeOut = 10000)
+    void testParallelAccess() throws ExecutionException, InterruptedException {
+        final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture = new CompletableFuture<>();
+        final List<Integer> completedIndexes = new CopyOnWriteArrayList<>();
+        int randomNum = ThreadLocalRandom.current().nextInt(0, 9);
+
+        ExecutorService threadPool = Executors.newFixedThreadPool(4);
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                final int index = i;
+                futures.add(threadPool.submit(() -> {
+                    pendingTopicFutures.addListener(
+                            topicFuture, ignored -> completedIndexes.add(index), (ignore) -> {
+                            });
+                    if (randomNum == index) {
+                        topicFuture.complete(Optional.empty());
+                    }
+                }));
+            }
+            // verify everything worked well
+            for (Future<?> f : futures) {
+                f.get();
+            }
+        } finally {
+            threadPool.shutdown();
+        }
+
+        // all futures are completed, the size becomes 0 again.
+        Assert.assertEquals(pendingTopicFutures.waitAndGetSize(), 0);
+
+        Collections.sort(completedIndexes);
+
+        // assert all `normalComplete`s are called
+        log.info("completedIndexes: {}", completedIndexes);
+        Assert.assertEquals(completedIndexes, range(0, 10));
     }
 }
