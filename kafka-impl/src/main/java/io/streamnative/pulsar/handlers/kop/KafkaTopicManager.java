@@ -123,7 +123,7 @@ public class KafkaTopicManager {
             return Optional.empty();
         }
         return Optional.of(requestHandler.getKafkaTopicManagerSharedState()
-                .getReferences().computeIfAbsent(topicName, (__) -> registerInPersistentTopic(persistentTopic)));
+                .getReferences().computeIfAbsent(requestHandler, (__) -> registerInPersistentTopic(persistentTopic)));
     }
 
     // when channel close, release all the topics reference in persistentTopic
@@ -150,8 +150,6 @@ public class KafkaTopicManager {
         }
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
                 kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());
-        // cache for removing producer
-        requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
         return topicCompletableFuture;
     }
 
