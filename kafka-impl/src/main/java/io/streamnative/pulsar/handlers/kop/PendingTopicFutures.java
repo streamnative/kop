@@ -18,7 +18,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.NonNull;
@@ -33,7 +32,7 @@ public class PendingTopicFutures {
 
     private final RequestStats requestStats;
     private final long enqueueTimestamp;
-    private final AtomicInteger count = new AtomicInteger(0);
+    private int count = 0;
     private CompletableFuture<TopicThrowablePair> currentTopicFuture;
 
     public PendingTopicFutures(RequestStats requestStats) {
@@ -53,23 +52,29 @@ public class PendingTopicFutures {
         }
     }
 
-    public void addListener(CompletableFuture<Optional<PersistentTopic>> topicFuture,
+    private synchronized void decrementCount() {
+        count--;
+    }
+
+    public synchronized void addListener(CompletableFuture<Optional<PersistentTopic>> topicFuture,
                             @NonNull Consumer<Optional<PersistentTopic>> persistentTopicConsumer,
                             @NonNull Consumer<Throwable> exceptionConsumer) {
-        if (count.compareAndSet(0, 1)) {
+        if (count == 0) {
+            count = 1;
             // The first pending future comes
             currentTopicFuture = topicFuture.thenApply(persistentTopic -> {
                 registerQueueLatency(true);
                 persistentTopicConsumer.accept(persistentTopic);
-                count.decrementAndGet();
+                decrementCount();
                 return TopicThrowablePair.withTopic(persistentTopic);
             }).exceptionally(e -> {
                 registerQueueLatency(false);
                 exceptionConsumer.accept(e.getCause());
-                count.decrementAndGet();
+                decrementCount();
                 return TopicThrowablePair.withThrowable(e.getCause());
             });
         } else {
+            count++;
             // The next pending future reuses the completed result of the previous topic future
             currentTopicFuture = currentTopicFuture.thenApply(topicThrowablePair -> {
                 if (topicThrowablePair.getThrowable() == null) {
@@ -79,27 +84,26 @@ public class PendingTopicFutures {
                     registerQueueLatency(false);
                     exceptionConsumer.accept(topicThrowablePair.getThrowable());
                 }
-                count.decrementAndGet();
+                decrementCount();
                 return topicThrowablePair;
             }).exceptionally(e -> {
                 registerQueueLatency(false);
                 exceptionConsumer.accept(e.getCause());
-                count.decrementAndGet();
+                decrementCount();
                 return TopicThrowablePair.withThrowable(e.getCause());
             });
-            count.incrementAndGet();
         }
     }
 
     @VisibleForTesting
-    public int waitAndGetSize() throws ExecutionException, InterruptedException {
+    public synchronized int waitAndGetSize() throws ExecutionException, InterruptedException {
         currentTopicFuture.get();
-        return count.get();
+        return count;
     }
 
     @VisibleForTesting
-    public int size() {
-        return count.get();
+    public synchronized int size() {
+        return count;
     }
 }
 
