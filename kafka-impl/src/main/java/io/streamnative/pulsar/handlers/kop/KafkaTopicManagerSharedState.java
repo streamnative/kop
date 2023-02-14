@@ -80,8 +80,10 @@ public final class KafkaTopicManagerSharedState {
     private void removePersistentTopicAndReferenceProducer(final KafkaRequestHandler producerId) {
         // 1. Remove PersistentTopic and Producer from caches, these calls are thread safe
         final Producer producer = references.remove(producerId);
-        PersistentTopic topic = (PersistentTopic) producer.getTopic();
-        topic.removeProducer(producer);
+        if (producer != null) {
+            PersistentTopic topic = (PersistentTopic) producer.getTopic();
+            topic.removeProducer(producer);
+        }
     }
 
     public void handlerKafkaRequestHandlerClosed(SocketAddress remoteAddress, KafkaRequestHandler requestHandler) {
