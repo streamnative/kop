@@ -14,10 +14,14 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.net.SocketAddress;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.BrokerService;
@@ -37,11 +41,16 @@ public final class KafkaTopicManagerSharedState {
     private static final long expirePeriodMillis = 2 * 60 * 1000;
     private static volatile ScheduledFuture<?> cursorExpireTask = null;
 
-    // cache for references in PersistentTopic: <topicName, producer>
-    @Getter
-    private final ConcurrentHashMap<KafkaRequestHandler, Producer>
+    // cache for references in PersistentTopic: <topicName-requestHandler, producer>
+    private final ConcurrentHashMap<ProducerKey, Producer>
             references = new ConcurrentHashMap<>();
 
+    @AllArgsConstructor
+    @EqualsAndHashCode
+    private static final class ProducerKey {
+        final String topicName;
+        final KafkaRequestHandler requestHandler;
+    }
 
     public KafkaTopicManagerSharedState(BrokerService brokerService) {
         initializeCursorExpireTask(brokerService.executor());
@@ -67,6 +76,14 @@ public final class KafkaTopicManagerSharedState {
     public void close() {
         cancelCursorExpireTask();
         kafkaTopicConsumerManagerCache.close();
+        references.forEach((key, __) -> {
+            // perform cleanup
+            Producer producer = references.remove(key);
+            if (producer != null) {
+                PersistentTopic topic = (PersistentTopic) producer.getTopic();
+                topic.removeProducer(producer);
+            }
+        });
         references.clear();
     }
 
@@ -77,13 +94,23 @@ public final class KafkaTopicManagerSharedState {
         }
     }
 
+    public Optional<Producer> registerProducer(String topic, KafkaRequestHandler requestHandler,
+                                               Supplier<Producer> supplier) {
+        ProducerKey key = new ProducerKey(topic, requestHandler);
+        return Optional.ofNullable(references.computeIfAbsent(key,
+                (__) -> supplier.get()));
+    }
+
     private void removePersistentTopicAndReferenceProducer(final KafkaRequestHandler producerId) {
-        // 1. Remove PersistentTopic and Producer from caches, these calls are thread safe
-        final Producer producer = references.remove(producerId);
-        if (producer != null) {
-            PersistentTopic topic = (PersistentTopic) producer.getTopic();
-            topic.removeProducer(producer);
-        }
+        references.forEach((key, __) -> {
+            if (key.requestHandler == producerId) {
+                Producer producer = references.remove(key);
+                if (producer != null) {
+                    PersistentTopic topic = (PersistentTopic) producer.getTopic();
+                    topic.removeProducer(producer);
+                }
+            }
+        });
     }
 
     public void handlerKafkaRequestHandlerClosed(SocketAddress remoteAddress, KafkaRequestHandler requestHandler) {

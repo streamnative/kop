@@ -122,8 +122,10 @@ public class KafkaTopicManager {
             }
             return Optional.empty();
         }
-        return Optional.of(requestHandler.getKafkaTopicManagerSharedState()
-                .getReferences().computeIfAbsent(requestHandler, (__) -> registerInPersistentTopic(persistentTopic)));
+        return requestHandler
+                .getKafkaTopicManagerSharedState()
+                .registerProducer(topicName, requestHandler,
+                        () -> registerInPersistentTopic(persistentTopic));
     }
 
     // when channel close, release all the topics reference in persistentTopic
