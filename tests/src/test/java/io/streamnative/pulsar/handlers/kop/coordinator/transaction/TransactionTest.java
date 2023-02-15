@@ -558,7 +558,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryAbortedTransaction(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "basicRecoveryAbortedTransaction_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer" + UUID.randomUUID();
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -605,7 +605,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             throws Exception {
 
         String topicName = "basicRecoveryAbortedTransactionDueToProducerFenced_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer" + UUID.randomUUID();
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -663,7 +663,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             throws Exception {
 
         String topicName = "basicRecoveryAbortedTransactionDueToProducerTimedOut_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer" + UUID.randomUUID();
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -718,7 +718,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         TopicName fullTopicName = TopicName.get(topicName);
