@@ -85,7 +85,7 @@ public class ClientCredentialsFlow implements Closeable {
                     OAuthBearerTokenImpl token = TOKEN_RESULT_READER.readValue(response.getResponseBodyAsBytes());
                     String tenant = clientInfo.getTenant();
                     // Add tenant for multi-tenant.
-                    if (tenant != null && !tenant.isBlank()) {
+                    if (tenant != null) {
                         token.setTenant(tenant);
                     }
                     return token;

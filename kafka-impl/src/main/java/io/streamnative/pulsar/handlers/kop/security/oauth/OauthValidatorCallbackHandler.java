@@ -42,7 +42,7 @@ import org.apache.pulsar.common.api.AuthData;
 @Slf4j
 public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandler {
 
-    private static final String DELIMITER = "__delimiter__";
+    private static final String DELIMITER = "__with_tenant_";
 
     private ServerConfig config = null;
     private AuthenticationService authenticationService;

@@ -41,7 +41,7 @@ public class OAuthBearerTokenImpl implements OAuthBearerToken {
     }
 
     public void setTenant(String tenant) {
-        this.accessToken = tenant + "__delimiter__" + accessToken;
+        this.accessToken = tenant + "__with_tenant_" + accessToken;
     }
 
     @Override

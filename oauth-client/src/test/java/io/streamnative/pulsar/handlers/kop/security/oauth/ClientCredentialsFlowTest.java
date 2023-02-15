@@ -19,8 +19,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.BoundRequestBuilder;
@@ -85,7 +85,7 @@ public class ClientCredentialsFlowTest {
         doReturn(mockBuilder).when(mockBuilder).setBody(anyString());
 
         OAuthBearerTokenImpl token = flow.authenticate();
-        Assert.assertEquals(token.value(), "my-tenant__delimiter__my-token");
-        Assert.assertEquals(token.scope(), Set.of("test"));
+        Assert.assertEquals(token.value(), "my-tenant__with_tenant__my-token");
+        Assert.assertEquals(token.scope(), Collections.singleton("test"));
     }
 }
