@@ -26,23 +26,42 @@ import org.testng.internal.thread.ThreadTimeoutException;
  */
 @Slf4j
 public class TimeOutTestListener extends TestListenerAdapter {
+
+    private static void print(String prefix, ITestResult tr) {
+        if (tr.getParameters() != null && tr.getParameters().length > 0) {
+            log.info("{} {} {}", prefix, tr.getMethod(), Arrays.toString(tr.getParameters()));
+        } else {
+            log.info("{} {}", prefix, tr.getMethod());
+        }
+    }
+
     @Override
     public void onTestStart(ITestResult tr) {
-        if (tr.getParameters() != null && tr.getParameters().length > 0) {
-            log.info("onTestStart {} {}", tr.getMethod(), Arrays.toString(tr.getParameters()));
-        } else {
-            log.info("onTestStart {}", tr.getMethod());
-        }
+        print("onTestStart", tr);
         super.onTestStart(tr);
     }
 
     @Override
+    public void onTestSuccess(ITestResult tr) {
+        print("onTestSuccess", tr);
+        super.onTestSuccess(tr);
+    }
+
+    @Override
+    public void onTestSkipped(ITestResult tr) {
+        print("onTestSkipped", tr);
+        super.onTestSkipped(tr);
+    }
+
+    @Override
+    public void onTestFailedButWithinSuccessPercentage(ITestResult tr) {
+        print("onTestFailedButWithinSuccessPercentage", tr);
+        super.onTestFailedButWithinSuccessPercentage(tr);
+    }
+
+    @Override
     public void onTestFailure(ITestResult tr) {
-        if (tr.getParameters() != null && tr.getParameters().length > 0) {
-            log.info("onTestFailure {} {}", tr.getMethod(), Arrays.toString(tr.getParameters()));
-        } else {
-            log.info("onTestFailure {}", tr.getMethod());
-        }
+        print("onTestFailure", tr);
         super.onTestFailure(tr);
 
         if (tr.getThrowable() != null
