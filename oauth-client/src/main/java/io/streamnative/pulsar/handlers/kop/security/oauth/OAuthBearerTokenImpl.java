@@ -24,6 +24,8 @@ import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OAuthBearerTokenImpl implements OAuthBearerToken {
 
+    protected static final String DELIMITER = "__with_tenant_";
+
     @JsonProperty("access_token")
     private String accessToken;
 
@@ -41,7 +43,7 @@ public class OAuthBearerTokenImpl implements OAuthBearerToken {
     }
 
     public void setTenant(String tenant) {
-        this.accessToken = tenant + "__with_tenant_" + accessToken;
+        this.accessToken = tenant + DELIMITER + accessToken;
     }
 
     @Override

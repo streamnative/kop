@@ -85,7 +85,7 @@ public class ClientCredentialsFlowTest {
         doReturn(mockBuilder).when(mockBuilder).setBody(anyString());
 
         OAuthBearerTokenImpl token = flow.authenticate();
-        Assert.assertEquals(token.value(), "my-tenant__with_tenant__my-token");
+        Assert.assertEquals(token.value(), "my-tenant" + OAuthBearerTokenImpl.DELIMITER + "my-token");
         Assert.assertEquals(token.scope(), Collections.singleton("test"));
     }
 }

@@ -26,6 +26,7 @@ import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
@@ -118,17 +119,12 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         }
 
         final String tokenWithTenant = callback.tokenValue();
-        final String token;
-        final String tenant;
+
         // Extract real token.
-        int idx = tokenWithTenant.indexOf(DELIMITER);
-        if (idx != -1) {
-            token = tokenWithTenant.substring(idx + DELIMITER.length());
-            tenant = tokenWithTenant.substring(0, idx);
-        } else {
-            token = tokenWithTenant;
-            tenant = null;
-        }
+        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenWithTenant);
+        final String token = tokenAndTenant.getLeft();
+        final String tenant = tokenAndTenant.getRight();
+
         try {
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     AuthData.of(token.getBytes(StandardCharsets.UTF_8)), null, null);
