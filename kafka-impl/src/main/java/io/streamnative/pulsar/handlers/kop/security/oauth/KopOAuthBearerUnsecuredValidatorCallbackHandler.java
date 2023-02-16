@@ -22,6 +22,7 @@ import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerConfigException;
@@ -115,7 +116,11 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
         String scopeClaimName = scopeClaimName();
         List<String> requiredScope = requiredScope();
         int allowableClockSkewMs = allowableClockSkewMs();
-        KopOAuthBearerUnsecuredJws unsecuredJwt = new KopOAuthBearerUnsecuredJws(tokenValue, principalClaimName,
+        // Extract real token.
+        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenValue);
+        final String token = tokenAndTenant.getLeft();
+        final String tenant = tokenAndTenant.getRight();
+        KopOAuthBearerUnsecuredJws unsecuredJwt = new KopOAuthBearerUnsecuredJws(token, tenant, principalClaimName,
                 scopeClaimName);
         long now = time.milliseconds();
         OAuthBearerValidationUtils

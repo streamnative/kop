@@ -196,8 +196,8 @@ public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
     @Test(timeOut = 15000)
     public void testWrongSecret() throws IOException {
         final Properties producerProps = newKafkaProducerProperties();
-        internalConfigureOAuth2(producerProps,
-                HydraOAuthUtils.writeCredentialsFile(ADMIN_USER, ADMIN_SECRET + "-wrong", "test-wrong-secret.json"));
+        internalConfigureOAuth2(producerProps, HydraOAuthUtils
+                .writeCredentialsFile(ADMIN_USER, ADMIN_SECRET + "-wrong", null, "test-wrong-secret.json"));
         try {
             new KafkaProducer<>(producerProps);
         } catch (Exception e) {
