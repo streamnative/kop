@@ -178,6 +178,11 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
                         }
 
                         @Override
+                        public String tenant() {
+                            return null;
+                        }
+
+                        @Override
                         public Long startTimeMs() {
                             return null;
                         }

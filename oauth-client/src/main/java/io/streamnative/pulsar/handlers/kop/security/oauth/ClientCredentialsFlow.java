@@ -63,6 +63,12 @@ public class ClientCredentialsFlow implements Closeable {
                 .build());
     }
 
+    @VisibleForTesting
+    protected ClientCredentialsFlow(ClientConfig clientConfig, AsyncHttpClient httpClient) {
+        this.clientConfig = clientConfig;
+        this.httpClient = httpClient;
+    }
+
     public OAuthBearerTokenImpl authenticate() throws IOException {
         final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
         final ClientInfo clientInfo = loadPrivateKey();
@@ -76,7 +82,13 @@ public class ClientCredentialsFlow implements Closeable {
                     .get();
             switch (response.getStatusCode()) {
                 case 200:
-                    return TOKEN_RESULT_READER.readValue(response.getResponseBodyAsBytes());
+                    OAuthBearerTokenImpl token = TOKEN_RESULT_READER.readValue(response.getResponseBodyAsBytes());
+                    String tenant = clientInfo.getTenant();
+                    // Add tenant for multi-tenant.
+                    if (tenant != null) {
+                        token.setTenant(tenant);
+                    }
+                    return token;
                 case 400: // Bad request
                 case 401: // Unauthorized
                     throw new IOException(OBJECT_MAPPER.writeValueAsString(
@@ -153,6 +165,9 @@ public class ClientCredentialsFlow implements Closeable {
 
         @JsonProperty("client_secret")
         private String secret;
+
+        @JsonProperty("tenant")
+        private String tenant;
     }
 
     @Getter

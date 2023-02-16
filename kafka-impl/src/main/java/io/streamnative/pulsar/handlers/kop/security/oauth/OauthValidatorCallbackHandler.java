@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,7 @@ import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
@@ -41,8 +43,18 @@ import org.apache.pulsar.common.api.AuthData;
 @Slf4j
 public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandler {
 
+    private static final String DELIMITER = "__with_tenant_";
+
     private ServerConfig config = null;
     private AuthenticationService authenticationService;
+
+    public OauthValidatorCallbackHandler() {}
+
+    @VisibleForTesting
+    protected OauthValidatorCallbackHandler(ServerConfig config, AuthenticationService authenticationService) {
+        this.config = config;
+        this.authenticationService = authenticationService;
+    }
 
     @Override
     public void configure(Map<String, ?> configs, String saslMechanism, List<AppConfigurationEntry> jaasConfigEntries) {
@@ -92,7 +104,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         }
     }
 
-    private void handleCallback(KopOAuthBearerValidatorCallback callback) {
+    @VisibleForTesting
+    protected void handleCallback(KopOAuthBearerValidatorCallback callback) {
         if (callback.tokenValue() == null) {
             throw new IllegalArgumentException("Callback has null token value!");
         }
@@ -105,7 +118,13 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
             throw new IllegalStateException("No AuthenticationProvider found for method " + config.getValidateMethod());
         }
 
-        final String token = callback.tokenValue();
+        final String tokenWithTenant = callback.tokenValue();
+
+        // Extract real token.
+        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenWithTenant);
+        final String token = tokenAndTenant.getLeft();
+        final String tenant = tokenAndTenant.getRight();
+
         try {
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     AuthData.of(token.getBytes(StandardCharsets.UTF_8)), null, null);
@@ -136,6 +155,11 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                 @Override
                 public AuthenticationDataSource authDataSource() {
                     return authDataSource;
+                }
+
+                @Override
+                public String tenant() {
+                    return tenant;
                 }
 
                 @Override
