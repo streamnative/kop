@@ -27,5 +27,10 @@ public interface KopOAuthBearerToken extends OAuthBearerToken {
      * Pass the auth data to oauth server.
      */
     AuthenticationDataSource authDataSource();
+
+    /**
+     * Pass the tenant to oauth server if credentials set.
+     */
+    String tenant();
 }
 
