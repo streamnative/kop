@@ -44,6 +44,11 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
         adminCredentialPath = HydraOAuthUtils.createOAuthClient(ADMIN_USER, ADMIN_SECRET);
 
         super.resetConfig();
+        conf.setDefaultNumberOfNamespaceBundles(4);
+        conf.setKafkaMetadataNamespace("__kafka");
+        conf.setOffsetsTopicNumPartitions(10);
+        conf.setKafkaTxnLogTopicNumPartitions(10);
+        conf.setKafkaTxnProducerStateTopicNumPartitions(10);
         conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setBrokerDeduplicationEnabled(true);
         conf.setAuthenticationEnabled(true);
