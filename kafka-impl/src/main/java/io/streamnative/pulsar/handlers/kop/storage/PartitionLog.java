@@ -1141,6 +1141,7 @@ public class PartitionLog {
 
     }
 
+    @VisibleForTesting
     public CompletableFuture<?> takeProducerSnapshot() {
         return initFuture.thenCompose((___)  -> {
             // snapshot can be taken only on the same thread that is used for writes
@@ -1152,6 +1153,7 @@ public class PartitionLog {
         });
     }
 
+    @VisibleForTesting
     public CompletableFuture<Long> forcePurgeAbortTx() {
         return initFuture.thenCompose((___)  -> {
             // purge can be taken only on the same thread that is used for writes
