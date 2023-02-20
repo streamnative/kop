@@ -203,9 +203,12 @@ public class PartitionLog {
                     this.entryFormatter = buildEntryFormatter(topicProperties);
                     this.kafkaTopicUUID = properties.get("kafkaTopicUUID");
                     this.producerStateManager =
-                            new ProducerStateManager(fullPartitionName, kafkaTopicUUID,
+                            new ProducerStateManager(
+                                    fullPartitionName,
+                                    kafkaTopicUUID,
                                     producerStateManagerSnapshotBuffer,
-                                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds());
+                                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                                    kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds());
                 });
     }
 
@@ -1068,7 +1071,7 @@ public class PartitionLog {
      * Remove all the AbortedTxn that are no more referred by existing data on the topic.
      * @return
      */
-    public CompletableFuture<Long> purgeAbortedTxns() {
+    public CompletableFuture<?> updatePurgeAbortedTxnsOffset() {
         if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(null);
@@ -1078,9 +1081,9 @@ public class PartitionLog {
             return CompletableFuture.completedFuture(null);
         }
         return fetchOldestAvailableIndexFromTopic()
-                .thenApply(offset ->
-                    producerStateManager.purgeAbortedTxns(offset)
-                );
+                .thenAccept(offset ->
+                    producerStateManager.updateAbortedTxnsPurgeOffset(offset));
+
     }
 
     public CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
@@ -1146,6 +1149,19 @@ public class PartitionLog {
             return this
                     .getProducerStateManager()
                     .takeSnapshot(executorService);
+        });
+    }
+
+    public CompletableFuture<Long> forcePurgeAbortTx() {
+        return initFuture.thenCompose((___)  -> {
+            // purge can be taken only on the same thread that is used for writes
+            ManagedLedgerImpl ml = (ManagedLedgerImpl) getPersistentTopic().getManagedLedger();
+            ExecutorService executorService = ml.getScheduledExecutor().chooseThread(ml.getName());
+
+            return updatePurgeAbortedTxnsOffset()
+                    .thenApplyAsync((____) -> {
+                        return getProducerStateManager().executePurgeAbortedTx();
+                    }, executorService);
         });
     }
 
@@ -1224,7 +1240,6 @@ public class PartitionLog {
             return future;
         }));
     }
-
 
     private void readNextEntriesForRecovery(ManagedCursor cursor, AtomicLong cursorOffset,
                                             KafkaTopicConsumerManager tcm,
@@ -1329,6 +1344,7 @@ public class PartitionLog {
 
         // do system clean up stuff in this thread
         producerStateManager.maybeTakeSnapshot(recoveryExecutor);
+        producerStateManager.maybePurgeAbortedTx();
     }
 
     private void decodeEntriesForRecovery(final CompletableFuture<DecodeResult> future,

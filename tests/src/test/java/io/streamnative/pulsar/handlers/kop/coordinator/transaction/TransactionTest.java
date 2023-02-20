@@ -57,6 +57,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -568,13 +569,13 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
 
-
         producer.beginTransaction();
 
         String firstMessage = "aborted msg 1";
 
         producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
         producer.flush();
+
         // force take snapshot
         takeSnapshot(topicName);
 
@@ -713,8 +714,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-
-    @Test(timeOut = 60000, dataProvider = "takeSnapshotBeforeRecovery")
+    @Test(timeOut = 10000, dataProvider = "takeSnapshotBeforeRecovery")
     public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery;
@@ -773,11 +773,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
 
-        if (takeSnapshotBeforeRecovery) {
-            admin.namespaces().unload(namespace);
-            admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
-        }
-
         producer.beginTransaction();
         producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
         producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();
@@ -804,17 +799,24 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // verify that we have 2 aborted TX in memory
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
-        assertEquals(2,
-                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE).size());
+        List<FetchResponse.AbortedTransaction> abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+        assertEquals(2, abortedIndexList.size());
 
         // verify that we actually drop (only) one aborted TX
-        long purged = partitionLog.purgeAbortedTxns().get();
+        long purged = partitionLog.forcePurgeAbortTx().get();
         assertEquals(purged, 1);
 
         // verify that we still have one aborted TX
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
-        assertEquals(1,
-             partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE).size());
+        abortedIndexList = partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+        assertEquals(1, abortedIndexList.size());
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -826,7 +828,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 1000 * 20)
     public void basicRecoveryAfterDeleteCreateTopic() throws Exception {
         String topicName = "basicRecoveryAfterDeleteCreateTopic";
-        String transactionalId = "myProducer-deleteCreate";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         TopicName fullTopicName = TopicName.get(topicName);

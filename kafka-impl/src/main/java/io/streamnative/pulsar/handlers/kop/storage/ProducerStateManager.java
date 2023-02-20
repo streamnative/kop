@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,21 +49,27 @@ public class ProducerStateManager {
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
     private final int kafkaTxnProducerStateTopicSnapshotIntervalSeconds;
+    private final int kafkaTxnPurgeAbortedTxnIntervalSeconds;
 
     private volatile long mapEndOffset = -1;
 
     private long lastSnapshotTime;
+    private long lastPurgeAbortedTxnTime;
 
+    private volatile long abortedTxnsPurgeOffset = -1;
 
     public ProducerStateManager(String topicPartition,
                                 String kafkaTopicUUID,
                                 ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer,
-                                int kafkaTxnProducerStateTopicSnapshotIntervalSeconds) {
+                                int kafkaTxnProducerStateTopicSnapshotIntervalSeconds,
+                                int kafkaTxnPurgeAbortedTxnIntervalSeconds) {
         this.topicPartition = topicPartition;
         this.kafkaTopicUUID = kafkaTopicUUID;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
         this.kafkaTxnProducerStateTopicSnapshotIntervalSeconds = kafkaTxnProducerStateTopicSnapshotIntervalSeconds;
+        this.kafkaTxnPurgeAbortedTxnIntervalSeconds = kafkaTxnPurgeAbortedTxnIntervalSeconds;
         this.lastSnapshotTime = System.currentTimeMillis();
+        this.lastPurgeAbortedTxnTime = System.currentTimeMillis();
     }
 
     public CompletableFuture<Void> recover(PartitionLog partitionLog, Executor executor) {
@@ -158,6 +165,34 @@ public class ProducerStateManager {
         lastSnapshotTime = now;
 
         takeSnapshot(executor);
+    }
+
+    void updateAbortedTxnsPurgeOffset(long abortedTxnsPurgeOffset) {
+        if (log.isDebugEnabled()) {
+            log.debug("{} updateAbortedTxnsPurgeOffset {}", topicPartition, abortedTxnsPurgeOffset);
+        }
+        if (abortedTxnsPurgeOffset < 0) {
+            return;
+        }
+        this.abortedTxnsPurgeOffset = abortedTxnsPurgeOffset;
+    }
+
+    long maybePurgeAbortedTx() {
+        if (mapEndOffset == -1) {
+            return 0;
+        }
+        long now = System.currentTimeMillis();
+        long deltaFromLast = (now - lastPurgeAbortedTxnTime) / 1000;
+        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+            return 0;
+        }
+        lastPurgeAbortedTxnTime = now;
+        return executePurgeAbortedTx();
+    }
+
+    @VisibleForTesting
+    long executePurgeAbortedTx() {
+        return purgeAbortedTxns(abortedTxnsPurgeOffset);
     }
 
     private ProducerStateManagerSnapshot getProducerStateManagerSnapshot() {
