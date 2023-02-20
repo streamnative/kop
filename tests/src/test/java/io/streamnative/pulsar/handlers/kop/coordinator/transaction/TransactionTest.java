@@ -17,6 +17,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
 import static org.testng.Assert.fail;
@@ -76,9 +77,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
 
-    @BeforeClass
-    @Override
-    protected void setup() throws Exception {
+    protected void setupTransactions() {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
         this.conf.setOffsetsTopicNumPartitions(10);
         this.conf.setKafkaTxnLogTopicNumPartitions(10);
@@ -86,12 +85,22 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
 
+        // disable automatic snapshots and purgeTx
+        this.conf.setKafkaTxnPurgeAbortedTxnIntervalSeconds(0);
+        this.conf.setKafkaTxnProducerStateTopicSnapshotIntervalSeconds(0);
+
         // enable tx expiration, but producers have
         // a very long TRANSACTION_TIMEOUT_CONFIG
         // so they won't expire by default
         this.conf.setKafkaTransactionalIdExpirationMs(5000);
         this.conf.setKafkaTransactionalIdExpirationEnable(true);
         this.conf.setTopicLevelPoliciesEnabled(false);
+    }
+
+    @BeforeClass
+    @Override
+    protected void setup() throws Exception {
+        setupTransactions();
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -123,7 +132,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 1000 * 30)
     public void testInitTransaction() {
-        final KafkaProducer<Integer, String> producer = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
         producer.close();
@@ -288,9 +298,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         List<String> sendMsgs = prepareData(topic, "first send message - ", messageCnt);
 
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         // producer
         @Cleanup
-        KafkaProducer<Integer, String> producer = buildTransactionProducer("12");
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         // consumer
         @Cleanup
@@ -362,7 +373,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenSnapshots;
         String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
-        boolean isBatch = false;
 
         String namespace = TopicName.get(topicName).getNamespace();
 
@@ -389,14 +399,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 String msgContent = String.format(contentBase, txnIndex, messageIndex);
                 log.info("send txn message {}", msgContent);
                 lastMessage = msgContent;
-                if (isBatch) {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent));
-                } else {
-                    producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
-                }
+                producer.send(new ProducerRecord<>(topicName, messageIndex, msgContent)).get();
             }
             producer.flush();
 
+            // please note that we always have 1 transactions in state "ONGOING" here
             if (numTransactionsBetweenSnapshots > 0
                     && (txnIndex % numTransactionsBetweenSnapshots) == 0) {
                 // force take snapshot
@@ -595,6 +602,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             takeSnapshot(topicName);
         }
 
+        waitForTransactionsToBeInStableState(transactionalId);
+
         // unload the namespace, this will force a recovery
         pulsar.getAdminClient().namespaces().unload(namespace);
 
@@ -611,7 +620,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = TopicName.get(topicName).getNamespace();
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
@@ -630,7 +638,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
 
 
-        @Cleanup
+
         KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
 
@@ -639,18 +647,21 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         expectThrows(ProducerFencedException.class, () -> {
             producer.commitTransaction();
         });
-
+        producer.close();
 
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
         producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
+        producer2.close();
 
         if (takeSnapshotBeforeRecovery) {
             // force take snapshot
             takeSnapshot(topicName);
         }
+
+        waitForTransactionsToBeInStableState(transactionalId);
 
         // unload the namespace, this will force a recovery
         pulsar.getAdminClient().namespaces().unload(namespace);
@@ -669,7 +680,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = TopicName.get(topicName).getNamespace();
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
 
         producer.initTransactions();
@@ -694,7 +704,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producer.commitTransaction();
         });
 
-        @Cleanup
+        producer.close();
+
         KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
         producer2.initTransactions();
         producer2.beginTransaction();
@@ -702,11 +713,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
+        producer2.close();
 
         if (takeSnapshotBeforeRecovery) {
             // force take snapshot
             takeSnapshot(topicName);
         }
+
+        waitForTransactionsToBeInStableState(transactionalId);
 
         // unload the namespace, this will force a recovery
         pulsar.getAdminClient().namespaces().unload(namespace);
@@ -726,8 +740,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         pulsar.getAdminClient().topics().createPartitionedTopic(topicName, 1);
 
         String namespace = fullTopicName.getNamespace();
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+        String namespacePrefix = namespace;
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
@@ -736,21 +751,37 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 pulsar.getProtocolHandlers().protocol("kafka");
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get(); // OFFSET 0
         producer.flush();
         // this transaction is to be purged later
-        producer.abortTransaction();
+        producer.abortTransaction();  // OFFSET 1
+
+        waitForTransactionsToBeInStableState(transactionalId);
+
+        PartitionLog partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
+        List<FetchResponse.AbortedTransaction> abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
 
         producer.beginTransaction();
         String lastMessage = "msg1b";
-        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get();  // OFFSET 2
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();  // OFFSET 3
+        producer.commitTransaction();  // OFFSET 4
 
         assertEquals(
             consumeTxnMessage(topicName, 2, lastMessage, isolation, "first_group"),
             List.of("msg1", "msg1b"));
 
+       waitForTransactionsToBeInStableState(transactionalId);
 
         // unload and reload in order to have at least 2 ledgers in the
         // topic, this way we can drop the head ledger
@@ -758,10 +789,28 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get();  // OFFSET 5
+        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get();  // OFFSET 6
+        producer.commitTransaction();  // OFFSET 7
 
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
+        abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(1, abortedIndexList.size());
+
+        waitForTransactionsToBeInStableState(transactionalId);
+
+        admin.namespaces().unload(namespace);
+        admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
         admin.namespaces().unload(namespace);
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
@@ -769,42 +818,86 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             takeSnapshot(topicName);
         }
 
-        // all the messages up to here will be trimmed
+        // validate that the topic has been trimmed
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
+        // all the messages up to here will be trimmed
+        log.info("BEFORE TRUNCATE");
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
+        log.info("AFTER TRUNCATE");
+
+        assertSame(partitionLog, protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix));
+
+        assertEquals(7L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+        abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+
+        assertEquals(1, abortedIndexList.size());
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get(); // OFFSET 8
+        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get(); // OFFSET 9
+        producer.commitTransaction();  // OFFSET 10
+
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // this TX is aborted and must not be purged
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "aborted 2")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 2")).get();  // OFFSET 11
         producer.flush();
-        producer.abortTransaction();
+        producer.abortTransaction();  // OFFSET 12
+
+        waitForTransactionsToBeInStableState(transactionalId);
+
+        abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(2, abortedIndexList.size());
 
         producer.beginTransaction();
         String lastMessage2 = "msg6";
         producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
         producer.commitTransaction();
+        producer.close();
 
-        TopicPartition topicPartition = new TopicPartition(topicName, 0);
-        String namespacePrefix = namespace;
+        waitForTransactionsToBeInStableState(transactionalId);
 
-        PartitionLog partitionLog = protocolHandler
+        partitionLog = protocolHandler
                 .getReplicaManager()
                 .getPartitionLog(topicPartition, namespacePrefix);
         partitionLog.awaitInitialisation().get();
 
         // verify that we have 2 aborted TX in memory
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
-        List<FetchResponse.AbortedTransaction> abortedIndexList =
+        abortedIndexList =
                 partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
+
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(11, abortedIndexList.get(1).firstOffset);
         assertEquals(2, abortedIndexList.size());
+
 
         // verify that we actually drop (only) one aborted TX
         long purged = partitionLog.forcePurgeAbortTx().get();
@@ -817,6 +910,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
         assertEquals(1, abortedIndexList.size());
+        assertEquals(11, abortedIndexList.get(0).firstOffset);
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -872,9 +966,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 10, secondMessage, "read_uncommitted",
                 "uncommitted_reader1");
 
-        for (int i = 0; i < 10; i++) {
-            log.info("************DELETE");
-        }
+        waitForTransactionsToBeInStableState(transactionalId);
+
         // delete/create
         pulsar.getAdminClient().namespaces().unload(namespace);
         admin.topics().deletePartitionedTopic(topicName, true);
@@ -894,7 +987,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // the snapshot now points to a offset that doesn't make sense in the new topic
         // because the new topic is empty
 
-        @Cleanup
         KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
         producer2.initTransactions();
         producer2.beginTransaction();
@@ -904,6 +996,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.send(new ProducerRecord<>(topicName, 0, "good-message")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
+        producer2.close();
 
         consumeTxnMessage(topicName, 2, lastMessage, isolation, "readcommitter-reader-1");
     }
@@ -1097,14 +1190,16 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileSendFirstRecord() throws Exception {
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String topicName = "testProducerFencedWhileSendFirstRecord";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
         assertThat(
                 expectThrows(ExecutionException.class, () -> {
@@ -1118,20 +1213,22 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileCommitTransaction() throws Exception {
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String topicName = "testProducerFencedWhileCommitTransaction";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
-        producer1.send(new ProducerRecord<>("test", "test"))
+        producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
 
         // producer1 is still able to write (TODO: this should throw a InvalidProducerEpochException)
-        producer1.send(new ProducerRecord<>("test", "test")).get();
+        producer1.send(new ProducerRecord<>(topicName, "test")).get();
 
         // but it cannot commit
         expectThrows(ProducerFencedException.class, () -> {
@@ -1146,16 +1243,18 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileSendOffsets() throws Exception {
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String topicName = "testProducerFencedWhileSendOffsets";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
-        producer1.send(new ProducerRecord<>("test", "test"))
+        producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
 
         // producer1 cannot offsets
@@ -1176,16 +1275,18 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileAbortAndBegin() throws Exception {
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String topicName = "testProducerFencedWhileAbortAndBegin";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
-        producer1.send(new ProducerRecord<>("test", "test"))
+        producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
         // producer1 cannot abort
         expectThrows(ProducerFencedException.class, () -> {
@@ -1202,13 +1303,15 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testNotFencedWithBeginTransaction() throws Exception {
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String topicName = "testNotFencedWithBeginTransaction";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
         // beginTransaction doesn't do anything
         producer1.beginTransaction();

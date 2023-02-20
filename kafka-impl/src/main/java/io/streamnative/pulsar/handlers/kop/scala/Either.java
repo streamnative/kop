@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.scala;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.Getter;
+import lombok.ToString;
 
 /**
  * A simple Java migration of <a href="https://www.scala-lang.org/api/2.13.6/scala/util/Either.html">Scala Either</a>.
@@ -45,6 +46,7 @@ import lombok.Getter;
  * @param <W> the type of the 2nd possible value (the right side)
  */
 @Getter
+@ToString
 public class Either<V, W> {
 
     private final V left;
