@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.apache.kafka.clients.CommonClientConfigs.CLIENT_ID_CONFIG;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
@@ -1155,6 +1156,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             // very long time-out
             producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, 600 * 1000);
         }
+        producerProps.put(CLIENT_ID_CONFIG, "dummy_client_" + UUID.randomUUID());
         addCustomizeProps(producerProps);
 
         return new KafkaProducer<>(producerProps);
