@@ -182,18 +182,19 @@ public class ByteBufUtils {
             final long timestamp = (metadata.getEventTime() > 0)
                     ? metadata.getEventTime()
                     : metadata.getPublishTime();
+            final ByteBuffer value = metadata.isNullValue() ? null : getNioBuffer(uncompressedPayload);
             if (magic >= RecordBatch.MAGIC_VALUE_V2) {
                 final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
                 builder.appendWithOffset(baseOffset,
                         timestamp,
                         getKeyByteBuffer(metadata),
-                        getNioBuffer(uncompressedPayload),
+                        value,
                         headers);
             } else {
                 builder.appendWithOffset(baseOffset,
                         timestamp,
                         getKeyByteBuffer(metadata),
-                        getNioBuffer(uncompressedPayload));
+                        value);
             }
         }
 
