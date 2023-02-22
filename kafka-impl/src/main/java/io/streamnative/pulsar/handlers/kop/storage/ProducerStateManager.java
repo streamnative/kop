@@ -140,8 +140,10 @@ public class ProducerStateManager {
                             if (error != null) {
                                 result.completeExceptionally(error);
                             } else {
-                                log.info("Snapshot for {} ({}) taken at offset {}",
-                                        topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Snapshot for {} ({}) taken at offset {}",
+                                            topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                                }
                                 result.complete(snapshot);
                             }
                         });
