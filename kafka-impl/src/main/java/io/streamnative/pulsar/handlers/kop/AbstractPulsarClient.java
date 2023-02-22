@@ -15,12 +15,11 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
-import java.io.Closeable;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -33,7 +32,7 @@ import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
  */
 @Slf4j
 @Getter
-public abstract class AbstractPulsarClient implements Closeable {
+public abstract class AbstractPulsarClient {
 
     private final PulsarClientImpl pulsarClient;
 
@@ -41,7 +40,6 @@ public abstract class AbstractPulsarClient implements Closeable {
         this.pulsarClient = pulsarClient;
     }
 
-    @Override
     public void close() {
         try {
             pulsarClient.close();
@@ -50,13 +48,8 @@ public abstract class AbstractPulsarClient implements Closeable {
         }
     }
 
-    protected static PulsarClientImpl createPulsarClient(final PulsarService pulsarService) {
-        try {
-            return (PulsarClientImpl) pulsarService.getClient();
-        } catch (PulsarServerException e) {
-            log.error("Failed to create PulsarClient", e);
-            throw new IllegalStateException(e);
-        }
+    public CompletableFuture<?> closeAsync() {
+        return pulsarClient.closeAsync();
     }
 
     /**
