@@ -52,7 +52,7 @@
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>2.22.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
-    <pulsar.version>2.11.0.0-rc3</pulsar.version>
+    <pulsar.version>2.11.0.0-rc5</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.12</spotbugs-annotations.version>
     <apicurio.version>2.1.1.Final</apicurio.version>
@@ -491,6 +491,10 @@
       <id>central</id>
       <layout>default</layout>
       <url>https://repo1.maven.org/maven2</url>
+    </repository>
+    <repository>
+      <id>ossrh01</id>
+      <url>https://s01.oss.sonatype.org/service/local/repositories/iostreamnative-2022/content</url>
     </repository>
   </repositories>
 
