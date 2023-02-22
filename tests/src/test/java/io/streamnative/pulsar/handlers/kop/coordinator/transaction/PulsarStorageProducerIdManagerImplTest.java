@@ -23,12 +23,12 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.pulsar.common.policies.data.InactiveTopicDeleteMode;
 import org.apache.pulsar.common.policies.data.InactiveTopicPolicies;
 import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.awaitility.Awaitility;
-import org.powermock.reflect.Whitebox;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -187,7 +187,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
 
         PersistentTopicInternalStats stats = pulsar.getAdminClient().topics().getInternalStats(topic);
         log.info("stats {}", stats);
-        Whitebox.invokeMethod(pulsar.getBrokerService(), "checkConsumedLedgers");
+        MethodUtils.invokeMethod(pulsar.getBrokerService(), true, "checkConsumedLedgers");
 
         // wait for topic to be automatically trimmed
         Awaitility
@@ -195,7 +195,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
                 .pollInterval(5, TimeUnit.SECONDS)
                 .untilAsserted(
                 () -> {
-                    Whitebox.invokeMethod(pulsar.getBrokerService(), "checkConsumedLedgers");
+                    MethodUtils.invokeMethod(pulsar.getBrokerService(), true, "checkConsumedLedgers");
                     PersistentTopicInternalStats stats2 = pulsar.getAdminClient().topics().getInternalStats(topic);
                     log.info("stats2 {}", stats2);
                     assertEquals(0, stats2.numberOfEntries);
