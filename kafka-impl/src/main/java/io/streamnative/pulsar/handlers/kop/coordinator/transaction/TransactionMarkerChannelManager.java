@@ -190,7 +190,8 @@ public class TransactionMarkerChannelManager {
             return FutureUtil.failedFuture(new Exception("This TransactionMarkerChannelManager is closed"));
         }
         ensureDrainQueuedTransactionMarkersActivity();
-        return handlerMap.computeIfAbsent(socketAddress, address -> {
+        CompletableFuture<TransactionMarkerChannelHandler> result =
+                handlerMap.computeIfAbsent(socketAddress, address -> {
             CompletableFuture<TransactionMarkerChannelHandler> handlerFuture = new CompletableFuture<>();
             ChannelFutures.toCompletableFuture(bootstrap.connect(socketAddress))
                     .thenAccept(channel -> {
@@ -200,8 +201,20 @@ public class TransactionMarkerChannelManager {
                         handlerFuture.completeExceptionally(e);
                         return null;
                     });
+
+            // do not cache failed futures
+            handlerFuture.exceptionally(error -> {
+                handlerMap.remove(socketAddress, handlerFuture);
+                return null;
+            });
             return handlerFuture;
         });
+
+        if (result.isCompletedExceptionally()) {
+            // edge case, the future failed before it was cached
+            handlerMap.remove(socketAddress, result);
+        }
+        return result;
     }
 
     public void channelFailed(InetSocketAddress socketAddress, TransactionMarkerChannelHandler handler) {
