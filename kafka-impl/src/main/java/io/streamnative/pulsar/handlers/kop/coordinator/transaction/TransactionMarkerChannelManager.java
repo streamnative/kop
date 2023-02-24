@@ -204,6 +204,7 @@ public class TransactionMarkerChannelManager {
 
             // do not cache failed futures
             handlerFuture.exceptionally(error -> {
+                log.error("getChannel failed {} {}", socketAddress, error.getMessage(), error);
                 handlerMap.remove(socketAddress, handlerFuture);
                 return null;
             });
