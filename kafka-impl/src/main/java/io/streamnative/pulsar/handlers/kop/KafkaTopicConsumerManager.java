@@ -137,7 +137,8 @@ public class KafkaTopicConsumerManager implements Closeable {
     // each success remove should have a following add.
     public CompletableFuture<Pair<ManagedCursor, Long>> removeCursorFuture(long offset) {
         if (closed.get()) {
-            return null;
+            return CompletableFuture.failedFuture(new Exception("Current managedLedger for "
+                    + topic.getName() + " has been closed."));
         }
 
         lastAccessTimes.remove(offset);
