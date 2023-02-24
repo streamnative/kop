@@ -72,8 +72,8 @@ public class ProducerAppendInfo {
     private void checkProducerEpoch(short producerEpoch) {
         if (updatedEntry.producerEpoch() != null
                 && producerEpoch < updatedEntry.producerEpoch()) {
-            String message = String.format("Producer's epoch in %s is %s, which is smaller than the last seen "
-                    + "epoch %s", topicPartition, producerEpoch, currentEntry.producerEpoch());
+            String message = String.format("Producer %s's epoch in %s is %s, which is smaller than the last seen "
+                    + "epoch %s", producerId, topicPartition, producerEpoch, currentEntry.producerEpoch());
             throw new IllegalArgumentException(message);
         }
     }
