@@ -177,6 +177,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case LEADER_NOT_AVAILABLE:
+                        case BROKER_NOT_AVAILABLE:
                         case NOT_LEADER_OR_FOLLOWER:
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
                                             + "retrying with current coordinator epoch {} and invalidating cache",
