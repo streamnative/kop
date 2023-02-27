@@ -13,19 +13,19 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import static org.mockito.ArgumentMatchers.anyString;
+import static com.github.tomakehurst.wiremock.client.WireMock.configureFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.WireMock;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
-import org.asynchttpclient.AsyncHttpClient;
-import org.asynchttpclient.BoundRequestBuilder;
-import org.asynchttpclient.ListenableFuture;
-import org.asynchttpclient.Response;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -56,37 +56,36 @@ public class ClientCredentialsFlowTest {
     }
 
     @Test
-    public void testTenantToken() throws ExecutionException, InterruptedException, IOException {
-        AsyncHttpClient mockHttpClient = mock(AsyncHttpClient.class);
-        final ClientCredentialsFlow flow = spy(new ClientCredentialsFlow(ClientConfigHelper.create(
-                "http://localhost:4444",
-                Objects.requireNonNull(
-                        getClass().getClassLoader().getResource("private_key.json")).toString()
-        ), mockHttpClient));
+    public void testTenantToken() throws IOException {
+        WireMockServer mockOauthServer = new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
+        try {
+            mockOauthServer.start();
+            final ClientCredentialsFlow flow = spy(new ClientCredentialsFlow(ClientConfigHelper.create(
+                    mockOauthServer.url("/"),
+                    Objects.requireNonNull(
+                            getClass().getClassLoader().getResource("private_key.json")).toString()
+            )));
 
-        ClientCredentialsFlow.Metadata mockMetadata = mock(ClientCredentialsFlow.Metadata.class);
-        doReturn("mockTokenEndPoint").when(mockMetadata).getTokenEndPoint();
+            ClientCredentialsFlow.Metadata mockMetadata = mock(ClientCredentialsFlow.Metadata.class);
+            doReturn(mockOauthServer.url("/mockTokenEndPoint")).when(mockMetadata).getTokenEndPoint();
 
-        doReturn(mockMetadata).when(flow).findAuthorizationServer();
+            doReturn(mockMetadata).when(flow).findAuthorizationServer();
 
-        BoundRequestBuilder mockBuilder = mock(BoundRequestBuilder.class);
-        ListenableFuture<Response> mockFuture = mock(ListenableFuture.class);
-        Response mockResponse = mock(Response.class);
-        doReturn(200).when(mockResponse).getStatusCode();
-        String responseString = "{\n"
-                + "    \"access_token\":\"my-token\",\n"
-                + "    \"expires_in\":42,\n"
-                + "    \"scope\":\"test\"\n"
-                + "}";
-        doReturn(responseString.getBytes()).when(mockResponse).getResponseBodyAsBytes();
-        doReturn(mockResponse).when(mockFuture).get();
-        doReturn(mockFuture).when(mockBuilder).execute();
-        doReturn(mockBuilder).when(mockHttpClient).preparePost(anyString());
-        doReturn(mockBuilder).when(mockBuilder).setHeader(anyString(), anyString());
-        doReturn(mockBuilder).when(mockBuilder).setBody(anyString());
+            String responseString = "{\n"
+                    + "    \"access_token\":\"my-token\",\n"
+                    + "    \"expires_in\":42,\n"
+                    + "    \"scope\":\"test\"\n"
+                    + "}";
+            configureFor("localhost", mockOauthServer.port());
+            stubFor(WireMock.post(urlPathEqualTo("/mockTokenEndPoint"))
+                    .willReturn(WireMock.ok(responseString))
+            );
+            OAuthBearerTokenImpl token = flow.authenticate();
+            Assert.assertEquals(token.value(), "my-tenant" + OAuthBearerTokenImpl.DELIMITER + "my-token");
+            Assert.assertEquals(token.scope(), Collections.singleton("test"));
+        } finally {
+            mockOauthServer.shutdown();
+        }
 
-        OAuthBearerTokenImpl token = flow.authenticate();
-        Assert.assertEquals(token.value(), "my-tenant" + OAuthBearerTokenImpl.DELIMITER + "my-token");
-        Assert.assertEquals(token.scope(), Collections.singleton("test"));
     }
 }

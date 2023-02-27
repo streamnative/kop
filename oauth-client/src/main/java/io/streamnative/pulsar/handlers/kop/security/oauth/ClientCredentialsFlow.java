@@ -15,10 +15,8 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
-import com.google.common.annotations.VisibleForTesting;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,7 +25,6 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
-import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -107,7 +104,6 @@ public class ClientCredentialsFlow implements Closeable {
     public void close() throws IOException {
     }
 
-    @VisibleForTesting
     Metadata findAuthorizationServer() throws IOException {
         // See RFC-8414 for this well-known URI
         final URL wellKnownMetadataUrl = URI.create(clientConfig.getIssuerUrl().toExternalForm()
