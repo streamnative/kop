@@ -25,21 +25,30 @@ If you have an Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your exi
 2. Set the configuration of the KoP protocol handler in Pulsar `broker.conf` or `standalone.conf` files.
 3. Restart Pulsar brokers to load KoP protocol handler.
 
-And then you can start your broker and use KoP. The followings are detailed instructions for each step.
+Then you can start your broker and use KoP.
 
-## Get KoP protocol handler
+This getting-started guide offers several ways to get started with KoP:
+* Setting up an existing Pulsar cluster to run KoP based on steps above
+* Using Docker Compose with a standalone pulsar (all in one, including Zookeeper, Bookkeeper and Pulsar), including configuration needed for KoP
+* Using Docker Compose with a service for Zookeeper, Bookkeeper and Pulsar
+
+Once KoP is installed and running in Pulsar, follow the instruction in "Validating KoP is running correctly" section to validate KoP is working.
+
+## Setting up an existing Pulsar Cluster to run KoP
+
+### Step 1: Get KoP protocol handler
 
 This section describes how to get the KoP protocol handler.
 
-### Download KoP protocol handler
+#### Download KoP protocol handler
 
-StreamNative provide a ready-to-use KoP docker image. You can download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly.
+You can download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly.
 
-### Build KoP protocol handler from source code
+#### Build KoP protocol handler from source code
 
-To build the KoP protocol handler from the source, follow thse steps.
+To build the KoP protocol handler from the source, follow these steps:
 
-1. Clone the KoP GitHub project to your local. 
+1. Clone the KoP GitHub project to your local.
 
     ```bash
     git clone https://github.com/streamnative/kop.git
@@ -51,13 +60,13 @@ To build the KoP protocol handler from the source, follow thse steps.
     mvn clean install -DskipTests
     ```
 
-3. Get the `.nar` file in the following directory and copy it your Pulsar `protocols` directory. You need to create the `protocols` folder in Pulsar if it's the first time you use protocol handlers.
+3. Get the `.nar` file in the following directory and copy it to your Pulsar `protocols` directory. You need to create the `protocols` folder in Pulsar if it's the first time you use protocol handlers.
 
     ```bash
     ./kafka-impl/target/pulsar-protocol-handler-kafka-{{protocol:version}}.nar
     ```
 
-## Set configuration for KoP
+### Step 2: Set configuration for KoP
 
 After you copy the `.nar` file to your Pulsar `/protocols` directory, you need to configure the Pulsar broker to run the KoP protocol handler as a plugin by adding configurations in the Pulsar configuration file `broker.conf` or `standalone.conf`.
 
@@ -70,30 +79,30 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     narExtractionDirectory=/path/to/nar
     ```
 
-    | Property | Default value | Proposed value |
-    | :------- | :---------------------------- | :------------ |
-    | `messagingProtocols` |  | kafka |
-    | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
-    | `allowAutoTopicCreationType`| non-partitioned | partitioned |
-    | `narExtractionDirectory` | `/tmp/pulsar-nar` | Location of unpacked KoP NAR file |
+   | Property | Default value | Proposed value |
+   | :------- | :---------------------------- | :------------ |
+   | `messagingProtocols` |  | kafka |
+   | `protocolHandlerDirectory`|./protocols  | Location of KoP NAR file |
+   | `allowAutoTopicCreationType`| non-partitioned | partitioned |
+   | `narExtractionDirectory` | `/tmp/pulsar-nar` | Location of unpacked KoP NAR file |
 
-    By default, `allowAutoTopicCreationType` is set to `non-partitioned`. Since topics are partitioned by default in Kafka, it's better to avoid creating non-partitioned topics for Kafka clients unless Kafka clients need to interact with existing non-partitioned topics.
+   By default, `allowAutoTopicCreationType` is set to `non-partitioned`. Since topics are partitioned by default in Kafka, it's better to avoid creating non-partitioned topics for Kafka clients unless Kafka clients need to interact with existing non-partitioned topics.
 
-    By default, the `/tmp/pulsar-nar` directory is under the `/tmp` directory. If we unpackage the KoP NAR file into the `/tmp` directory, some classes could be automatically deleted by the system, which will generate a`ClassNotFoundException` or `NoClassDefFoundError` error. Therefore, it is recommended to set the `narExtractionDirectory` option to another path.
+   By default, the `/tmp/pulsar-nar` directory is under the `/tmp` directory. If we unpack the KoP NAR file into the `/tmp` directory, some classes could be automatically deleted by the system, which will generate a `ClassNotFoundException` or `NoClassDefFoundError` error. Therefore, it is recommended to set the `narExtractionDirectory` option to another path.
 
 2. Set Kafka listeners.
 
     ```properties
     # Use `kafkaListeners` here for KoP 2.8.0 because `listeners` is marked as deprecated from KoP 2.8.0 
-    kafkaListeners=PLAINTEXT://127.0.0.1:9092
+    kafkaListeners=PLAINTEXT://0.0.0.0:9092
     # This config is not required unless you want to expose another address to the Kafka client.
     # If it’s not configured, it will be the same with `kafkaListeners` config by default
     kafkaAdvertisedListeners=PLAINTEXT://127.0.0.1:9092
     ```
-    - `kafkaListeners` is a comma-separated list of listeners and the host/IP and port to which Kafka binds to for listening. 
-    - `kafkaAdvertisedListeners` is a comma-separated list of listeners with their host/IP and port. 
+    - `kafkaListeners` is a comma-separated list of listeners and the host/IP and port to which Kafka binds to for listening.
+    - `kafkaAdvertisedListeners` is a comma-separated list of listeners with their host/IP and port.
 
-3. Set offset management as below since offset management for KoP depends on Pulsar "Broker Entry Metadata". It’s required for KoP 2.8.0 or higher version.
+3. Set offset management as below, since offset management for KoP depends on Pulsar "Broker Entry Metadata". It’s required for KoP 2.8.0 or higher version.
 
     ```properties
     brokerEntryMetadataInterceptors=org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
@@ -105,9 +114,52 @@ After you copy the `.nar` file to your Pulsar `/protocols` directory, you need t
     brokerDeleteInactiveTopicsEnabled=false
     ```
 
-## Load KoP by restarting Pulsar brokers
+### Step 3: Load KoP by restarting Pulsar brokers
 
-After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP if you have configured the `conf/broker.conf` file. For a quick start, you can configure the `conf/standalone.conf` file and run a Pulsar standalone. You can verify if your KoP works well by running a Kafka client.
+After you have installed the KoP protocol handler to Pulsar broker, you can restart the Pulsar brokers to load KoP if you have configured the `conf/broker.conf` file. For a quick start, you can configure the `conf/standalone.conf` file and run a Pulsar standalone.
+
+## Run KoP on Standalone Pulsar in Docker Compose
+
+KoP is a built-in component in StreamNative's `sn-pulsar` image, whose tag matches KoP's version. Take KoP 2.9.1.1 for example, you can execute `docker compose up` command in the KoP project directory to start a Pulsar standalone with KoP being enabled. KoP has a single advertised listener `127.0.0.1:19092`, so you should use Kafka's CLI tool to connect KoP, as shown below:
+
+```bash
+$ ./bin/kafka-console-producer.sh --bootstrap-server localhost:19092 --topic my-topic                 
+>hello
+>world
+                                                                                                                                                         $ ./bin/kafka-console-consumer.sh --bootstrap-server localhost:19092 --topic my-topic --from-beginning
+hello
+world
+```
+
+See [docker-compose.yml](../docker-compose.yml) for more details.
+
+Similar to configuring KoP in a cluster that is started in Docker, you only need to add the environment variable according to your customized configuration and ensure to execute `bin/apply-config-from-env.py conf/broker.conf` before executing `bin/pulsar broker`. The environment variable should be a property's key if it already exists in the configuration file. Otherwise, it should have the prefix `PULSAR_PREFIX_`.
+
+### Run KoP in Pulsar with component for each system using Docker Compose
+
+The docker compose file is [docker-compose-cluster.yml](../docker-compose-cluster.yaml) and contains Pulsar image which is bundled with the KoP plugin, and the required configuration both for Pulsar and KoP
+
+You can start the cluster using the following command:
+
+```bash
+docker compose -f docker-compose-cluster.yaml up -d
+```
+
+You can follow Pulsar's broker logs by using this command:
+
+```bash
+docker logs -f broker
+```
+
+Once you see the following log line, you know Pulsar is up and ready to be validated.
+
+```
+2023-02-28T15:45:06,358+0000 [main] INFO  org.apache.pulsar.PulsarBrokerStarter - PulsarService started.
+```
+
+## Validating KoP is running correctly
+
+You can verify if your KoP works well by running a Kafka client.
 
 1. Download [Kafka 2.0.0](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz) and untar the release package.
 
@@ -126,7 +178,7 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
         This is another message
         ```
 
-    
+
     2. Run the command-line consumer to receive messages from the server.
 
         ```
@@ -135,23 +187,7 @@ After you have installed the KoP protocol handler to Pulsar broker, you can rest
         This is another message
         ```
 
-### Run KoP in Docker
 
-KoP is a built-in component in StreamNative's `sn-pulsar` image, whose tag matches KoP's version. Take KoP 2.9.1.1 for example, you can execute `docker compose up` command in the KoP project directory to start a Pulsar standalone with KoP being enabled. KoP has a single advertised listener `127.0.0.1:19092`, so you should use Kafka's CLI tool to connect KoP, as shown below:
-
-```bash
-$ ./bin/kafka-console-producer.sh --bootstrap-server localhost:19092 --topic my-topic                 
->hello
->world
->^C                                                                                                                                                                                                                                                        $ ./bin/kafka-console-consumer.sh --bootstrap-server localhost:19092 --topic my-topic --from-beginning
-hello
-world
-^CProcessed a total of 2 messages
-```
-
-See [docker-compose.yml](../docker-compose.yml) for more details.
-
-Similar to configuring KoP in a cluster that is started in Docker, you only need to add the environment varialble according to your customized configuration and ensure to execute `bin/apply-config-from-env.py conf/broker.conf` before executing `bin/pulsar broker`. The environment variable should be a property's key if it already exists in the configuration file. Otherwise it should have the prefix `PULSAR_PREFIX_`.
 
 # How to use KoP
 

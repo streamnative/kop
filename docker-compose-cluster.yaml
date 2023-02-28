@@ -1,0 +1,108 @@
+version: '3'
+networks:
+  pulsar:
+    driver: bridge
+services:
+  # Start zookeeper
+  zookeeper:
+    image: streamnative/sn-pulsar:2.10.3.4
+    container_name: zookeeper
+    restart: "no"
+    networks:
+      - pulsar
+    volumes:
+      - ./data/zookeeper:/pulsar/data/zookeeper
+    environment:
+      - metadataStoreUrl=zk:zookeeper:2181
+      - PULSAR_MEM=-Xms256m -Xmx256m -XX:MaxDirectMemorySize=256m
+    command: >
+      bash -c "bin/apply-config-from-env.py conf/zookeeper.conf && \
+             bin/generate-zookeeper-config.sh conf/zookeeper.conf && \
+             exec bin/pulsar zookeeper"
+    healthcheck:
+      test: ["CMD", "bin/pulsar-zookeeper-ruok.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "2181:2181"
+
+  # Init cluster metadata
+  pulsar-init:
+    container_name: pulsar-init
+    hostname: pulsar-init
+    image: streamnative/sn-pulsar:2.10.3.4
+    networks:
+      - pulsar
+    command: >
+      bin/pulsar initialize-cluster-metadata \
+               --cluster cluster-a \
+               --zookeeper zookeeper:2181 \
+               --configuration-store zookeeper:2181 \
+               --web-service-url http://broker:8080 \
+               --broker-service-url pulsar://broker:6650
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+
+  # Start bookie
+  bookie:
+    image: streamnative/sn-pulsar:2.10.3.4
+    container_name: bookie
+    restart: "no"
+    networks:
+      - pulsar
+    environment:
+      - clusterName=cluster-a
+      - zkServers=zookeeper:2181
+      - metadataServiceUri=metadata-store:zk:zookeeper:2181
+      # otherwise every time we run docker compose uo or down we fail to start due to Cookie
+      - advertisedAddress=bookie
+      - BOOKIE_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+    # Map the local directory to the container to avoid bookie startup failure due to insufficient container disks.
+    volumes:
+      - ./data/bookkeeper:/pulsar/data/bookkeeper
+    command: bash -c "bin/apply-config-from-env.py conf/bookkeeper.conf
+      && exec bin/pulsar bookie"
+
+  # Start broker
+  broker:
+    image: streamnative/sn-pulsar:2.10.3.4
+    container_name: broker
+    hostname: broker
+    restart: "no"
+    networks:
+      - pulsar
+    environment:
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m
+      - PULSAR_PREFIX_metadataStoreUrl=zk:zookeeper:2181
+      - PULSAR_PREFIX_zookeeperServers=zookeeper:2181
+      - PULSAR_PREFIX_clusterName=cluster-a
+      - PULSAR_PREFIX_managedLedgerDefaultEnsembleSize=1
+      - PULSAR_PREFIX_managedLedgerDefaultWriteQuorum=1
+      - PULSAR_PREFIX_managedLedgerDefaultAckQuorum=1
+      - PULSAR_PREFIX_advertisedAddress=broker
+      - PULSAR_PREFIX_advertisedListeners=external:pulsar://127.0.0.1:6650
+      # KoP
+      - PULSAR_PREFIX_messagingProtocols=kafka
+      - PULSAR_PREFIX_allowAutoTopicCreationType=partitioned
+      - PULSAR_PREFIX_kafkaListeners=PLAINTEXT://0.0.0.0:9092
+      - PULSAR_PREFIX_kafkaAdvertisedListeners=PLAINTEXT://127.0.0.1:9092
+      - PULSAR_PREFIX_brokerEntryMetadataInterceptors=org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
+      - PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled=false
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      bookie:
+        condition: service_started
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+      #- "8001:8001" # what is this for?
+      - "9092:9092"
+    command: bash -c "bin/apply-config-from-env.py conf/broker.conf &&  exec bin/pulsar broker"
