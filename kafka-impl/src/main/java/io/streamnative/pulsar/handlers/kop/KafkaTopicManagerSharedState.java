@@ -45,6 +45,8 @@ public final class KafkaTopicManagerSharedState {
     private final ConcurrentHashMap<ProducerKey, Producer>
             references = new ConcurrentHashMap<>();
 
+    private final KopBrokerLookupManager kopBrokerLookupManager;
+
     @AllArgsConstructor
     @EqualsAndHashCode
     private static final class ProducerKey {
@@ -52,7 +54,9 @@ public final class KafkaTopicManagerSharedState {
         final KafkaRequestHandler requestHandler;
     }
 
-    public KafkaTopicManagerSharedState(BrokerService brokerService) {
+    public KafkaTopicManagerSharedState(BrokerService brokerService,
+                                        KopBrokerLookupManager kopBrokerLookupManager) {
+        this.kopBrokerLookupManager = kopBrokerLookupManager;
         initializeCursorExpireTask(brokerService.executor());
     }
 
@@ -125,7 +129,7 @@ public final class KafkaTopicManagerSharedState {
 
     public void deReference(String topicName) {
         try {
-            KopBrokerLookupManager.removeTopicManagerCache(topicName);
+            kopBrokerLookupManager.removeTopicManagerCache(topicName);
             kafkaTopicConsumerManagerCache.removeAndCloseByTopic(topicName);
         } catch (Exception e) {
             log.error("Failed to close reference for individual topic {}. exception:", topicName, e);

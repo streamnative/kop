@@ -39,6 +39,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
 
     private final TransactionStateManager txnStateManager;
     private final TransactionMarkerChannelManager txnMarkerChannelManager;
+    private final KopBrokerLookupManager kopBrokerLookupManager;
     private final List<TransactionMarkerChannelManager.TxnIdAndMarkerEntry> txnIdAndMarkerEntries;
     private final String namespacePrefixForUserTopics;
 
@@ -183,7 +184,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                                             + "retrying with current coordinator epoch {} and invalidating cache",
                                     transactionalId, topicPartition,
                                     error.exceptionName(), epochAndMetadata.getCoordinatorEpoch());
-                            KopBrokerLookupManager.removeTopicManagerCache(
+                            kopBrokerLookupManager.removeTopicManagerCache(
                                     KopTopic.toString(topicPartition, namespacePrefixForUserTopics));
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;

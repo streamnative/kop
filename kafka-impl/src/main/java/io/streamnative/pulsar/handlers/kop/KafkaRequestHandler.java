@@ -322,6 +322,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
                                KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               KafkaTopicLookupService kafkaTopicLookupService,
                                LookupClient lookupClient) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
@@ -348,7 +349,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
-        this.topicManager = new KafkaTopicManager(this);
+        this.topicManager = new KafkaTopicManager(this, kafkaTopicLookupService);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.currentConnectedGroup = new ConcurrentHashMap<>();
@@ -702,7 +703,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // Because in version 0, an empty topic list indicates "request metadata for all topics."
         if ((request.topics() == null) || (request.topics().isEmpty() && request.version() == 0)) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
-            KopBrokerLookupManager.clear();
+            kopBrokerLookupManager.clear();
             return expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces())
                     .thenCompose(namespaces -> authorizeNamespacesAsync(namespaces, AclOperation.DESCRIBE))
                     .thenCompose(this::listAllTopicsFromNamespacesAsync)
