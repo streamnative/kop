@@ -19,6 +19,13 @@ The following figure illustrates how the Kafka-on-Pulsar protocol handler is imp
 
 The version of KoP `x.y.z.m` conforms to Pulsar `x.y.z`, while `m` is the patch version number. KoP might also be compatible with older patched versions, but it's not guaranteed. See [upgrade.md](./docs/upgrade.md) for details.
 
+KoP is compatible with Kafka clients 0.9 or higher. For Kafka clients 3.2.0 or higher, you have to add the following configurations in KoP because of [KIP-679](https://cwiki.apache.org/confluence/display/KAFKA/KIP-679%3A+Producer+will+enable+the+strongest+delivery+guarantee+by+default).
+
+```properties
+kafkaTransactionCoordinatorEnabled=true
+brokerDeduplicationEnabled=true
+```
+
 # How to use KoP
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
 -   [Quick Start](docs/kop.md)
