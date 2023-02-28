@@ -317,6 +317,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
                                KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               KafkaTopicLookupService kafkaTopicLookupService,
                                LookupClient lookupClient) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
@@ -343,7 +344,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
-        this.topicManager = new KafkaTopicManager(this);
+        this.topicManager = new KafkaTopicManager(this, kafkaTopicLookupService);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.currentConnectedGroup = new ConcurrentHashMap<>();
