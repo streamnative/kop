@@ -161,6 +161,8 @@ Once you see the following log line, you know Pulsar is up and ready to be valid
 ## Validating KoP is running correctly
 
 You can verify if your KoP works well by running a Kafka client.
+Use can you Kafka 2.x if you use Pulsar 2.10.x.
+You can use Kafka 3.x only if you use Pulsar 2.11.x and above.
 
 1. Download [Kafka 2.0.0](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz) and untar the release package.
 
