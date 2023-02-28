@@ -188,6 +188,8 @@ You can verify if your KoP works well by running a Kafka client.
         This is another message
         ```
 
+*Important note*
+You can't use the option `--zookeeper` when working with Kafka command line or programmatically since it won't go through KoP. Only use `--bootstrap-server` option.
 
 
 # How to use KoP
