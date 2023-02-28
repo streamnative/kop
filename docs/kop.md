@@ -137,7 +137,8 @@ Similar to configuring KoP in a cluster that is started in Docker, you only need
 
 ### Run KoP in Pulsar with component for each system using Docker Compose
 
-The docker compose file is [docker-compose-cluster.yml](../docker-compose-cluster.yaml) and contains Pulsar image which is bundled with the KoP plugin, and the required configuration both for Pulsar and KoP
+The Docker compose file is [docker-compose-cluster.yml](../docker-compose-cluster.yaml) and contains Pulsar image which is bundled with the KoP plugin, and the required configuration both for Pulsar and KoP.
+The Docker compose file will create a directory named `data` containing the data directories for ZK, BK and Pulsar broker, allowing you to preserve data across restarts
 
 You can start the cluster using the following command:
 
