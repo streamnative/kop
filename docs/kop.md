@@ -33,7 +33,7 @@ This section describes how to get the KoP protocol handler.
 
 ### Download KoP protocol handler
 
-StreamNative provide a ready-to-use KoP docker image. You can download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly.
+StreamNative provide ready-to-use [KoP docker images](https://hub.docker.com/r/streamnative/sn-pulsar). You can also download the [KoP protocol handler](https://github.com/streamnative/kop/releases) directly to deploy with [the official Apache Pulsar docker images](https://hub.docker.com/r/apachepulsar/pulsar) or [the Pulsar binaries](https://pulsar.apache.org/download/).
 
 ### Build KoP protocol handler from source code
 
@@ -166,7 +166,6 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [Upgrade](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/upgrade.md)
 -   [Secure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/security.md)
 -   [Schema Registry](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/schema.md)
--   [Manage KoP with the Envoy proxy](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/envoy-proxy.md)
 -   [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/implementation.md)
 
 The followings are important information when you configure and use KoP.
