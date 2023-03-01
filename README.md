@@ -15,39 +15,16 @@ The following figure illustrates how the Kafka-on-Pulsar protocol handler is imp
 
 ![](docs/kop-architecture.png)
 
-# What's New in KoP 2.8.0
-The following new features are introduced in KoP 2.8.0.
-
-- Offset management
-- Message encoding and decoding
-- OAuth 2.0 authentication
-- Metrics related to produce, fetch and request
-
-## Enhancement 
-The following enhancement is added in KoP 2.8.0.
-- Support more clients for Kafka admin
-- Enable advertised listeners, so users can use Envoy Kafka filter directly
-
-## Deprecated features
-The property name of Kafka listener `listeners` is deprecated. Instead, you can use `kafkaListeners` since KoP 2.8.0.
-
 # Version compatibility
 
-Since Pulsar 2.6.2, KoP version changes with Pulsar version accordingly. The version of KoP `x.y.z.m` conforms to Pulsar `x.y.z`, while `m` is the patch version number. 
+The version of KoP `x.y.z.m` conforms to Pulsar `x.y.z`, while `m` is the patch version number. KoP might also be compatible with older patched versions, but it's not guaranteed. See [upgrade.md](./docs/upgrade.md) for details.
 
-| KoP version | Pulsar version |
-| :---------- | :------------- |
-| [2.8.1](https://github.com/streamnative/kop/releases/tag/v2.8.1.0) |Pulsar 2.8.1|
-| [2.8.0](https://github.com/streamnative/kop/releases/tag/v2.8.0.1) |Pulsar 2.8.0|
+KoP is compatible with Kafka clients 0.9 or higher. For Kafka clients 3.2.0 or higher, you have to add the following configurations in KoP because of [KIP-679](https://cwiki.apache.org/confluence/display/KAFKA/KIP-679%3A+Producer+will+enable+the+strongest+delivery+guarantee+by+default).
 
-**It is highly recommended to use KoP 2.8.0 or higher because there is a breaking change since KoP 2.8.0. For details, see [upgrade.md](docs/upgrade.md).**
-
-## Upgrade
-
-**It should be noted that there's a breaking change from version less than 2.8.0 to version 2.8.0 or higher.** See [upgrade.md](docs/upgrade.md) for details.
-
-## Known Compatibility Issues
-KoP-2.8.0.13, 2.8.0.14, 2.8.0.15 and 2.8.0.16 minor versions with Pulsar-2.8.0 have a known compatibility issue [KoP-768](https://github.com/streamnative/kop/issues/768).
+```properties
+kafkaTransactionCoordinatorEnabled=true
+brokerDeduplicationEnabled=true
+```
 
 # How to use KoP
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
@@ -57,7 +34,6 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [Upgrade](docs/upgrade.md)
 -   [Secure KoP](docs/security.md)
 -   [Schema Registry](docs/schema.md)
--   [Manage KoP with the Envoy proxy](docs/envoy-proxy.md)
 -   [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
 
 # Project Maintainers
