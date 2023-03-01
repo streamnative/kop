@@ -1129,7 +1129,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     return;
                 }
                 if (position.compareTo(lac) > 0) {
-                    partitionData.complete(Pair.of(Errors.NONE, latestOffset));
+                    // If all the data expires, the entry of lac becomes -1,
+                    // and the actual offset will be 1 smaller than LATEST,
+                    // here is special treatment, add 1 back
+                    partitionData.complete(Pair.of(Errors.NONE, latestOffset + 1));
                 } else {
                     MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false,
                             timestamp, skipMessagesWithoutIndex)
