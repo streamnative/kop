@@ -312,6 +312,7 @@ public abstract class KopProtocolHandlerTestBase {
             createClient();
 
             MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+
             if (conf.isKafkaTransactionCoordinatorEnabled()) {
                 MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
             }
