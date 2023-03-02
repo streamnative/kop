@@ -56,4 +56,9 @@ public class ResponseCallbackWrapper extends AbstractResponse {
     public ApiMessage data() {
         return abstractResponse.data();
     }
+
+    @Override
+    public void maybeSetThrottleTimeMs(int i) {
+        abstractResponse.maybeSetThrottleTimeMs(i);
+    }
 }

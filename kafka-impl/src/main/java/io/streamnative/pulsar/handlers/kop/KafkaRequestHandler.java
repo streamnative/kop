@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
+import static io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils.buildOffsetFetchResponse;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -58,7 +59,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -116,6 +116,9 @@ import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.EndTxnResponseData;
+import org.apache.kafka.common.message.FetchRequestData;
+import org.apache.kafka.common.message.FetchResponseData;
+import org.apache.kafka.common.message.FindCoordinatorResponseData;
 import org.apache.kafka.common.message.InitProducerIdRequestData;
 import org.apache.kafka.common.message.InitProducerIdResponseData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -134,7 +137,6 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
@@ -959,18 +961,53 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
+        List<String> coordinatorKeys = request.version() < FindCoordinatorRequest.MIN_BATCHED_VERSION
+                ? Collections.singletonList(request.data().key()) : request.data().coordinatorKeys();
+
+        List<CompletableFuture<FindCoordinatorResponseData.Coordinator>> futures =
+                new ArrayList<>(coordinatorKeys.size());
+        for (String coordinatorKey : coordinatorKeys) {
+            CompletableFuture<FindCoordinatorResponseData.Coordinator> future =
+                    findSingleCoordinator(coordinatorKey, findCoordinator);
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .whenComplete((ignore, ex) -> {
+                    if (ex != null) {
+                        resultFuture.completeExceptionally(ex);
+                        return;
+                    }
+                    List<FindCoordinatorResponseData.Coordinator> coordinators = new ArrayList<>(futures.size());
+                    for (CompletableFuture<FindCoordinatorResponseData.Coordinator> future : futures) {
+                        coordinators.add(future.join());
+                    }
+                    resultFuture.complete(KafkaResponseUtils.newFindCoordinator(coordinators, request.version()));
+                });
+
+    }
+
+    private CompletableFuture<FindCoordinatorResponseData.Coordinator> findSingleCoordinator(
+            String coordinatorKey, KafkaHeaderAndRequest findCoordinator) {
+
+        FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
+        CompletableFuture<FindCoordinatorResponseData.Coordinator> findSingleCoordinatorResult =
+                new CompletableFuture<>();
+
         if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION.id()) {
             TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-            int partition = transactionCoordinator.partitionFor(request.data().key());
+            int partition = transactionCoordinator.partitionFor(coordinatorKey);
             String pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
             findBroker(TopicName.get(pulsarTopicName))
                     .whenComplete((KafkaResponseUtils.BrokerLookupResult result, Throwable throwable) -> {
                         if (result.error != Errors.NONE || throwable != null) {
                             log.error("[{}] Request {}: Error while find coordinator.",
                                     ctx.channel(), findCoordinator.getHeader(), throwable);
-
-                            resultFuture.complete(KafkaResponseUtils
-                                    .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                            findSingleCoordinatorResult.complete(
+                                    new FindCoordinatorResponseData.Coordinator()
+                                            .setErrorCode(Errors.LEADER_NOT_AVAILABLE.code())
+                                            .setErrorMessage(Errors.LEADER_NOT_AVAILABLE.message())
+                                            .setKey(coordinatorKey));
                             return;
                         }
 
@@ -978,7 +1015,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
                                     ctx.channel(), result.node, request.data().key(), partition);
                         }
-                        resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
+                        findSingleCoordinatorResult.complete(
+                                new FindCoordinatorResponseData.Coordinator()
+                                        .setNodeId(result.node.id())
+                                        .setHost(result.node.host())
+                                        .setPort(result.node.port())
+                                        .setErrorCode(result.error.code())
+                                        .setErrorMessage(result.error.message())
+                                        .setKey(coordinatorKey));
                     });
         } else if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.GROUP.id()) {
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.GROUP, request.data().key()))
@@ -986,27 +1030,33 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         if (ex != null) {
                             log.error("Describe group authorize failed, group - {}. {}",
                                     request.data().key(), ex.getMessage());
-                            resultFuture.complete(KafkaResponseUtils
-                                    .newFindCoordinator(Errors.GROUP_AUTHORIZATION_FAILED));
+                            findSingleCoordinatorResult.complete(
+                                    new FindCoordinatorResponseData.Coordinator()
+                                            .setErrorCode(Errors.GROUP_AUTHORIZATION_FAILED.code())
+                                            .setErrorMessage(Errors.GROUP_AUTHORIZATION_FAILED.message())
+                                            .setKey(coordinatorKey));
+
                             return;
                         }
                         if (!isAuthorized) {
-                            resultFuture.complete(
-                                    KafkaResponseUtils
-                                            .newFindCoordinator(Errors.GROUP_AUTHORIZATION_FAILED));
+                            findSingleCoordinatorResult.complete(
+                                    new FindCoordinatorResponseData.Coordinator()
+                                            .setErrorCode(Errors.GROUP_AUTHORIZATION_FAILED.code())
+                                            .setErrorMessage(Errors.GROUP_AUTHORIZATION_FAILED.message())
+                                            .setKey(coordinatorKey));
+
                             return;
                         }
                         CompletableFuture<Void> storeGroupIdFuture;
-                        int partition = getGroupCoordinator().partitionFor(request.data().key());
+                        int partition = getGroupCoordinator().partitionFor(coordinatorKey);
                         String pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
                         if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
-                            String groupId = request.data().key();
                             String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                                     findCoordinator.getHeader().clientId());
                             currentConnectedClientId.add(findCoordinator.getHeader().clientId());
 
                             // Store group name to metadata store for current client, use to collect consumer metrics.
-                            storeGroupIdFuture = storeGroupId(groupId, groupIdPath);
+                            storeGroupIdFuture = storeGroupId(coordinatorKey, groupIdPath);
                         } else {
                             storeGroupIdFuture = CompletableFuture.completedFuture(null);
                         }
@@ -1022,8 +1072,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             log.error("[{}] Request {}: Error while find coordinator.",
                                                     ctx.channel(), findCoordinator.getHeader(), throwable);
 
-                                            resultFuture.complete(KafkaResponseUtils
-                                                    .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                                            findSingleCoordinatorResult.complete(
+                                                    new FindCoordinatorResponseData.Coordinator()
+                                                            .setErrorCode(Errors.LEADER_NOT_AVAILABLE.code())
+                                                            .setErrorMessage(Errors.LEADER_NOT_AVAILABLE.message())
+                                                            .setKey(coordinatorKey));
                                             return;
                                         }
 
@@ -1031,14 +1084,23 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
                                                     ctx.channel(), result.node, request.data().key(), partition);
                                         }
-                                        resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
+                                        findSingleCoordinatorResult.complete(
+                                                new FindCoordinatorResponseData.Coordinator()
+                                                        .setNodeId(result.node.id())
+                                                        .setHost(result.node.host())
+                                                        .setPort(result.node.port())
+                                                        .setErrorCode(result.error.code())
+                                                        .setErrorMessage(result.error.message())
+                                                        .setKey(coordinatorKey));
                                     });
                                 });
                     });
         } else {
-            throw new NotImplementedException("FindCoordinatorRequest not support unknown type "
-                + request.data().keyType());
+            findSingleCoordinatorResult.completeExceptionally(
+                    new NotImplementedException("FindCoordinatorRequest not support unknown type "
+                            + request.data().keyType()));
         }
+        return findSingleCoordinatorResult;
     }
 
     @VisibleForTesting
@@ -1082,6 +1144,57 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkState(getGroupCoordinator() != null,
             "Group Coordinator not started");
 
+        List<CompletableFuture<KafkaResponseUtils.OffsetFetchResponseGroupData>> futures = new ArrayList<>();
+        if (request.version() >= 8) {
+            request.data().groups().forEach(group -> {
+                String groupId = group.groupId();
+                List<TopicPartition> partitions = new ArrayList<>();
+                // null topics means no partitions specified, so we should fetch all partitions
+                if (group.topics() != null) {
+                    group
+                        .topics()
+                        .forEach(topic -> {
+                            topic.partitionIndexes()
+                                    .forEach(partition -> partitions.add(new TopicPartition(topic.name(), partition)));
+                        });
+                }
+                futures.add(getOffsetFetchForGroup(groupId, partitions));
+            });
+
+        } else {
+            // old clients
+            String groupId = request.data().groupId();
+            List<TopicPartition> partitions = new ArrayList<>();
+            request.data().topics().forEach(topic -> {
+                topic
+                        .partitionIndexes()
+                        .forEach(partition -> partitions.add(new TopicPartition(topic.name(), partition)));
+            });
+            futures.add(getOffsetFetchForGroup(groupId, partitions));
+        }
+
+        FutureUtil.waitForAll(futures).whenComplete((___, error) -> {
+            if (error != null) {
+                resultFuture.complete(request.getErrorResponse(error));
+                return;
+            }
+            List<KafkaResponseUtils.OffsetFetchResponseGroupData> partitionsResponses = new ArrayList<>();
+            futures.forEach(f -> {
+                partitionsResponses.add(f.join());
+            });
+
+            resultFuture.complete(buildOffsetFetchResponse(partitionsResponses, request.version()));
+        });
+
+    }
+
+    protected CompletableFuture<KafkaResponseUtils.OffsetFetchResponseGroupData> getOffsetFetchForGroup(
+            String groupId,
+            List<TopicPartition> partitions
+            ) {
+
+        CompletableFuture<KafkaResponseUtils.OffsetFetchResponseGroupData> resultFuture = new CompletableFuture<>();
+
         CompletableFuture<List<TopicPartition>> authorizeFuture = new CompletableFuture<>();
 
         // replace
@@ -1093,10 +1206,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, OffsetFetchResponse.PartitionData> unknownPartitionData =
                 Maps.newConcurrentMap();
 
-        if (request.partitions() == null || request.partitions().isEmpty()) {
+        if (partitions == null || partitions.isEmpty()) {
+            // fetch all partitions
             authorizeFuture.complete(null);
         } else {
-            AtomicInteger partitionCount = new AtomicInteger(request.partitions().size());
+            AtomicInteger partitionCount = new AtomicInteger(partitions.size());
 
             Runnable completeOneAuthorization = () -> {
                 if (partitionCount.decrementAndGet() == 0) {
@@ -1104,7 +1218,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             };
             final String namespacePrefix = currentNamespacePrefix();
-            request.partitions().forEach(tp -> {
+            partitions.forEach(tp -> {
                 try {
                     String fullName =  new KopTopic(tp.topic(), namespacePrefix).getFullName();
                     authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullName))
@@ -1137,7 +1251,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         authorizeFuture.whenComplete((partitionList, ex) -> {
             KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
                     getGroupCoordinator().handleFetchOffsets(
-                            request.groupId(),
+                            groupId,
                             Optional.ofNullable(partitionList)
                     );
             if (log.isDebugEnabled()) {
@@ -1153,13 +1267,20 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
 
             // recover to original topic name
-            replaceTopicPartition(keyValue.getValue(), replacingIndex);
-            keyValue.getValue().putAll(unauthorizedPartitionData);
-            keyValue.getValue().putAll(unknownPartitionData);
+            Map<TopicPartition, OffsetFetchResponse.PartitionData> partitionsResponses = keyValue.getValue();
+            replaceTopicPartition(partitionsResponses, replacingIndex);
+            partitionsResponses.putAll(unauthorizedPartitionData);
+            partitionsResponses.putAll(unknownPartitionData);
 
-            resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
+            Errors errors = keyValue.getKey();
+            resultFuture.complete(new KafkaResponseUtils.OffsetFetchResponseGroupData(groupId, errors,
+                    partitionsResponses));
         });
+
+        return resultFuture;
     }
+
+
 
     private CompletableFuture<Pair<Errors, Long>> fetchOffset(String topicName, long timestamp) {
         CompletableFuture<Pair<Errors, Long>> partitionData = new CompletableFuture<>();
@@ -1631,30 +1752,31 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
 
+        FetchRequestData data = request.data();
         if (log.isDebugEnabled()) {
             log.debug("[{}] Request {} Fetch request. Size: {}. Each item: ",
-                ctx.channel(), fetch.getHeader(), request.fetchData().size());
+                ctx.channel(), fetch.getHeader(), data.topics().size());
 
-            request.fetchData().forEach((topic, data) -> {
-                log.debug("Fetch request topic:{} data:{}.", topic, data.toString());
+            data.topics().forEach((topicData) -> {
+                log.debug("Fetch request topic: data:{}.", topicData.toString());
             });
         }
 
-        if (request.fetchData().isEmpty()) {
-            resultFuture.complete(new FetchResponse<>(
-                    Errors.NONE,
-                    new LinkedHashMap<>(),
-                    THROTTLE_TIME_MS,
-                    request.metadata().sessionId()));
+        int numPartitions = data.topics().stream().mapToInt(topic -> topic.partitions().size()).sum();
+        if (numPartitions == 0) {
+            resultFuture.complete(new FetchResponse(new FetchResponseData()
+                    .setErrorCode(Errors.NONE.code())
+                    .setSessionId(request.metadata().sessionId())
+                    .setResponses(new ArrayList<>())));
             return;
         }
 
-        ConcurrentHashMap<TopicPartition, FetchResponse.PartitionData<Records>> erroneous =
+        ConcurrentHashMap<TopicPartition, FetchResponseData.PartitionData> erroneous =
                 new ConcurrentHashMap<>();
-        ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> interesting =
+        ConcurrentHashMap<TopicPartition, FetchRequestData.FetchPartition> interesting =
                 new ConcurrentHashMap<>();
 
-        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.fetchData().size());
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
         Runnable completeOne = () -> {
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
                 TransactionCoordinator transactionCoordinator = null;
@@ -1667,13 +1789,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 int fetchMinBytes = Math.min(request.minBytes(), fetchMaxBytes);
                 if (interesting.isEmpty()) {
                     if (log.isDebugEnabled()) {
-                        log.debug("Fetch interesting is empty. Partitions: [{}]", request.fetchData());
+                        log.debug("Fetch interesting is empty. Partitions: [{}]", data.topics());
                     }
-                    resultFuture.complete(new FetchResponse<>(
-                            Errors.NONE,
-                            new LinkedHashMap<>(erroneous),
-                            THROTTLE_TIME_MS,
-                            request.metadata().sessionId()));
+                    resultFuture.complete(new FetchResponse(new FetchResponseData()
+                            .setErrorCode(Errors.NONE.code())
+                            .setSessionId(request.metadata().sessionId())
+                            .setResponses(buildFetchResponses(erroneous))));
                 } else {
                     MessageFetchContext context = MessageFetchContext
                             .get(this, transactionCoordinator, maxReadEntriesNum, namespacePrefix,
@@ -1686,18 +1807,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request.isolationLevel(),
                             context
                     ).thenAccept(resultMap -> {
-                        LinkedHashMap<TopicPartition, FetchResponse.PartitionData<Records>> partitions =
-                                new LinkedHashMap<>();
-                        resultMap.forEach((tp, data) -> {
-                            partitions.put(tp, data.toPartitionData());
+                        Map<TopicPartition, FetchResponseData.PartitionData> all = new HashMap<>();
+                        resultMap.forEach((tp, results) -> {
+                            all.put(tp, results.toPartitionData());
                         });
-                        partitions.putAll(erroneous);
+                        all.putAll(erroneous);
                         boolean triggeredCompletion = resultFuture.complete(new ResponseCallbackWrapper(
-                                new FetchResponse<>(
-                                    Errors.NONE,
-                                    partitions,
-                                    0,
-                                    request.metadata().sessionId()),
+                                new FetchResponse(new FetchResponseData()
+                                        .setErrorCode(Errors.NONE.code())
+                                        .setThrottleTimeMs(0)
+                                        .setSessionId(request.metadata().sessionId())
+                                        .setResponses(buildFetchResponses(all))),
                                 () -> resultMap.forEach((__, readRecordsResult) -> {
                                     readRecordsResult.recycle();
                                 })
@@ -1714,36 +1834,72 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         };
 
         // Regular Kafka consumers need READ permission on each partition they are fetching.
-        request.fetchData().forEach((topicPartition, partitionData) -> {
-            final String fullTopicName = KopTopic.toString(topicPartition, this.currentNamespacePrefix());
-            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .whenComplete((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Read topic authorize failed, topic - {}. {}",
-                                    fullTopicName, ex.getMessage());
-                            erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+        data.topics().forEach(topicData -> {
+            topicData.partitions().forEach((partitionData) -> {
+                TopicPartition topicPartition = new TopicPartition(topicData.topic(), partitionData.partition());
+                final String fullTopicName = KopTopic.toString(topicPartition, this.currentNamespacePrefix());
+                authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("Read topic authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                                completeOne.run();
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                                completeOne.run();
+                                return;
+                            }
+                            interesting.put(topicPartition, partitionData);
                             completeOne.run();
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
-                            completeOne.run();
-                            return;
-                        }
-                        interesting.put(topicPartition, partitionData);
-                        completeOne.run();
-                    });
+                        });
+            });
         });
 
 
 
     }
 
-    private static FetchResponse.PartitionData<Records> errorResponse(Errors error) {
-        return new FetchResponse.PartitionData<>(error,
-                FetchResponse.INVALID_HIGHWATERMARK,
-                FetchResponse.INVALID_LAST_STABLE_OFFSET,
-                FetchResponse.INVALID_LOG_START_OFFSET, null, MemoryRecords.EMPTY);
+    public static List<FetchResponseData.FetchableTopicResponse> buildFetchResponses(
+            Map<TopicPartition, FetchResponseData.PartitionData> partitionData) {
+        List<FetchResponseData.FetchableTopicResponse> result = new ArrayList<>();
+        partitionData.keySet()
+                .stream()
+                .map(topicPartition -> topicPartition.topic())
+                .distinct()
+                        .forEach(topic -> {
+                            FetchResponseData.FetchableTopicResponse fetchableTopicResponse =
+                                    new FetchResponseData.FetchableTopicResponse()
+                                    .setTopic(topic)
+                                    .setPartitions(new ArrayList<>());
+                            result.add(fetchableTopicResponse);
+
+                            partitionData.forEach((tp, data) -> {
+                                if (tp.topic().equals(topic)) {
+                                    fetchableTopicResponse.partitions().add(new FetchResponseData.PartitionData()
+                                                    .setPartitionIndex(tp.partition())
+                                                    .setErrorCode(data.errorCode())
+                                                    .setHighWatermark(data.highWatermark())
+                                                    .setLastStableOffset(data.lastStableOffset())
+                                                    .setLogStartOffset(data.logStartOffset())
+                                                    .setAbortedTransactions(data.abortedTransactions())
+                                                    .setPreferredReadReplica(data.preferredReadReplica())
+                                                    .setRecords(data.records()));
+                                }
+                            });
+                        });
+        return result;
+    }
+
+    private static FetchResponseData.PartitionData errorResponse(Errors error) {
+        return new FetchResponseData.PartitionData()
+                .setErrorCode(error.code())
+                .setHighWatermark(FetchResponse.INVALID_HIGH_WATERMARK)
+                .setLastStableOffset(FetchResponse.INVALID_LAST_STABLE_OFFSET)
+                .setLogStartOffset(FetchResponse.INVALID_LOG_START_OFFSET)
+                .setRecords(MemoryRecords.EMPTY);
     }
 
     @Override
@@ -1779,7 +1935,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 joinGroupResult.getProtocolType(),
                 joinGroupResult.getMemberId(),
                 joinGroupResult.getLeaderId(),
-                members
+                members,
+                request.version()
             );
             if (log.isTraceEnabled()) {
                 log.trace("Sending join group response {} for correlation id {} to client {}.",

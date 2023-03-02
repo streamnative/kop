@@ -339,15 +339,15 @@ public class EntryFormatterTest {
         }
 
         @Override
-        public Long appendWithOffset(long offset, SimpleRecord record) {
-            return appendWithOffset(offset,
+        public void appendWithOffset(long offset, SimpleRecord record) {
+            appendWithOffset(offset,
                     record.timestamp(),
                     record.key(),
                     record.value(),
                     record.headers());
         }
 
-        public Long appendWithOffset(long offset,
+        public void appendWithOffset(long offset,
                                      long timestamp,
                                      ByteBuffer key,
                                      ByteBuffer value,
@@ -359,9 +359,9 @@ public class EntryFormatterTest {
 
                 if (magic > RecordBatch.MAGIC_VALUE_V1) {
                     appendDefaultRecord(offset, timestamp, key, value, headers);
-                    return null;
+
                 } else {
-                    return appendLegacyRecord(offset, timestamp, key, value);
+                    appendLegacyRecord(offset, timestamp, key, value);
                 }
             } catch (IOException e) {
                 throw new KafkaException("I/O exception when writing to the append stream, closing", e);
