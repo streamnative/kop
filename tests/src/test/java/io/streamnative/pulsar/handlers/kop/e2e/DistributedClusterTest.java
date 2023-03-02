@@ -86,6 +86,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setOffsetsTopicNumPartitions(offsetsTopicNumPartitions);
 
         kConfig.setAdvertisedAddress("localhost");
+        kConfig.setKafkaTransactionCoordinatorEnabled(true);
         kConfig.setClusterName(configClusterName);
         kConfig.setManagedLedgerCacheSizeMB(8);
         kConfig.setActiveConsumerFailoverDelayTimeMillis(0);

@@ -38,6 +38,10 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public class MessageMetadataUtils {
 
+    public static boolean isInterceptorConfigured(ManagedLedger managedLedger) {
+        return managedLedger.getManagedLedgerInterceptor() instanceof ManagedLedgerInterceptorImpl;
+    }
+
     public static long getCurrentOffset(ManagedLedger managedLedger) {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();
     }

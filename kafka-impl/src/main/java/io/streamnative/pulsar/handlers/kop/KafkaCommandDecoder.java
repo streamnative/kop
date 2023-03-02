@@ -465,7 +465,14 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                 request, response);
                     }
 
-                    final ByteBuf result = responseToByteBuf(response, request, true);
+                    final ByteBuf result;
+                    try {
+                        result = responseToByteBuf(response, request, true);
+                    } catch (Throwable error) {
+                        log.error("[{}] Failed to convert response {} to ByteBuf", channel, response, error);
+                        sendErrorResponse(request, channel, error, true);
+                        return;
+                    }
                     final int resultSize = result.readableBytes();
                     channel.writeAndFlush(result).addListener(future -> {
                         if (response instanceof ResponseCallbackWrapper) {
