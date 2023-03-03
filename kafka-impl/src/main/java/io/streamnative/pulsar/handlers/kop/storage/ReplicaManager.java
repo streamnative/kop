@@ -143,6 +143,8 @@ public class ReplicaManager {
                 return;
             }
             if (restTopicPartitionNum == 0) {
+                // If all tasks are sent, cancel the timer tasks to avoid full gc or oom
+                producePurgatory.checkAndComplete(new DelayedOperationKey.TopicPartitionOperationKey(topicPartition));
                 complete.run();
             }
         };
