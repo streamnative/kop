@@ -22,6 +22,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.naming.AuthenticationException;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
@@ -79,8 +82,10 @@ public class PlainSaslServer implements SaslServer {
         }
 
         try {
-            final AuthenticationState authState = authenticationProvider.newAuthState(
-                    AuthData.of(saslAuth.getAuthData().getBytes(StandardCharsets.UTF_8)), null, null);
+            final AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(StandardCharsets.UTF_8));
+            final AuthenticationState authState = authenticationProvider.newAuthState(authData, null, null);
+            // TODO: Use the request.timeout.ms config from the Kafka client as the timeout
+            authState.authenticateAsync(authData).get(10, TimeUnit.SECONDS);
             final String role = authState.getAuthRole();
             if (StringUtils.isEmpty(role)) {
                 throw new AuthenticationException("Role cannot be empty.");
@@ -109,7 +114,7 @@ public class PlainSaslServer implements SaslServer {
             }
             complete = true;
             return new byte[0];
-        } catch (AuthenticationException e) {
+        } catch (AuthenticationException | ExecutionException | InterruptedException | TimeoutException e) {
             throw new SaslException(e.getMessage());
         }
     }
