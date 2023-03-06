@@ -114,7 +114,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         assertTrue(describeGroup1.containsKey(groupId1));
         assertEquals(ConsumerGroupState.EMPTY, describeGroup2.get(groupId1).state());
         // 7. delete topic1
-        adminClient.deleteTopics(Collections.singletonList(topic1));
+        adminClient.deleteTopics(Collections.singletonList(topic1)).all().get();
         // 8. describe group who only consume topic1 which have been deleted
         // check group state must be Dead
         retryUntilStateDead(groupId1, 5);
@@ -166,7 +166,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         List<String> deleteTopics = Lists.newArrayList();
         deleteTopics.add(topic2);
         deleteTopics.add(topic3);
-        adminClient.deleteTopics(deleteTopics);
+        adminClient.deleteTopics(deleteTopics).all().get();
         // 8. check group state must be Dead
         retryUntilStateDead(groupId2, 5);
     }
