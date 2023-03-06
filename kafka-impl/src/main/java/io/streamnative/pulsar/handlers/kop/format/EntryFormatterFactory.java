@@ -13,10 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import java.util.List;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 
 /**
  * Factory of EntryFormatter.
@@ -32,21 +31,18 @@ public class EntryFormatterFactory {
     }
 
     public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig,
-                                        final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                                        final List<EntryFilter> entryFilters,
                                         final String format) {
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
 
-            ImmutableList<EntryFilterWithClassLoader> entryfilters =
-                    entryfilterMap == null ? ImmutableList.of() : entryfilterMap.values().asList();
-
             switch (entryFormat) {
                 case PULSAR:
-                    return new PulsarEntryFormatter(entryfilters);
+                    return new PulsarEntryFormatter(entryFilters);
                 case KAFKA:
-                    return new KafkaV1EntryFormatter(entryfilters);
+                    return new KafkaV1EntryFormatter(entryFilters);
                 case MIXED_KAFKA:
-                    return new KafkaMixedEntryFormatter(entryfilters);
+                    return new KafkaMixedEntryFormatter(entryFilters);
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

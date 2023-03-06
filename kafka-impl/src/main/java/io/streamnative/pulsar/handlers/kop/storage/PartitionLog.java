@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -79,7 +78,7 @@ import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
@@ -112,7 +111,7 @@ public class PartitionLog {
     private final AtomicReference<CompletableFuture<EntryFormatter>> entryFormatter = new AtomicReference<>();
     private final ProducerStateManager producerStateManager;
 
-    private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
+    private final List<EntryFilter> entryFilters;
     private final boolean preciseTopicPublishRateLimitingEnable;
 
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
@@ -120,10 +119,10 @@ public class PartitionLog {
                         Time time,
                         TopicPartition topicPartition,
                         String fullPartitionName,
-                        ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                        List<EntryFilter> entryFilters,
                         ProducerStateManager producerStateManager) {
         this.kafkaConfig = kafkaConfig;
-        this.entryfilterMap = entryfilterMap;
+        this.entryFilters = entryFilters;
         this.requestStats = requestStats;
         this.time = time;
         this.topicPartition = topicPartition;
@@ -183,7 +182,7 @@ public class PartitionLog {
             log.debug("entryFormat for {} is {} (topicProperties {})", fullPartitionName,
                     entryFormat, topicProperties);
         }
-        return EntryFormatterFactory.create(kafkaConfig, entryfilterMap, entryFormat);
+        return EntryFormatterFactory.create(kafkaConfig, entryFilters, entryFormat);
     }
 
     @Data

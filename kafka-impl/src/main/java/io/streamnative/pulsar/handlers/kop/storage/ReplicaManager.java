@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -45,7 +44,7 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 
 /**
  * Used to append records. Mapping to Kafka ReplicaManager.scala.
@@ -60,11 +59,10 @@ public class ReplicaManager {
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
                           RequestStats requestStats,
                           Time time,
-                          ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                          List<EntryFilter> entryFilters,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
-        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
-                time);
+        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryFilters, time);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();

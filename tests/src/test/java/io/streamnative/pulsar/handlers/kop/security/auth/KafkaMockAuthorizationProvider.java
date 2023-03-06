@@ -128,21 +128,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
     }
 
     @Override
-    public CompletableFuture<Boolean> allowTenantOperationAsync(String tenantName, String originalRole, String role,
-                                                                TenantOperation operation,
-                                                                AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorizedAsync(role);
-    }
-
-    @Override
-    public Boolean allowTenantOperation(String tenantName, String originalRole, String role, TenantOperation operation,
-                                        AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorized(role);
-    }
-
-    @Override
     public CompletableFuture<Boolean> allowTenantOperationAsync(String tenantName, String role,
                                                                 TenantOperation operation,
                                                                 AuthenticationDataSource authenticationData) {
@@ -175,27 +160,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorized(role);
     }
 
-
-    @Override
-    public CompletableFuture<Boolean> allowNamespaceOperationAsync(NamespaceName namespaceName,
-                                                                   String originalRole,
-                                                                   String role,
-                                                                   NamespaceOperation operation,
-                                                                   AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorizedAsync(role);
-    }
-
-    @Override
-    public Boolean allowNamespaceOperation(NamespaceName namespaceName,
-                                           String originalRole,
-                                           String role,
-                                           NamespaceOperation operation,
-                                           AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorized(role);
-    }
-
     @Override
     public CompletableFuture<Boolean> allowNamespacePolicyOperationAsync(NamespaceName namespaceName,
                                                                          PolicyName policy,
@@ -217,28 +181,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
     }
 
     @Override
-    public CompletableFuture<Boolean> allowNamespacePolicyOperationAsync(NamespaceName namespaceName,
-                                                                         PolicyName policy,
-                                                                         PolicyOperation operation,
-                                                                         String originalRole,
-                                                                         String role,
-                                                                         AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorizedAsync(role);
-    }
-
-    @Override
-    public Boolean allowNamespacePolicyOperation(NamespaceName namespaceName,
-                                                 PolicyName policy,
-                                                 PolicyOperation operation,
-                                                 String originalRole,
-                                                 String role,
-                                                 AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorized(role);
-    }
-
-    @Override
     public CompletableFuture<Boolean> allowTopicOperationAsync(TopicName topic,
                                                                String role,
                                                                TopicOperation operation,
@@ -249,26 +191,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
 
     @Override
     public Boolean allowTopicOperation(TopicName topicName,
-                                       String role,
-                                       TopicOperation operation,
-                                       AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorized(role);
-    }
-
-    @Override
-    public CompletableFuture<Boolean> allowTopicOperationAsync(TopicName topic,
-                                                               String originalRole,
-                                                               String role,
-                                                               TopicOperation operation,
-                                                               AuthenticationDataSource authenticationData) {
-        Assert.assertNotNull(authenticationData);
-        return roleAuthorizedAsync(role);
-    }
-
-    @Override
-    public Boolean allowTopicOperation(TopicName topicName,
-                                       String originalRole,
                                        String role,
                                        TopicOperation operation,
                                        AuthenticationDataSource authenticationData) {

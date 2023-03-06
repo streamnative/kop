@@ -71,6 +71,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.TopicType;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
@@ -171,7 +172,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setAuthenticationEnabled(false);
         kafkaConfig.setAuthorizationEnabled(false);
         kafkaConfig.setAllowAutoTopicCreation(true);
-        kafkaConfig.setAllowAutoTopicCreationType("partitioned");
+        kafkaConfig.setAllowAutoTopicCreationType(TopicType.PARTITIONED);
         kafkaConfig.setBrokerDeleteInactiveTopicsEnabled(false);
 
         kafkaConfig.setForceDeleteTenantAllowed(true);

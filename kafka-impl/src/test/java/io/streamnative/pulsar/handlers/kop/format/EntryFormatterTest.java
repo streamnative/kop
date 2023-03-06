@@ -18,7 +18,6 @@ import static org.apache.kafka.common.record.LegacyRecord.RECORD_OVERHEAD_V1;
 import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
 import static org.mockito.Mockito.mock;
 
-import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
@@ -27,6 +26,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.bookkeeper.mledger.Entry;
@@ -48,7 +48,6 @@ import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.broker.service.plugin.FilterContext;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.testng.Assert;
@@ -171,7 +170,6 @@ public class EntryFormatterTest {
         Entry entry2 = mock(Entry.class);
 
         // Filter the entries
-        ImmutableMap.Builder<String, EntryFilterWithClassLoader> builder = ImmutableMap.builder();
         EntryFilter mockEntryFilter = new EntryFilter() {
             @Override
             public FilterResult filterEntry(Entry entry, FilterContext context) {
@@ -188,15 +186,14 @@ public class EntryFormatterTest {
                 // Ignore
             }
         };
-        builder.put("mockEntryFilter", new EntryFilterWithClassLoader(mockEntryFilter, null));
         Assert.assertEquals(
                 entryFormatter.filterOnlyByMsgMetadata(new MessageMetadata().setReplicatedFrom("cluster-1"),
                         entry1,
-                        builder.build().values().asList()), EntryFilter.FilterResult.REJECT);
+                        Collections.singletonList(mockEntryFilter)), EntryFilter.FilterResult.REJECT);
         Assert.assertEquals(
                 entryFormatter.filterOnlyByMsgMetadata(new MessageMetadata(),
                         entry2,
-                        builder.build().values().asList()), EntryFilter.FilterResult.ACCEPT);
+                        Collections.singletonList(mockEntryFilter)), EntryFilter.FilterResult.ACCEPT);
     }
 
     private static void checkWrongOffset(MemoryRecords records,
