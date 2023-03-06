@@ -74,7 +74,7 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 60000000)
+    @Test(timeOut = 6000)
     public void testOneTopicGroupState() throws Exception {
         // 1. create topics
         createTopics(Collections.singletonList(topic1));
