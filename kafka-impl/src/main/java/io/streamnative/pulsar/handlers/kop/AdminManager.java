@@ -256,7 +256,7 @@ class AdminManager {
                             Consumer<String> successConsumer,
                             Consumer<String> errorConsumer) {
         admin.topics()
-                .deletePartitionedTopicAsync(topicToDelete)
+                .deletePartitionedTopicAsync(topicToDelete, true, true)
                 .thenRun(() -> {
                     log.info("delete topic {} successfully.", topicToDelete);
                     successConsumer.accept(topicToDelete);
