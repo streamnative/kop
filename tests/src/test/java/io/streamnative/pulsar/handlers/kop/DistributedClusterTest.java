@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
@@ -32,6 +33,9 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import lombok.Cleanup;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.DescribeClusterResult;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -629,5 +633,15 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kProducer.close();
         kConsumer1.close();
         kConsumer2.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testDescribeCluster() throws Exception {
+        @Cleanup
+        AdminClient admin = AdminClient.create(newKafkaAdminClientProperties());
+        DescribeClusterResult describeClusterResult = admin.describeCluster();
+        assertEquals(describeClusterResult.clusterId().get(), conf.getClusterName());
+        assertNotNull(describeClusterResult.controller().get());
+        assertEquals(2, describeClusterResult.nodes().get().size());
     }
 }
