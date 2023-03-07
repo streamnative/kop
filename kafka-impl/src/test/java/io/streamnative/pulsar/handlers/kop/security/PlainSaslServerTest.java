@@ -19,6 +19,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
@@ -83,7 +84,8 @@ public class PlainSaslServerTest {
             }
         };
         when(provider.newAuthState(any(AuthData.class), any(), any())).thenReturn(state);
-        PlainSaslServer server = new PlainSaslServer(authenticationService, null, proxyRoles);
+        PlainSaslServer server = new PlainSaslServer(authenticationService,
+                new KafkaServiceConfiguration(), proxyRoles);
 
         String challengeNoProxy = "XXXXX\000" + username + "\000token:xxxxx";
         server.evaluateResponse(challengeNoProxy.getBytes(StandardCharsets.US_ASCII));

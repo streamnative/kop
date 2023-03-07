@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.security;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.SaslAuth;
 import io.streamnative.pulsar.handlers.kop.utils.SaslUtils;
 import java.io.IOException;
@@ -34,7 +35,6 @@ import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
-import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.api.AuthData;
 
 /**
@@ -46,7 +46,7 @@ public class PlainSaslServer implements SaslServer {
     public static final String PLAIN_MECHANISM = "PLAIN";
 
     private final AuthenticationService authenticationService;
-    private final PulsarAdmin admin;
+    private final KafkaServiceConfiguration config;
 
     private boolean complete;
     private String authorizationId;
@@ -54,9 +54,11 @@ public class PlainSaslServer implements SaslServer {
     private AuthenticationDataSource authDataSource;
     private Set<String> proxyRoles;
 
-    public PlainSaslServer(AuthenticationService authenticationService, PulsarAdmin admin, Set<String> proxyRoles) {
+    public PlainSaslServer(AuthenticationService authenticationService,
+                           KafkaServiceConfiguration config,
+                           Set<String> proxyRoles) {
         this.authenticationService = authenticationService;
-        this.admin = admin;
+        this.config = config;
         this.proxyRoles = proxyRoles;
     }
 
@@ -84,8 +86,7 @@ public class PlainSaslServer implements SaslServer {
         try {
             final AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(StandardCharsets.UTF_8));
             final AuthenticationState authState = authenticationProvider.newAuthState(authData, null, null);
-            // TODO: Use the request.timeout.ms config from the Kafka client as the timeout
-            authState.authenticateAsync(authData).get(10, TimeUnit.SECONDS);
+            authState.authenticateAsync(authData).get(config.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
             final String role = authState.getAuthRole();
             if (StringUtils.isEmpty(role)) {
                 throw new AuthenticationException("Role cannot be empty.");

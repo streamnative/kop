@@ -104,8 +104,7 @@ public class SchemaRegistryManager {
                 AuthData authData = AuthData.of(password.getBytes(StandardCharsets.UTF_8));
                 final AuthenticationState authState = authenticationProvider
                         .newAuthState(authData, null, null);
-                // TODO: Use the configurable timeout
-                authState.authenticateAsync(authData).get(10, TimeUnit.SECONDS);
+                authState.authenticateAsync(authData).get(kafkaConfig.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
                 final String role = authState.getAuthRole();
 
                 final String tenant;
