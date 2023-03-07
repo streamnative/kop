@@ -13,8 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.assertEquals;
+
 import io.netty.buffer.ByteBuf;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -106,20 +109,24 @@ public class KafkaCommonTestUtils {
         return listOffsetsPartitionResponse;
     }
 
-
     public static KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
-                                                                  SocketAddress serviceAddress) {
-        AbstractRequest request = builder.build(builder.apiKey().latestVersion());
+                                                                         SocketAddress serviceAddress) {
+        return buildRequest(builder, serviceAddress, builder.latestAllowedVersion());
+    }
+    public static KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                                                         SocketAddress serviceAddress, short version) {
+        AbstractRequest request = builder.build(version);
+        assertEquals(version, request.version());
         RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
 
 
         ByteBuf byteBuf = KopResponseUtils.serializeRequest(mockHeader, request);
-
-        RequestHeader header = RequestHeader.parse(byteBuf.nioBuffer());
+        ByteBuffer byteBuffer = byteBuf.nioBuffer();
+        RequestHeader header = RequestHeader.parse(byteBuffer);
 
         ApiKeys apiKey = header.apiKey();
         short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, byteBuf.nioBuffer()).request;
+        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, byteBuffer).request;
         return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 }
