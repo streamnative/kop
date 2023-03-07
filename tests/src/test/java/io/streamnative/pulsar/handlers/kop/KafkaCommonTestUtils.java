@@ -14,9 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import java.net.SocketAddress;
-import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;

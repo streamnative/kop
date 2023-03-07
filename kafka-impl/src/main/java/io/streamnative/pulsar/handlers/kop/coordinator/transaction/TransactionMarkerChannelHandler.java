@@ -17,7 +17,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.streamnative.pulsar.handlers.kop.security.PlainSaslServer;
