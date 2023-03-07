@@ -595,7 +595,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleDescribeCluster(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
-    
+
     public static class KafkaHeaderAndRequest {
 
         private static final String DEFAULT_CLIENT_HOST = "";
