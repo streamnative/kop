@@ -13,16 +13,16 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 
 /**
  * Manage {@link PartitionLog}.
@@ -34,16 +34,16 @@ public class PartitionLogManager {
     private final RequestStats requestStats;
     private final Map<String, PartitionLog> logMap;
     private final Time time;
-    private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
+    private final List<EntryFilter> entryFilters;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                RequestStats requestStats,
-                               final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                               final List<EntryFilter> entryFilters,
                                Time time) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
-        this.entryfilterMap = entryfilterMap;
+        this.entryFilters = entryFilters;
         this.time = time;
     }
 
@@ -51,7 +51,7 @@ public class PartitionLogManager {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
 
         return logMap.computeIfAbsent(kopTopic, key -> {
-                return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryfilterMap,
+                return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryFilters,
                         new ProducerStateManager(kopTopic));
         });
     }

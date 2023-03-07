@@ -39,6 +39,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TopicType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
@@ -86,7 +87,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setAuthenticationEnabled(false);
         kConfig.setAuthorizationEnabled(false);
         kConfig.setAllowAutoTopicCreation(true);
-        kConfig.setAllowAutoTopicCreationType("partitioned");
+        kConfig.setAllowAutoTopicCreationType(TopicType.PARTITIONED);
         kConfig.setBrokerDeleteInactiveTopicsEnabled(false);
         kConfig.setGroupInitialRebalanceDelayMs(0);
         kConfig.setBrokerShutdownTimeoutMs(0);

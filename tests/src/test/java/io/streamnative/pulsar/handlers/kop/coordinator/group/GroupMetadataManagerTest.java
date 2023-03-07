@@ -118,6 +118,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     public void setup() throws Exception {
+        conf.setOffsetsTopicNumPartitions(numOffsetsPartitions);
         super.internalSetup();
     }
 
@@ -166,6 +167,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @AfterMethod
     protected void tearDown() throws PulsarClientException {
+        conf.setOffsetsTopicNumPartitions(numOffsetsPartitions);
         if (consumer != null) {
             consumer.close();
         }

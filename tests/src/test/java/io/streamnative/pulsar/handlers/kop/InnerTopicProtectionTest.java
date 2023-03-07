@@ -27,6 +27,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TopicType;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -58,7 +59,7 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
         kConfig.setAuthenticationEnabled(false);
         kConfig.setAuthorizationEnabled(false);
         kConfig.setAllowAutoTopicCreation(true);
-        kConfig.setAllowAutoTopicCreationType("partitioned");
+        kConfig.setAllowAutoTopicCreationType(TopicType.PARTITIONED);
         kConfig.setBrokerDeleteInactiveTopicsEnabled(false);
         kConfig.setSystemTopicEnabled(true);
         kConfig.setTopicLevelPoliciesEnabled(true);

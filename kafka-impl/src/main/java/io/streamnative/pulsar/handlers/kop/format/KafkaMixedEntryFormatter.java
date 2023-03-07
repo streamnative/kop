@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import com.google.common.collect.ImmutableList;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
@@ -25,7 +24,7 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -37,7 +36,7 @@ import org.apache.pulsar.common.protocol.Commands;
 @Slf4j
 public class KafkaMixedEntryFormatter extends AbstractEntryFormatter {
 
-    protected KafkaMixedEntryFormatter(ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+    protected KafkaMixedEntryFormatter(List<EntryFilter> entryfilters) {
         super(entryfilters);
     }
 

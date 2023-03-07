@@ -72,6 +72,7 @@ public class SaslAuthenticator {
     public static final String USER_NAME_PROP = "username";
     public static final String AUTH_DATA_SOURCE_PROP = "authDataSource";
     public static final String AUTHENTICATION_SERVER_OBJ = "authenticationServerObj";
+    public static final String REQUEST_TIMEOUT_MS = "requestTimeoutMs";
 
     private static final byte[] EMPTY_BUFFER = new byte[0];
 
@@ -88,6 +89,7 @@ public class SaslAuthenticator {
     private boolean enableKafkaSaslAuthenticateHeaders;
     private ByteBuf authenticationFailureResponse = null;
     private ChannelHandlerContext ctx = null;
+    private KafkaServiceConfiguration config;
     private String defaultKafkaMetadataTenant;
 
     private enum State {
@@ -174,6 +176,7 @@ public class SaslAuthenticator {
                 ? createOAuth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
         this.defaultKafkaMetadataTenant = config.getKafkaMetadataTenant();
+        this.config = config;
     }
 
     /**
@@ -288,6 +291,7 @@ public class SaslAuthenticator {
                 oauth2Configs);
         HashMap<String, Object> configs = new HashMap<>();
         configs.put(AUTHENTICATION_SERVER_OBJ, this.getAuthenticationService());
+        configs.put(REQUEST_TIMEOUT_MS, config.getRequestTimeoutMs());
         handler.configure(configs, OAuthBearerLoginModule.OAUTHBEARER_MECHANISM,
                 Collections.singletonList(appConfigurationEntry));
         return handler;
@@ -296,7 +300,7 @@ public class SaslAuthenticator {
     private void createSaslServer(final String mechanism) throws AuthenticationException {
         // TODO: support more mechanisms, see https://github.com/streamnative/kop/issues/235
         if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM)) {
-            saslServer = new PlainSaslServer(authenticationService, admin, proxyRoles);
+            saslServer = new PlainSaslServer(authenticationService, config, proxyRoles);
         } else if (mechanism.equals(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)) {
             if (this.oauth2CallbackHandler == null) {
                 throw new IllegalArgumentException("No OAuth2CallbackHandler found when mechanism is "

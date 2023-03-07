@@ -22,6 +22,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
 
 import java.util.HashMap;
+import java.util.concurrent.CompletableFuture;
 import javax.naming.AuthenticationException;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
@@ -46,6 +47,8 @@ public class OauthValidatorCallbackHandlerTest {
         AuthenticationState state = mock(AuthenticationState.class);
 
         doReturn(state).when(mockAuthProvider).newAuthState(any(), any(), any());
+
+        doReturn(CompletableFuture.completedFuture(null)).when(state).authenticateAsync(any());
 
         KopOAuthBearerValidatorCallback callbackWithTenant =
                 new KopOAuthBearerValidatorCallback("my-tenant" + OAuthTokenDecoder.DELIMITER + "my-token");

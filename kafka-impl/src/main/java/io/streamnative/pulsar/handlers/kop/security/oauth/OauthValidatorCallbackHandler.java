@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
@@ -47,6 +50,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
     private ServerConfig config = null;
     private AuthenticationService authenticationService;
+    private int requestTimeoutMs;
+
 
     public OauthValidatorCallbackHandler() {}
 
@@ -78,6 +83,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
         this.authenticationService = (AuthenticationService) configs.get(SaslAuthenticator.AUTHENTICATION_SERVER_OBJ);
         this.config = new ServerConfig(options);
+        this.requestTimeoutMs = (Integer) configs.get(SaslAuthenticator.REQUEST_TIMEOUT_MS);
     }
 
     @Override
@@ -126,8 +132,10 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         final String tenant = tokenAndTenant.getRight();
 
         try {
+            AuthData authData = AuthData.of(token.getBytes(StandardCharsets.UTF_8));
             final AuthenticationState authState = authenticationProvider.newAuthState(
-                    AuthData.of(token.getBytes(StandardCharsets.UTF_8)), null, null);
+                    authData, null, null);
+            authState.authenticateAsync(authData).get(requestTimeoutMs, TimeUnit.MILLISECONDS);
             final String role = authState.getAuthRole();
             AuthenticationDataSource authDataSource = authState.getAuthDataSource();
             callback.token(new KopOAuthBearerToken() {
@@ -168,7 +176,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                     return Long.MAX_VALUE;
                 }
             });
-        } catch (AuthenticationException e) {
+        } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException e) {
             log.error("OAuth validator callback handler new auth state failed: ", e);
             throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
         }
