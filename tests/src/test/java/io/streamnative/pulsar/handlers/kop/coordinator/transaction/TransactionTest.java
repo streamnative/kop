@@ -1601,6 +1601,116 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         assertEquals(transactionState, transactionListing.state());
     }
 
+    @Test(timeOut = 100000 * 30)
+    public void testListTransactions() throws Exception {
+
+        String topicName = "testListTransactions";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        producer.initTransactions();
+        producer.beginTransaction();
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.EMPTY);
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+
+        ListTransactionsResult listTransactionsResult = kafkaAdmin.listTransactions();
+        listTransactionsResult.all().get().forEach(t -> {
+            log.info("Found transactionalId: {} {} {}",
+                    t.transactionalId(),
+                    t.producerId(),
+                    t.state());
+        });
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.ONGOING);
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.ONGOING);
+        });
+        producer.commitTransaction();
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT);
+        });
+        producer.beginTransaction();
+
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT);
+
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+        producer.abortTransaction();
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT);
+        });
+        producer.close();
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT);
+    }
+
+    private static void assertTransactionState(AdminClient kafkaAdmin, String transactionalId,
+                                               org.apache.kafka.clients.admin.TransactionState transactionState)
+            throws Exception {
+        ListTransactionsResult listTransactionsResult = kafkaAdmin.listTransactions();
+        Collection<TransactionListing> transactionListings = listTransactionsResult.all().get();
+        transactionListings.forEach(t -> {
+            log.info("Found transactionalId: {} {} {}",
+                    t.transactionalId(),
+                    t.producerId(),
+                    t.state());
+        });
+        TransactionListing transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        // filter for the same state
+        ListTransactionsOptions optionFilterState = new ListTransactionsOptions()
+                .filterStates(Collections.singleton(transactionState));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterState);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+
+        // filter for the same producer id
+        ListTransactionsOptions optionFilterProducer = new ListTransactionsOptions()
+                .filterProducerIds(Collections.singleton(transactionListing.producerId()));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterProducer);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        // filter for the same producer id and state
+        ListTransactionsOptions optionFilterProducerAndState = new ListTransactionsOptions()
+                .filterStates(Collections.singleton(transactionState))
+                .filterProducerIds(Collections.singleton(transactionListing.producerId()));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterProducerAndState);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+    }
+
     /**
      * Get the Kafka server address.
      */
