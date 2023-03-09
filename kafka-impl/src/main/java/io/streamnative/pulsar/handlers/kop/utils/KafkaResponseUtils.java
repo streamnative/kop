@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import io.streamnative.pulsar.handlers.kop.ApiVersion;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -278,14 +279,18 @@ public class KafkaResponseUtils {
         return new LeaveGroupResponse(data);
     }
 
-    public static ListGroupsResponse newListGroups(Errors errors,
-                                                   List<GroupMetadata.GroupOverview> groups) {
+    public static ListGroupsResponse newListGroups(Either<Errors, List<GroupMetadata.GroupOverview>> results) {
         ListGroupsResponseData data = new ListGroupsResponseData();
-        data.setErrorCode(errors.code());
-        data.setGroups(groups.stream().map(overView -> new ListGroupsResponseData.ListedGroup()
-                .setGroupId(overView.groupId())
-                .setProtocolType(overView.protocolType()))
-                .collect(Collectors.toList()));
+        data.setErrorCode(results.isLeft() ? results.getLeft().code() : Errors.NONE.code());
+        if (!results.isLeft()) {
+            data.setGroups(results.getRight().stream().map(overView -> new ListGroupsResponseData.ListedGroup()
+                            .setGroupId(overView.groupId())
+                            .setProtocolType(overView.protocolType()))
+                    .collect(Collectors.toList()));
+
+        } else {
+            data.setGroups(Collections.emptyList());
+        }
         return new ListGroupsResponse(data);
     }
 

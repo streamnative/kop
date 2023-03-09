@@ -29,6 +29,7 @@ import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.GroupKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
@@ -832,22 +833,16 @@ public class GroupCoordinator {
         );
     }
 
-    public KeyValue<Errors, List<GroupOverview>> handleListGroups() {
+    public Either<Errors, List<GroupOverview>> handleListGroups() {
         if (!isActive.get()) {
-            return new KeyValue<>(Errors.COORDINATOR_NOT_AVAILABLE, new ArrayList<>());
+            return Either.left(Errors.COORDINATOR_NOT_AVAILABLE);
         } else {
-            Errors errors;
             if (groupManager.isLoading()) {
-                errors = Errors.COORDINATOR_LOAD_IN_PROGRESS;
-            } else {
-                errors = Errors.NONE;
+                return Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS);
             }
             List<GroupOverview> overviews = new ArrayList<>();
             groupManager.currentGroups().forEach(group -> overviews.add(group.overview()));
-            return new KeyValue<>(
-                errors,
-                overviews
-            );
+            return Either.right(overviews);
         }
     }
 

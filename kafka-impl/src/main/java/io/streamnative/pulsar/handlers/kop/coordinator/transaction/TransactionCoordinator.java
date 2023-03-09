@@ -32,6 +32,7 @@ import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotB
 import io.streamnative.pulsar.handlers.kop.storage.PulsarTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -51,6 +52,7 @@ import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
+import org.apache.kafka.common.message.ListTransactionsResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.TransactionResult;
@@ -78,6 +80,8 @@ public class TransactionCoordinator {
     private final ScheduledExecutorService scheduler;
 
     private final Time time;
+
+    private final AtomicBoolean isActive = new AtomicBoolean(false);
 
     private static final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
             onEndTransactionComplete =
@@ -213,6 +217,17 @@ public class TransactionCoordinator {
 
     public static String getTopicPartitionName(String topicPartitionName, int partitionId) {
         return topicPartitionName + PARTITIONED_TOPIC_SUFFIX + partitionId;
+    }
+
+    public ListTransactionsResponseData handleListTransactions(List<String> filteredStates,
+                                                               List<Long> filteredProducerIds) {
+        // https://github.com/apache/kafka/blob/915991445fde106d02e61a70425ae2601c813db0/core/
+        // src/main/scala/kafka/coordinator/transaction/TransactionCoordinator.scala#L259
+        if (!isActive.get()) {
+            log.warn("The transaction coordinator is not active, so it will reject list transaction request");
+            return new ListTransactionsResponseData().setErrorCode(Errors.NOT_COORDINATOR.code());
+        }
+        return this.txnManager.listTransactionStates(filteredProducerIds, filteredStates);
     }
 
     @Data
@@ -925,7 +940,8 @@ public class TransactionCoordinator {
         txnManager.startup(enableTransactionalIdExpiration);
 
         return this.producerIdManager.initialize().thenCompose(ignored -> {
-            log.info("Startup transaction coordinator complete.");
+            log.info("{} Startup transaction coordinator complete.", namespacePrefixForMetadata);
+            isActive.set(true);
             return CompletableFuture.completedFuture(null);
         });
     }
