@@ -317,6 +317,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case LIST_TRANSACTIONS:
                         handleListTransactionsRequest(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case DESCRIBE_TRANSACTIONS:
+                        handleDescribeTransactionsRequest(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case DELETE_GROUPS:
                         handleDeleteGroupsRequest(kafkaHeaderAndRequest, responseFuture);
                         break;
@@ -577,6 +580,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleListTransactionsRequest(KafkaHeaderAndRequest listGroups, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeTransactionsRequest(KafkaHeaderAndRequest listGroups, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups, CompletableFuture<AbstractResponse> response);
