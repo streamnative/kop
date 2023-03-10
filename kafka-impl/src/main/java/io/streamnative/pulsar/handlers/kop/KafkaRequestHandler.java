@@ -117,6 +117,7 @@ import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
+import org.apache.kafka.common.message.DescribeTransactionsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.EndTxnResponseData;
 import org.apache.kafka.common.message.FetchRequestData;
@@ -161,6 +162,8 @@ import org.apache.kafka.common.requests.DescribeClusterResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
+import org.apache.kafka.common.requests.DescribeTransactionsRequest;
+import org.apache.kafka.common.requests.DescribeTransactionsResponse;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
@@ -2041,6 +2044,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ListTransactionsResponseData listResult = getTransactionCoordinator()
                 .handleListTransactions(stateFilters, producerIdFilters);
         resultFuture.complete(new ListTransactionsResponse(listResult));
+    }
+
+    @Override
+    protected void handleDescribeTransactionsRequest(KafkaHeaderAndRequest listGroups,
+                                                     CompletableFuture<AbstractResponse> response) {
+        checkArgument(listGroups.getRequest() instanceof DescribeTransactionsRequest);
+        DescribeTransactionsRequest request = (DescribeTransactionsRequest) listGroups.getRequest();
+        DescribeTransactionsResponseData describeResult = getTransactionCoordinator()
+                .handleDescribeTransactions(request.data().transactionalIds());
+        response.complete(new DescribeTransactionsResponse(describeResult));
     }
 
     @Override
