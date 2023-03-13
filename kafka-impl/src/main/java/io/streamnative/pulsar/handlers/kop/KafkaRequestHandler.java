@@ -115,6 +115,7 @@ import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
+import org.apache.kafka.common.message.DescribeProducersResponseData;
 import org.apache.kafka.common.message.DescribeTransactionsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.EndTxnResponseData;
@@ -160,6 +161,8 @@ import org.apache.kafka.common.requests.DescribeClusterResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
+import org.apache.kafka.common.requests.DescribeProducersRequest;
+import org.apache.kafka.common.requests.DescribeProducersResponse;
 import org.apache.kafka.common.requests.DescribeTransactionsRequest;
 import org.apache.kafka.common.requests.DescribeTransactionsResponse;
 import org.apache.kafka.common.requests.EndTxnRequest;
@@ -2039,6 +2042,99 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .map(groupId -> Pair.of(groupId, getGroupCoordinator().handleDescribeGroup(groupId)))
                 .collect(Collectors.toMap(Pair::getLeft, Pair::getRight))
         ));
+    }
+
+    @Override
+    protected void handleDescribeProducersRequest(KafkaHeaderAndRequest describeGroup,
+                                                  CompletableFuture<AbstractResponse> responseFuture) {
+        // https://github.com/apache/kafka/blob/79c19da68d6a93a729a07dfdd37f238246653a46/
+        // core/src/main/scala/kafka/server/KafkaApis.scala#L3397
+        checkArgument(describeGroup.getRequest() instanceof DescribeProducersRequest);
+        DescribeProducersRequest request = (DescribeProducersRequest) describeGroup.getRequest();
+        Map<TopicPartition, DescribeProducersResponseData.PartitionResponse> allResponses = Maps.newConcurrentMap();
+        Map<TopicPartition, Errors> errors = Maps.newConcurrentMap();
+        String namespacePrefix = currentNamespacePrefix();
+        final int numPartitions = request.data().topics().stream()
+                .mapToInt(t->t.partitionIndexes().size())
+                .sum();
+        Runnable completeOne = () -> {
+            if (errors.size() + allResponses.size() != numPartitions) {
+                // not enough responses
+                return;
+            }
+            errors.forEach((topicPartition, tpErrors) -> {
+                DescribeProducersResponseData.PartitionResponse topicResponse =
+                        new DescribeProducersResponseData.PartitionResponse()
+                                .setPartitionIndex(topicPartition.partition())
+                                .setErrorCode(tpErrors.code())
+                                .setErrorMessage(tpErrors.message());
+                allResponses.put(topicPartition, topicResponse);
+            });
+            DescribeProducersResponseData response = new DescribeProducersResponseData();
+            allResponses
+                    .entrySet()
+                    .stream()
+                    .collect(Collectors.groupingBy(
+                            entry -> entry.getKey().topic(),
+                            Collectors.mapping(
+                                    entry -> entry.getValue(),
+                                    Collectors.toList()
+                            )
+                    ))
+                    .forEach((topic, partitionResponses) -> {
+                        DescribeProducersResponseData.TopicResponse topicResponse =
+                                new DescribeProducersResponseData.TopicResponse()
+                                        .setName(topic)
+                                        .setPartitions(partitionResponses);
+                        response.topics().add(topicResponse);
+                    });
+            responseFuture.complete(new DescribeProducersResponse(response));
+        };
+
+        request.data().topics().forEach ((topicRequest) -> {
+            topicRequest.partitionIndexes().forEach(partition -> {
+                TopicPartition tp = new TopicPartition(topicRequest.name(), partition);
+                String fullPartitionName;
+                try {
+                    fullPartitionName = KopTopic.toString(tp, namespacePrefix);
+                } catch (KoPTopicException e) {
+                    log.warn("Invalid topic name: {}", tp.topic(), e);
+                    errors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                    completeOne.run();
+                    return;
+                }
+                authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("AddPartitionsToTxn topic authorize failed, topic - {}. {}",
+                                        fullPartitionName, ex.getMessage());
+                                errors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED);
+                                completeOne.run();
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                errors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED);
+                                completeOne.run();
+                                return;
+                            }
+                            CompletableFuture<DescribeProducersResponseData.PartitionResponse> topicResponse =
+                                    replicaManager.activeProducerState(tp, namespacePrefix);
+                            topicResponse.whenComplete((response, throwable) -> {
+                                if (throwable != null) {
+                                    log.error("DescribeProducersRequest failed, topic - {}. {}",
+                                            fullPartitionName, throwable.getMessage());
+                                    errors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                                } else {
+                                    allResponses.put(tp, response);
+                                }
+                                completeOne.run();
+                            });
+
+                        });
+            });
+        });
+
+
     }
 
     @Override

@@ -42,6 +42,7 @@ import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
+import org.apache.kafka.common.message.DescribeProducersResponseData;
 import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -339,6 +340,16 @@ public class ReplicaManager {
 
     public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
         return logManager.updatePurgeAbortedTxnsOffsets();
+    }
+
+    public CompletableFuture<DescribeProducersResponseData.PartitionResponse> activeProducerState(
+                                                                                TopicPartition topicPartition,
+                                                                                String namespacePrefix) {
+        PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
+        // https://github.com/apache/kafka/blob/5514f372b3e12db1df35b257068f6bb5083111c7/
+        // core/src/main/scala/kafka/server/ReplicaManager.scala#L535
+        return partitionLog.awaitInitialisation()
+                        .thenApply(log -> log.activeProducerState());
     }
 
 }
