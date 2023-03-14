@@ -13,15 +13,22 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mockStatic;
+
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.pulsar.broker.PulsarService;
 import org.awaitility.Awaitility;
+import org.mockito.MockedStatic;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -73,41 +80,63 @@ public abstract class MessagePublishBufferThrottleTestBase extends KopProtocolHa
 
     @Test
     public void testMessagePublishBufferThrottleEnable() throws Exception {
-        // set size for max publish buffer before broker start
-        conf.setMaxMessagePublishBufferSizeInMB(1);
-        super.internalSetup();
+        AtomicBoolean pausedCalled = new AtomicBoolean();
+        AtomicBoolean resumeCalled = new AtomicBoolean();
+        try (MockedStatic<KafkaRequestHandler> utilities = mockStatic(KafkaRequestHandler.class)) {
 
-        final String topic = "testMessagePublishBufferThrottleEnable";
-        Properties properties = new Properties();
-        properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
-        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
-        properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
-        properties.put(ProducerConfig.BATCH_SIZE_CONFIG, 0);
-        final KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(properties);
-
-        mockBookKeeper.addEntryDelay(1, TimeUnit.SECONDS);
-
-        final byte[] payload = new byte[1024 * 256];
-        final int numMessages = 50;
-        final AtomicInteger numSend = new AtomicInteger(0);
-        for (int i = 0; i < numMessages; i++) {
-            final int index = i;
-            producer.send(new ProducerRecord<>(topic, payload), (metadata, exception) -> {
-                if (exception != null) {
-                    log.error("Failed to send {}: {}", index, exception.getMessage());
-                    return;
-                }
-                numSend.getAndIncrement();
+            utilities.when(() -> {
+                KafkaRequestHandler.setPausedConnections(any(PulsarService.class), anyInt());
+            }).then(invocation -> {
+                    pausedCalled.set(true);
+                    int pausedConnections = (int) invocation.getArguments()[0];
+                    pulsar.getBrokerService().pausedConnections(pausedConnections);
+                    return null;
             });
-        }
 
-        Awaitility.await().untilAsserted(
-                () -> Assert.assertEquals(pulsar.getBrokerService().getPausedConnections(), 1L));
-        Awaitility.await().untilAsserted(() -> Assert.assertEquals(numSend.get(), numMessages));
-        Awaitility.await().untilAsserted(
-                () -> Assert.assertEquals(pulsar.getBrokerService().getPausedConnections(), 0L));
-        producer.close();
-        super.internalCleanup();
+            utilities.when(() -> {
+                KafkaRequestHandler.setPausedConnections(any(PulsarService.class), anyInt());
+            }).then(invocation -> {
+                resumeCalled.set(true);
+                int pausedConnections = (int) invocation.getArguments()[0];
+                pulsar.getBrokerService().resumedConnections(pausedConnections);
+                return null;
+            });
+
+            conf.setMaxMessagePublishBufferSizeInMB(1);
+            super.internalSetup();
+
+            final String topic = "testMessagePublishBufferThrottleEnable";
+            Properties properties = new Properties();
+            properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
+            properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+            properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+            properties.put(ProducerConfig.BATCH_SIZE_CONFIG, 0);
+            final KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(properties);
+
+            mockBookKeeper.addEntryDelay(1, TimeUnit.SECONDS);
+
+            final byte[] payload = new byte[1024 * 512];
+            final int numMessages = 50;
+            final AtomicInteger numSend = new AtomicInteger(0);
+            for (int i = 0; i < numMessages; i++) {
+                final int index = i;
+                producer.send(new ProducerRecord<>(topic, payload), (metadata, exception) -> {
+                    if (exception != null) {
+                        log.error("Failed to send {}: {}", index, exception.getMessage());
+                        return;
+                    }
+                    numSend.getAndIncrement();
+                });
+            }
+
+            Awaitility.await().untilAsserted(
+                    () -> pausedCalled.get());
+            Awaitility.await().untilAsserted(() -> Assert.assertEquals(numSend.get(), numMessages));
+            Awaitility.await().untilAsserted(
+                    () -> resumeCalled.get());
+            producer.close();
+            super.internalCleanup();
+        }
     }
 
     @Override

@@ -42,7 +42,7 @@
     <jackson-databind.version>2.13.4.1</jackson-databind.version>
     <kafka.version>2.0.0</kafka.version>
     <lombok.version>1.18.24</lombok.version>
-    <mockito.version>2.22.0</mockito.version>
+    <mockito.version>4.11.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
     <pulsar.version>2.9.2.18</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
@@ -233,6 +233,12 @@
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
+        <version>${mockito.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-inline</artifactId>
         <version>${mockito.version}</version>
       </dependency>
 
