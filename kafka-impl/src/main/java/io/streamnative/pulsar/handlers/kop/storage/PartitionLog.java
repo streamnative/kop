@@ -1194,7 +1194,8 @@ public class PartitionLog {
                     .setProducerId(producerStateEntry.producerId())
                     .setLastSequence(-1) // NOT HANDLED YET
                     .setProducerEpoch(producerStateEntry.producerEpoch() != null
-                            ? producerStateEntry.producerEpoch().intValue() : -1)
+                            && producerStateEntry.producerEpoch() >= 0
+                            ? producerStateEntry.producerEpoch().intValue() : 0)
                     .setLastTimestamp(producerStateEntry.lastTimestamp() != null
                             ? producerStateEntry.lastTimestamp().longValue() : -1)
                     .setCoordinatorEpoch(producerStateEntry.coordinatorEpoch())
