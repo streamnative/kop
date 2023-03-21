@@ -661,10 +661,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public void close() {
-           if (!released.compareAndSet(false, true)) {
-               return;
-           }
-           ReferenceCountUtil.safeRelease(this.buffer);
+             if (!released.compareAndSet(false, true)) {
+                return;
+            }
+            ReferenceCountUtil.safeRelease(this.buffer);
         }
     }
 
