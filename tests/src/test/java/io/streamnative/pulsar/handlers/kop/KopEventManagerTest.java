@@ -38,6 +38,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.ConsumerGroupState;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.awaitility.Awaitility;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -91,8 +92,10 @@ public class KopEventManagerTest extends KopProtocolHandlerTestBase {
 
         final KafkaConsumer<String, String> kafkaConsumer1 = new KafkaConsumer<>(properties);
         kafkaConsumer1.subscribe(Collections.singletonList(topic1));
-        ConsumerRecords<String, String> records = kafkaConsumer1.poll(Duration.ofSeconds(1));
-        assertEquals(records.count(), 1);
+        Awaitility.await().atMost(Duration.ofSeconds(5)).until(() -> {
+            ConsumerRecords<String, String> records = kafkaConsumer1.poll(Duration.ofSeconds(1));
+            return records.count() == 1;
+        });
 
         // 4. check group state must be Stable
         Map<String, ConsumerGroupDescription> describeGroup1 =
