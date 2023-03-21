@@ -84,10 +84,10 @@ If you want to enable the authentication feature for KoP using the `PLAIN` mecha
 
     To forward your credentials, `SASL-PLAIN` is used on the Kafka client side. To enable `SASL-PLAIN`, you need to set the following properties through Kafka JAAS.
 
-    Property | Description | Example value
-    |---|---|---
-    `username` | `username` | The `username` of Kafka JAAS is `tenant/namespace` or `tenant`, where Kafka’s topics are stored in Pulsar. <br><br> **Note** In KoP 2.9.0 or higher, the username can be used with `kafkaEnableMultiTenantMetadata` to implement multi-tenancy for metadata. | empty string
-    `password`|`password` must be your token authentication parameters from Pulsar.<br><br>The token can be created by Pulsar token tools. The role is the `subject` for the token. It is embedded in the created token and the broker can get `role` by parsing this token.|`token:xxx`
+| Property | Description | Example value |
+| --- | --- | --- |
+| `username` | The `username` of Kafka JAAS is `tenant/namespace` or `tenant`, where Kafka’s topics are stored in Pulsar. <br><br> **Note** In KoP 2.9.0 or higher, the username can be used with `kafkaEnableMultiTenantMetadata` to implement multi-tenancy for metadata.  | empty string |
+| `password` | `password` must be your token authentication parameters from Pulsar.<br><br>The token can be created by Pulsar token tools. The role is the `subject` for the token. It is embedded in the created token and the broker can get `role` by parsing this token. | `token:xxx` |
 
     ```properties
     security.protocol=SASL_PLAINTEXT  # or security.protocol=SASL_SSL if SSL connection is used
@@ -136,25 +136,33 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
 
     For the `OAUTHBEARER` mechanism, you can use `AuthenticationProviderToken` or custom your authentication provider to process the access tokens from OAuth 2.0 server.
 
-    KoP provides a built-in `AuthenticateCallbackHandler` that uses the authentication provider of Pulsar for authentication. You need to configure the following properties in the `conf/kop-handler.properties` file.
+    KoP provides a built-in `AuthenticateCallbackHandler` that uses the authentication provider of Pulsar for authentication. You need to configure the following properties in the Pulsar broker's configuration file (e.g. `conf/broker.conf`)
 
     ```properties
-    # Use the KoP's built-in handler
+    # Use KoP's built-in handler
     kopOauth2AuthenticateCallbackHandler=io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler
 
-    # Java property configuration file of OauthValidatorCallbackHandler
+    # OauthValidatorCallbackHandler configuration file (Java Properties format)
     kopOauth2ConfigFile=conf/kop-handler.properties
     ```
 
-(3) Specify the authentication method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file. By default, it uses the `token` authentication method. If you have configured the `token` authentication  method, you do not need to specify the authentication method name.
+(3) Specify the Authentication Method name of the provider (that is, `oauth.validate.method`) in the `conf/kop-handler.properties` file. By default, it uses the `token` authentication method (`AuthenticationProviderToken`). 
 
-   - If you use `AuthenticationProviderToken`, since `AuthenticationProviderToken#getAuthMethodName()` returns `token`, set the `oauth.validate.method` as the token.
+   - If you use `AuthenticationProviderToken`, set `oauth.validate.method` to `token` (since `AuthenticationProviderToken#getAuthMethodName()` returns `token`).
 
-   - If you use other providers, set the `oauth.validate.method` as the result of `getAuthMethodName()`.
+   - If you use other providers, set the `oauth.validate.method` as the result of `getAuthMethodName()` of your `AuthenticationProvider`. For example, if your authentication provider in Pulsar is `AuthenticationProviderAthenz`, then set the following: 
 
         ```properties
-        oauth.validate.method=token
+        oauth.validate.method=athenz
         ```
+   as it has the following code in it:
+
+         ```java
+             @Override
+             public String getAuthMethodName() {
+                 return "athenz";
+             }
+         ```
 
 3. Enable authentication on Kafka client.
 
@@ -191,52 +199,52 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
         </thead>
         <tbody>
             <tr>
-                <td><code>sasl.login.callback.handler.class<code></td>
+                <td><code>sasl.login.callback.handler.class</code></td>
                 <td>Class of SASL login callback handler</td>
                 <td>io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler</td>
                 <td rowspan=4>Set the value of this property as the same to the value in the example below.</td>
             </tr>
             <tr>
-                <td><code>security.protocol<code></td>
+                <td><code>security.protocol</code></td>
                 <td>Security protocol</td>
                 <td>SASL_PLAINTEXT</td>
                 <td></td>
             </tr>
             <tr>
-                <td><code>sasl.mechanism<code></td>
+                <td><code>sasl.mechanism</code></td>
                 <td>SASL mechanism</td>
                 <td>OAUTHBEARER</td>
                 <td></td>
             </tr>
             <tr>
-                <td><code>sasl.jaas.config<code></td>
+                <td><code>sasl.jaas.config</code></td>
                 <td>JAAS configuration</td>
                 <td>org.apache.kafka.coPropertymmon.security.oauthbearer.OAuthBearerLoginModule</td>
                 <td></td>
             </tr>
             <tr>
-                <td><code>oauth.issuer.url<code></td>
+                <td><code>oauth.issuer.url</code></td>
                 <td>URL of the authentication provider which allows the Pulsar client to obtain an access token.
                 </td>
                 <td>https://accounts.google.com</td>
                 <td>This property is the same to the issuerUrl property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
             </tr>
             <tr>
-                <td><code>oauth.credentials.url<code></td>
-                <td>URL to a JSON credentials file.<br><br>The following pattern formats are supported:<br> - file:///path/to/file <br> - file:/path/to/file <br> - data:application/json;base64,<base64-encoded value>
+                <td><code>oauth.credentials.url</code></td>
+                <td>URL to a JSON credentials file.<br><br>The following pattern formats are supported:<br> - file:///path/to/file <br> - file:/path/to/file <br> - data:application/json;base64,[base64-encoded value]
                 </td>
                 <td>file:///path/to/credentials_file.json</td>
-                <td>This property is the same to the privateKey property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
+                <td>This property is the same to the privateKey property in <a href="https://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
             </tr>
             <tr>
-                <td><code>oauth.audience<code></td>
+                <td><code>oauth.audience</code></td>
                 <td>OAuth 2.0 "resource server" identifier for the Pulsar cluster.
                 </td>
                 <td>https://broker.example.com</td>
                 <td>This property is the same to the audience property in <a href="http://pulsar.apache.org/docs/en/security-oauth2/#authentication-types">Pulsar client credentials</a></td>
             </tr>
             <tr>
-                <td><code>oauth.scope<code></td>
+                <td><code>oauth.scope</code></td>
                 <td>The scope of the access request that is expressed as a list of space-delimited, case-sensitive strings.
                 </td>
                 <td>api://pulsar-cluster-1/.default</td>
