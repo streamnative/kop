@@ -61,7 +61,7 @@
     <grpc.version>1.45.1</grpc.version>
     <protobuf3.version>3.19.6</protobuf3.version>
     <junit.version>4.13.1</junit.version>
-    <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
+    <fusionauth-jwt.version>5.2.2</fusionauth-jwt.version>
     <snakeyaml.version>1.32</snakeyaml.version>
     <zstd-jni.version>1.5.2-4</zstd-jni.version>
 
