@@ -1,4 +1,5 @@
 {
   "client_id": "my-id",
-  "client_secret": "my-secret"
+  "client_secret": "my-secret",
+  "tenant": "my-tenant"
 }

@@ -83,6 +83,11 @@ public class HydraOAuthUtils {
     }
 
     public static String createOAuthClient(String clientId, String clientSecret) throws ApiException, IOException {
+        return createOAuthClient(clientId, clientSecret, null);
+    }
+
+    public static String createOAuthClient(String clientId, String clientSecret, String tenant)
+            throws ApiException, IOException {
         final OAuth2Client oAuth2Client = new OAuth2Client()
                 .audience(Collections.singletonList(AUDIENCE))
                 .clientId(clientId)
@@ -97,15 +102,17 @@ public class HydraOAuthUtils {
                 throw e;
             }
         }
-        return writeCredentialsFile(clientId, clientSecret, clientId + ".json");
+        return writeCredentialsFile(clientId, clientSecret, tenant, clientId + ".json");
     }
 
     public static String writeCredentialsFile(String clientId,
                                                String clientSecret,
+                                               String tenant,
                                                String basename) throws IOException {
         final String content = "{\n"
                 + "    \"client_id\": \"" + clientId + "\",\n"
-                + "    \"client_secret\": \"" + clientSecret + "\"\n"
+                + "    \"client_secret\": \"" + clientSecret + (tenant != null ? "\",\n" : "\"\n")
+                + (tenant != null ? "    \"tenant\": \"" + tenant + "\"\n" : "")
                 + "}\n";
 
         File file = File.createTempFile("oauth-credentials-", basename);

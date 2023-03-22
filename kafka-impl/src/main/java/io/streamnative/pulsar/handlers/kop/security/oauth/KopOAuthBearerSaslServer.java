@@ -111,6 +111,9 @@ public class KopOAuthBearerSaslServer implements SaslServer {
             return tokenForNegotiatedProperty.authDataSource();
         }
         if (USER_NAME_PROP.equals(propName)) {
+            if (tokenForNegotiatedProperty.tenant() != null) {
+                return tokenForNegotiatedProperty.tenant();
+            }
             return defaultKafkaMetadataTenant;
         }
         return NEGOTIATED_PROPERTY_KEY_TOKEN.equals(propName) ? tokenForNegotiatedProperty : null;

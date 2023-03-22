@@ -78,6 +78,12 @@
     </dependency>
 
     <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
       <artifactId>test-listener</artifactId>
       <scope>test</scope>
