@@ -66,6 +66,7 @@ class AdminManager {
 
     private final PulsarAdmin admin;
     private final int defaultNumPartitions;
+    private final int maxMessageSize;
 
     private volatile Map<String, Set<Node>> brokersCache = Maps.newHashMap();
     private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
@@ -77,6 +78,7 @@ class AdminManager {
     public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
         this.admin = admin;
         this.defaultNumPartitions = conf.getDefaultNumPartitions();
+        this.maxMessageSize = conf.getMaxMessageSize();
     }
 
     public void shutdown() {
@@ -213,6 +215,7 @@ class AdminManager {
                                 List<DescribeConfigsResponse.ConfigEntry> dummyConfig = new ArrayList<>();
                                 dummyConfig.add(buildDummyEntryConfig("num.partitions",
                                         this.defaultNumPartitions + ""));
+                                dummyConfig.add(buildDummyEntryConfig("message.max.bytes", maxMessageSize + ""));
                                 // this is useless in KOP, but some tools like KSQL need a value
                                 dummyConfig.add(buildDummyEntryConfig("default.replication.factor", "1"));
                                 dummyConfig.add(buildDummyEntryConfig("delete.topic.enable", "true"));
