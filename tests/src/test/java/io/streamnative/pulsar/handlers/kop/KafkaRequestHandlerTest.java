@@ -573,6 +573,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(brokerConfig.get("num.partitions").value(), conf.getDefaultNumPartitions() + "");
         assertEquals(brokerConfig.get("default.replication.factor").value(), "1");
         assertEquals(brokerConfig.get("delete.topic.enable").value(), "true");
+        assertEquals(brokerConfig.get("message.max.bytes").value(), conf.getMaxMessageSize() + "");
     }
 
     @Test(timeOut = 10000)
