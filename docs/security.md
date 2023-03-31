@@ -263,6 +263,17 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
    oauth.audience="https://broker.example.com";
 ```
 
+### Authentication for the Schema Registry
+
+KoP supports Confluent's Schema Registry since 2.11. See [schema.md](./schema.md) for a quick start.
+
+When KoP enables the authentication, the Schema Registry also requires the authentication from the Kafka client. You need to set the following properties on the client side.
+
+```properties
+basic.auth.credentials.source=USER_INFO
+basic.auth.user.info=<tenant>:<token>
+```
+
 ### Together with Pulsar's authentication
 
 Since KoP reuses Pulsar's authentication providers for authentication, you can enable KoP's authentication and Pulsar authentication at the same time.
