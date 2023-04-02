@@ -183,14 +183,11 @@ public class SchemaRegistryManager {
             }
             String rawUsername = usernamePassword.substring(0, colon);
             String rawPassword = usernamePassword.substring(colon + 1);
-            if (!rawPassword.startsWith("token:")) {
-                throw new SchemaStorageException("Password must start with 'token:'",
-                        HttpResponseStatus.UNAUTHORIZED.code());
+            if (rawPassword.startsWith("token:")) {
+                return new UsernamePasswordPair(rawUsername, rawPassword.substring("token:".length()));
+            } else {
+                return new UsernamePasswordPair(rawUsername, rawPassword);
             }
-            String token = rawPassword.substring("token:".length());
-
-            UsernamePasswordPair usernamePasswordPair = new UsernamePasswordPair(rawUsername, token);
-            return usernamePasswordPair;
         }
     }
 
