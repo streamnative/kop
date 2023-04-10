@@ -83,9 +83,8 @@ import org.testng.annotations.Test;
  *
  * Don't support admin api list.
  *
- * |-------------------------------------------------------------------------------|
  * | Method                       | Is Support                                     |
- * |-------------------------------------------------------------------------------|
+ * |------------------------------|------------------------------------------------|
  * | createAcls                   | Don't support, use pulsar admin to manage acl. |
  * | deleteAcls                   | Don't support, use pulsar admin to manage acl. |
  * | describeAcls                 | Don't support, use pulsar admin to manage acl. |
@@ -100,18 +99,16 @@ import org.testng.annotations.Test;
  * | alterReplicaLogDirs          | Don't support                                  |
  * | describeReplicaLogDirs       | Don't support                                  |
  * | describeLogDirs              | Don't support                                  |
- * |-------------------------------------------------------------------------------|
  *
  * TODO: Can support in the future.
- * |-------------------------------------------------------------------------------|
+ *
  * | Method                       | How to support.                                |
- * |-------------------------------------------------------------------------------|
+ * |------------------------------|------------------------------------------------|
  * | alterClientQuotas            | Can use pulsar admin handle it.                |
  * | describeClientQuotas         | Can get it from pulsar admin.                  |
  * | deleteConsumerGroupOffsets   | Can handle by group coordinator.               |
  * | alterConfigs                 | Maybe can store in the metadata store.         |
  * | incrementalAlterConfigs      | Maybe can store in the metadata store.         |
- * |-------------------------------------------------------------------------------|
  */
 @Slf4j
 public class KafkaAdminTest extends KopProtocolHandlerTestBase {
