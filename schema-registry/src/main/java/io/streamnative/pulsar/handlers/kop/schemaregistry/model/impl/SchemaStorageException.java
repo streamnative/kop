@@ -19,19 +19,19 @@ import lombok.Getter;
 @Getter
 public class SchemaStorageException extends Exception {
 
-    private final int httpStatusCode;
+    private final HttpResponseStatus httpStatusCode;
 
     public SchemaStorageException(Throwable cause) {
         super(cause);
-        this.httpStatusCode = HttpResponseStatus.INTERNAL_SERVER_ERROR.code();
+        this.httpStatusCode = HttpResponseStatus.INTERNAL_SERVER_ERROR;
     }
 
     public SchemaStorageException(String message) {
         super(message);
-        this.httpStatusCode = HttpResponseStatus.INTERNAL_SERVER_ERROR.code();
+        this.httpStatusCode = HttpResponseStatus.INTERNAL_SERVER_ERROR;
     }
 
-    public SchemaStorageException(String message, int httpStatusCode) {
+    public SchemaStorageException(String message, HttpResponseStatus httpStatusCode) {
         super(message);
         this.httpStatusCode = httpStatusCode;
     }

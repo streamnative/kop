@@ -165,11 +165,11 @@ public class SchemaRegistryHandlerTest {
             String subject = groups.get(0);
             if (subject.equals("errorsubject401")) {
                 return FutureUtil.failedFuture(
-                        new SchemaStorageException("Bad auth", HttpResponseStatus.UNAUTHORIZED.code()));
+                        new SchemaStorageException("Bad auth", HttpResponseStatus.UNAUTHORIZED));
             }
             if (subject.equals("errorsubject403")) {
                 return FutureUtil.failedFuture(
-                        new SchemaStorageException("Forbidden", HttpResponseStatus.FORBIDDEN.code()));
+                        new SchemaStorageException("Forbidden", HttpResponseStatus.FORBIDDEN));
             }
             if (subject.equals("errorsubject500")) {
                 return FutureUtil.failedFuture(new SchemaStorageException("Error"));

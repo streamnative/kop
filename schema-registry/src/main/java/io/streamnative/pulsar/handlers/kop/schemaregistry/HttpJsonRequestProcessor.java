@@ -78,7 +78,8 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
             }
             return result.thenApply(resp -> {
                 if (resp == null) {
-                    return buildErrorResponse(NOT_FOUND, "Not found", "text/plain");
+                    return buildErrorResponse(NOT_FOUND,
+                            request.method() + " " + request.uri() + " Not found");
                 }
                 if (resp.getClass() == String.class) {
                     return buildStringResponse(((String) resp), RESPONSE_CONTENT_TYPE);
@@ -92,7 +93,7 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
         } catch (IOException err) {
             log.error("Cannot decode request", err);
             return CompletableFuture.completedFuture(buildErrorResponse(HttpResponseStatus.BAD_REQUEST,
-                    "Cannot decode request: " + err.getMessage(), "text/plain"));
+                    "Cannot decode request: " + err.getMessage()));
         }
     }
 
