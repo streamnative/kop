@@ -257,7 +257,7 @@ public class SubjectResource extends AbstractResource {
                 }
                 if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
                     throw new CompletionException(
-                            new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
+                            new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT));
                 } else {
                     throw new CompletionException(err);
                 }
@@ -290,7 +290,7 @@ public class SubjectResource extends AbstractResource {
                         }
                         if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
                             throw new CompletionException(
-                                    new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
+                                    new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT));
                         } else {
                             throw new CompletionException(err);
                         }

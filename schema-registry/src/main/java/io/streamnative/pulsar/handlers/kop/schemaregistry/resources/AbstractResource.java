@@ -53,7 +53,7 @@ public abstract class AbstractResource {
         }
         if (currentTenant == null) {
             throw new SchemaStorageException("Missing or failed authentication",
-                    HttpResponseStatus.UNAUTHORIZED.code());
+                    HttpResponseStatus.UNAUTHORIZED);
         }
         return schemaStorageAccessor.getSchemaStorageForTenant(currentTenant);
     }
