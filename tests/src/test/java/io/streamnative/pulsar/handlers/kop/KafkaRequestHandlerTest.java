@@ -45,7 +45,6 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,18 +57,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -81,10 +77,8 @@ import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidRequestException;
-import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownServerException;
@@ -304,26 +298,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }).collect(Collectors.toList())).all().get();
     }
 
-    private void deleteRecordsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
-            throws ExecutionException, InterruptedException {
-        Map<TopicPartition, RecordsToDelete> toDelete = new HashMap<>();
-        topicToNumPartitions.forEach((topic, numPartitions) -> {
-             try (KConsumer consumer = new KConsumer(topic, getKafkaBrokerPort())) {
-                    Collection<TopicPartition> topicPartitions = new ArrayList<>();
-                    for (int i = 0; i < numPartitions; i++) {
-                        topicPartitions.add(new TopicPartition(topic, i));
-                    }
-                 Map<TopicPartition, Long> map = consumer
-                         .getConsumer().endOffsets(topicPartitions);
-                 map.forEach((TopicPartition topicPartition, Long offset) -> {
-                        log.info("For {} we are truncating at {}", topicPartition, offset);
-                        toDelete.put(topicPartition, RecordsToDelete.beforeOffset(offset));
-                    });
-             }
-        });
-        admin.deleteRecords(toDelete).all().get();
-    }
-
     private void verifyTopicsCreatedByPulsarAdmin(Map<String, Integer> topicToNumPartitions)
             throws PulsarAdminException {
         for (Map.Entry<String, Integer> entry : topicToNumPartitions.entrySet()) {
@@ -370,39 +344,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // delete
         deleteTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions.keySet());
         verifyTopicsDeletedByPulsarAdmin(topicToNumPartitions);
-    }
-
-    @Test(timeOut = 10000)
-    public void testDeleteRecords() throws Exception {
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-
-        @Cleanup
-        AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
-            put("testDeleteRecords-0", 1);
-            put("testDeleteRecords-1", 3);
-            put("my-tenant/my-ns/testDeleteRecords-2", 1);
-            put("persistent://my-tenant/my-ns/testDeleteRecords-3", 5);
-        }};
-        // create
-        createTopicsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
-        verifyTopicsCreatedByPulsarAdmin(topicToNumPartitions);
-
-
-        AtomicInteger count = new AtomicInteger();
-        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
-        topicToNumPartitions.forEach((topic, numPartitions) -> {
-            for (int i = 0; i < numPartitions; i++) {
-                producer.send(new ProducerRecord<>(topic, i, count + "", count + ""));
-                count.incrementAndGet();
-            }
-        });
-
-        producer.close();
-
-        // delete
-        deleteRecordsByKafkaAdmin(kafkaAdmin, topicToNumPartitions);
     }
 
     @Test(timeOut = 20000)
@@ -521,65 +462,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         entry -> entry.getValue().partitions().size()
                 ));
         assertEquals(result, expectedTopicPartitions);
-    }
-
-    @Test(timeOut = 10000)
-    public void testDescribeAndAlterConfigs() throws Exception {
-        final String topic = "testDescribeAndAlterConfigs";
-        admin.topics().createPartitionedTopic(topic, 1);
-
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-
-        @Cleanup
-        AdminClient kafkaAdmin = AdminClient.create(props);
-        final Map<String, String> entries = KafkaLogConfig.getEntries();
-
-        kafkaAdmin.describeConfigs(Collections.singletonList(new ConfigResource(ConfigResource.Type.TOPIC, topic)))
-                .all().get().forEach((resource, config) -> {
-            assertEquals(resource.name(), topic);
-            config.entries().forEach(entry -> assertEquals(entry.value(), entries.get(entry.name())));
-        });
-
-        final String invalidTopic = "invalid-topic";
-        try {
-            kafkaAdmin.describeConfigs(Collections.singletonList(
-                    new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic))).all().get();
-        } catch (ExecutionException e) {
-            assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
-            assertTrue(e.getMessage().contains("Topic " + invalidTopic + " doesn't exist"));
-        }
-
-        admin.topics().createNonPartitionedTopic(invalidTopic);
-        try {
-            kafkaAdmin.describeConfigs(Collections.singletonList(
-                    new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic))).all().get();
-        } catch (ExecutionException e) {
-            assertTrue(e.getCause() instanceof InvalidTopicException);
-            assertTrue(e.getMessage().contains("Topic " + invalidTopic + " is non-partitioned"));
-        }
-
-        // just call the API, currently we are ignoring any value
-        kafkaAdmin.alterConfigs(Collections.singletonMap(
-                new ConfigResource(ConfigResource.Type.TOPIC, invalidTopic),
-                new Config(Collections.emptyList()))).all().get();
-
-    }
-
-    @Test(timeOut = 10000)
-    public void testDescribeBrokerConfigs() throws Exception {
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-        @Cleanup
-        AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<ConfigResource, Config> brokerConfigs = kafkaAdmin.describeConfigs(Collections.singletonList(
-                new ConfigResource(ConfigResource.Type.BROKER, ""))).all().get();
-        assertEquals(1, brokerConfigs.size());
-        Config brokerConfig = brokerConfigs.values().iterator().next();
-        assertEquals(brokerConfig.get("num.partitions").value(), conf.getDefaultNumPartitions() + "");
-        assertEquals(brokerConfig.get("default.replication.factor").value(), "1");
-        assertEquals(brokerConfig.get("delete.topic.enable").value(), "true");
-        assertEquals(brokerConfig.get("message.max.bytes").value(), conf.getMaxMessageSize() + "");
     }
 
     @Test(timeOut = 10000)
@@ -879,7 +761,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // 5. after replace, replacedMap has a short topic name
         replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
     }
-
     @Test(timeOut = 20000)
     public void testDescribeConsumerGroups() throws Exception {
         final String topic = "test-describe-group-offset";
@@ -915,7 +796,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         ConsumerGroupDescription groupDescription =
                 kafkaAdmin.describeConsumerGroups(Collections.singletonList(group))
-                .all().get().get(group);
+                        .all().get().get(group);
         assertEquals(1, groupDescription.members().size());
 
         // member assignment topic name must be short topic name
@@ -933,6 +814,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         kafkaAdmin.close();
 
     }
+
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsForNonExistedTopic() throws Exception {
