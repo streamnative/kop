@@ -526,31 +526,50 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 future.complete(TopicAndMetadata.success(topic, metadata.partitions));
             } else if (e instanceof PulsarAdminException.NotFoundException) {
-                if (allowAutoTopicCreation) {
-                    admin.topics().createPartitionedTopicAsync(topic, defaultNumPartitions)
-                            .whenComplete((__, createException) -> {
-                                if (createException == null) {
-                                    future.complete(TopicAndMetadata.success(topic, defaultNumPartitions));
-                                } else {
-                                    log.warn("[{}] Failed to create partitioned topic {}: {}",
-                                            ctx.channel(), topicName, createException.getMessage());
-                                    future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
-                                }
-                            });
-                } else {
-                    try {
-                        Topic.validate(topicName.getLocalName());
-                        future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
-                    } catch (InvalidTopicException ignored) {
-                        future.complete(TopicAndMetadata.failure(topic, Errors.INVALID_TOPIC_EXCEPTION));
+                (allowAutoTopicCreation ? checkAllowAutoTopicCreation(topicName.getNamespace())
+                        : CompletableFuture.completedFuture(false)).whenComplete((allowed, err) -> {
+                    if (err != null) {
+                        log.error("[{}] Cannot get policies for namespace {}",
+                                ctx.channel(), topicName.getNamespace(), err);
+                        future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
+                        return;
                     }
-                }
+                    if (allowed) {
+                        admin.topics().createPartitionedTopicAsync(topic, defaultNumPartitions)
+                                .whenComplete((__, createException) -> {
+                                    if (createException == null) {
+                                        future.complete(TopicAndMetadata.success(topic, defaultNumPartitions));
+                                    } else {
+                                        log.warn("[{}] Failed to create partitioned topic {}: {}",
+                                                ctx.channel(), topicName, createException.getMessage());
+                                        future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
+                                    }
+                                });
+                    } else {
+                        try {
+                            Topic.validate(topicName.getLocalName());
+                            future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                        } catch (InvalidTopicException ignored) {
+                            future.complete(TopicAndMetadata.failure(topic, Errors.INVALID_TOPIC_EXCEPTION));
+                        }
+                    }
+                });
             } else {
                 log.error("[{}] Failed to get partitioned topic {}", ctx.channel(), topic, e);
                 future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
             }
         });
         return future;
+    }
+
+    private CompletableFuture<Boolean> checkAllowAutoTopicCreation(String namespace) {
+        return admin.namespaces().getPoliciesAsync(namespace).thenApply(policies -> {
+            if (policies != null && policies.autoTopicCreationOverride != null) {
+                return policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
+            } else {
+                return kafkaConfig.isAllowAutoTopicCreation();
+            }
+        });
     }
 
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
