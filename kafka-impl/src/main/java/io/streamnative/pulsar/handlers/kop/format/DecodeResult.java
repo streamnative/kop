@@ -99,7 +99,7 @@ public class DecodeResult {
 
         final StatsLogger statsLoggerForThisPartition = statsLogger.getStatsLoggerForTopicPartition(topicPartition);
 
-        statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).add(conversionCount);
+        statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).addCount(conversionCount);
         statsLoggerForThisPartition.getOpStatsLogger(CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS)
                 .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
         final StatsLogger statsLoggerForThisGroup;
@@ -108,9 +108,9 @@ public class DecodeResult {
         } else {
             statsLoggerForThisGroup = statsLoggerForThisPartition;
         }
-        statsLoggerForThisGroup.getCounter(BYTES_OUT).add(records.sizeInBytes());
-        statsLoggerForThisGroup.getCounter(MESSAGE_OUT).add(numMessages);
-        statsLoggerForThisGroup.getCounter(ENTRIES_OUT).add(entrySize);
+        statsLoggerForThisGroup.getCounter(BYTES_OUT).addCount(records.sizeInBytes());
+        statsLoggerForThisGroup.getCounter(MESSAGE_OUT).addCount(numMessages);
+        statsLoggerForThisGroup.getCounter(ENTRIES_OUT).addCount(entrySize);
 
     }
 
