@@ -97,7 +97,9 @@ import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.AddOffsetsToTxnRequestData;
 import org.apache.kafka.common.message.AddOffsetsToTxnResponseData;
 import org.apache.kafka.common.message.AddPartitionsToTxnRequestData;
@@ -513,62 +515,61 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     // Leverage pulsar admin to get partitioned topic metadata
     // NOTE: the returned future never completes exceptionally
-    private CompletableFuture<Integer> getPartitionedTopicMetadataAsync(String topicName,
-                                                                        boolean allowAutoTopicCreation) {
-        final CompletableFuture<Integer> future = new CompletableFuture<>();
-        admin.topics().getPartitionedTopicMetadataAsync(topicName).whenComplete((metadata, e) -> {
+    private CompletableFuture<TopicAndMetadata> getTopicMetadataAsync(String topic,
+                                                                      boolean allowAutoTopicCreation) {
+        final CompletableFuture<TopicAndMetadata> future = new CompletableFuture<>();
+        final TopicName topicName = TopicName.get(topic);
+        admin.topics().getPartitionedTopicMetadataAsync(topic).whenComplete((metadata, e) -> {
             if (e == null) {
-                if (metadata.partitions > 0) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Topic {} has {} partitions", topicName, metadata.partitions);
-                    }
-                    future.complete(metadata.partitions);
-                } else {
-                    future.complete(TopicAndMetadata.NON_PARTITIONED_NUMBER);
+                if (log.isDebugEnabled()) {
+                    log.debug("Topic {} has {} partitions", topic, metadata.partitions);
                 }
+                future.complete(TopicAndMetadata.success(topic, metadata.partitions));
             } else if (e instanceof PulsarAdminException.NotFoundException) {
-                if (allowAutoTopicCreation) {
-                    String namespace = TopicName.get(topicName).getNamespace();
-                    admin.namespaces().getPoliciesAsync(namespace).whenComplete((policies, err) -> {
-                        if (err != null || policies == null) {
-                            log.error("[{}] Cannot get policies for namespace {}", ctx.channel(), namespace, err);
-                            future.complete(TopicAndMetadata.INVALID_PARTITIONS);
-                        } else {
-                            boolean allowed = kafkaConfig.isAllowAutoTopicCreation();
-                            if (policies.autoTopicCreationOverride != null) {
-                                allowed = policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
-                            }
-                            if (!allowed) {
-                                log.error("[{}] Topic {} doesn't exist and it's not allowed "
-                                                 + "to auto create partitioned topic", ctx.channel(), topicName);
-                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
-                            } else {
-                                log.info("[{}] Topic {} doesn't exist, auto create it with {} partitions",
-                                        ctx.channel(), topicName, defaultNumPartitions);
-                                admin.topics().createPartitionedTopicAsync(topicName, defaultNumPartitions)
-                                        .whenComplete((__, createException) -> {
-                                            if (createException == null) {
-                                                future.complete(defaultNumPartitions);
-                                            } else {
-                                                log.warn("[{}] Failed to create partitioned topic {}: {}",
-                                                        ctx.channel(), topicName, createException.getMessage());
-                                                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
-                                            }
-                                        });
-                            }
+                (allowAutoTopicCreation ? checkAllowAutoTopicCreation(topicName.getNamespace())
+                        : CompletableFuture.completedFuture(false)).whenComplete((allowed, err) -> {
+                    if (err != null) {
+                        log.error("[{}] Cannot get policies for namespace {}",
+                                ctx.channel(), topicName.getNamespace(), err);
+                        future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
+                        return;
+                    }
+                    if (allowed) {
+                        admin.topics().createPartitionedTopicAsync(topic, defaultNumPartitions)
+                                .whenComplete((__, createException) -> {
+                                    if (createException == null) {
+                                        future.complete(TopicAndMetadata.success(topic, defaultNumPartitions));
+                                    } else {
+                                        log.warn("[{}] Failed to create partitioned topic {}: {}",
+                                                ctx.channel(), topicName, createException.getMessage());
+                                        future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
+                                    }
+                                });
+                    } else {
+                        try {
+                            Topic.validate(topicName.getLocalName());
+                            future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                        } catch (InvalidTopicException ignored) {
+                            future.complete(TopicAndMetadata.failure(topic, Errors.INVALID_TOPIC_EXCEPTION));
                         }
-                    });
-                } else {
-                    log.error("[{}] Topic {} doesn't exist and it's not allowed to auto create partitioned topic",
-                            ctx.channel(), topicName, e);
-                    future.complete(TopicAndMetadata.INVALID_PARTITIONS);
-                }
+                    }
+                });
             } else {
-                log.error("[{}] Failed to get partitioned topic {}", ctx.channel(), topicName, e);
-                future.complete(TopicAndMetadata.INVALID_PARTITIONS);
+                log.error("[{}] Failed to get partitioned topic {}", ctx.channel(), topic, e);
+                future.complete(TopicAndMetadata.failure(topic, Errors.UNKNOWN_SERVER_ERROR));
             }
         });
         return future;
+    }
+
+    private CompletableFuture<Boolean> checkAllowAutoTopicCreation(String namespace) {
+        return admin.namespaces().getPoliciesAsync(namespace).thenApply(policies -> {
+            if (policies != null && policies.autoTopicCreationOverride != null) {
+                return policies.autoTopicCreationOverride.isAllowAutoTopicCreation();
+            } else {
+                return kafkaConfig.isAllowAutoTopicCreation();
+            }
+        });
     }
 
     private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
@@ -626,10 +627,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Collections.sort(partitionIndexes);
             final int lastIndex = partitionIndexes.get(partitionIndexes.size() - 1);
             if (lastIndex < 0) {
-                topicAndMetadataList.add(
-                        new TopicAndMetadata(topic, TopicAndMetadata.NON_PARTITIONED_NUMBER));
+                topicAndMetadataList.add(TopicAndMetadata.success(topic, 0)); // non-partitioned topic
             } else if (lastIndex == partitionIndexes.size() - 1) {
-                topicAndMetadataList.add(new TopicAndMetadata(topic, partitionIndexes.size()));
+                topicAndMetadataList.add(TopicAndMetadata.success(topic, partitionIndexes.size()));
             } else {
                 // The partitions should be [0, 1, ..., n-1], `n` is the number of partitions. If the last index is not
                 // `n-1`, there must be some missed partitions.
@@ -683,17 +683,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<List<TopicAndMetadata>> findTopicMetadata(final ListPair<String> listPair,
                                                                         final boolean allowTopicAutoCreation) {
-        final Map<String, CompletableFuture<Integer>> futureMap = CoreUtils.listToMap(
+        final Map<String, CompletableFuture<TopicAndMetadata>> futureMap = CoreUtils.listToMap(
                 listPair.getSuccessfulList(),
-                topic -> getPartitionedTopicMetadataAsync(topic, allowTopicAutoCreation)
+                topic -> getTopicMetadataAsync(topic, allowTopicAutoCreation)
         );
         return CoreUtils.waitForAll(futureMap.values()).thenApply(__ ->
-                CoreUtils.mapToList(futureMap, (key, value) -> new TopicAndMetadata(key, value.join()))
+                CoreUtils.mapToList(futureMap, (___, value) -> value.join())
         ).thenApply(authorizedTopicAndMetadataList ->
             ListUtils.union(authorizedTopicAndMetadataList,
                     CoreUtils.listToList(listPair.getFailedList(),
-                            topic -> new TopicAndMetadata(topic, TopicAndMetadata.AUTHORIZATION_FAILURE))
-            )
+                            topic -> TopicAndMetadata.failure(topic, Errors.TOPIC_AUTHORIZATION_FAILED)))
         );
     }
 
