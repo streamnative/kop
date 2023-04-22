@@ -36,29 +36,20 @@ import org.apache.pulsar.common.naming.TopicName;
 @Getter
 public class TopicAndMetadata {
 
-    public static final int INVALID_PARTITIONS = -2;
-    public static final int AUTHORIZATION_FAILURE = -1;
-    public static final int NON_PARTITIONED_NUMBER = 0;
-
     private final String topic;
     private final int numPartitions;
+    private final Errors error;
 
-    public boolean isPartitionedTopic() {
-        return numPartitions > 0;
+    public static TopicAndMetadata success(String topic, int numPartitions) {
+        return new TopicAndMetadata(topic, numPartitions, Errors.NONE);
+    }
+
+    public static TopicAndMetadata failure(String topic, Errors error) {
+        return new TopicAndMetadata(topic, -1, error);
     }
 
     public boolean hasNoError() {
-        return numPartitions >= 0;
-    }
-
-    public Errors error() {
-        if (hasNoError()) {
-            return Errors.NONE;
-        } else if (numPartitions == AUTHORIZATION_FAILURE) {
-            return Errors.TOPIC_AUTHORIZATION_FAILED;
-        } else {
-            return Errors.UNKNOWN_TOPIC_OR_PARTITION;
-        }
+        return error == Errors.NONE;
     }
 
     public CompletableFuture<TopicMetadata> lookupAsync(
@@ -70,14 +61,14 @@ public class TopicAndMetadata {
                 .map(lookupFunction)
                 .collect(Collectors.toList()), partitionMetadataList ->
                 new TopicMetadata(
-                        error(),
+                        error,
                         getOriginalTopic.apply(topic),
                         KopTopic.isInternalTopic(topic, metadataNamespace),
                         partitionMetadataList
                 ));
     }
 
-    public Stream<String> stream() {
+    private Stream<String> stream() {
         if (numPartitions > 0) {
             return IntStream.range(0, numPartitions)
                     .mapToObj(i -> topic + "-partition-" + i);
@@ -89,7 +80,7 @@ public class TopicAndMetadata {
     public TopicMetadata toTopicMetadata(final Function<String, String> getOriginalTopic,
                                          final String metadataNamespace) {
         return new TopicMetadata(
-                error(),
+                error,
                 getOriginalTopic.apply(topic),
                 KopTopic.isInternalTopic(topic, metadataNamespace),
                 Collections.emptyList()

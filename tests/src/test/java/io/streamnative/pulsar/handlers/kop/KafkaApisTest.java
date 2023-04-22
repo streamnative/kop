@@ -58,6 +58,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -106,8 +107,8 @@ import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
@@ -127,7 +128,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 + SSL_PREFIX + "127.0.0.1:" + kafkaBrokerPortTls);
     }
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
@@ -161,7 +162,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);
     }
 
-    @AfterMethod
+    @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
@@ -682,7 +683,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics) {
-        AbstractRequest.Builder builder = new MetadataRequest.Builder(topics, true);
+        MetadataRequest.Builder builder = new MetadataRequest.Builder(topics, false);
         return buildRequest(builder);
     }
 
@@ -1071,7 +1072,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
      */
     @Test(timeOut = 60000)
     public void testFetchMinBytesSingleConsumer() throws Exception {
-        final String topic = "testMinBytesTopic";
+        final String topic = "testMinBytesTopicSingleConsumer";
         final TopicPartition topicPartition = new TopicPartition(topic, 0);
         admin.topics().createPartitionedTopic(topic, 1);
         triggerTopicLookup(topic, 1);
@@ -1104,5 +1105,19 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         Long waitingFetchesTriggered = kafkaRequestHandler.getRequestStats().getWaitingFetchesTriggered().get();
         assertEquals((long) waitingFetchesTriggered, 1);
+    }
+
+    @Test(timeOut = 30000)
+    public void testTopicMetadataNotFound() {
+        final Function<String, Errors> getMetadataResponseError = topic -> {
+            final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
+            kafkaRequestHandler.handleTopicMetadataRequest(
+                    createTopicMetadataRequest(Collections.singletonList(topic)), future);
+            final MetadataResponse response = (MetadataResponse) future.join();
+            assertTrue(response.errors().containsKey(topic));
+            return response.errors().get(topic);
+        };
+        assertEquals(Errors.UNKNOWN_TOPIC_OR_PARTITION, getMetadataResponseError.apply("test-topic-not-found._-"));
+        assertEquals(Errors.INVALID_TOPIC_EXCEPTION, getMetadataResponseError.apply("???"));
     }
 }
