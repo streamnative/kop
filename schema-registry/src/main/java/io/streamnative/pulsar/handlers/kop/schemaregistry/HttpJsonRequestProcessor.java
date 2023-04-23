@@ -19,6 +19,7 @@ import io.netty.buffer.ByteBufInputStream;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 import java.io.DataInput;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -87,8 +88,16 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
                     return buildJsonResponse(resp, RESPONSE_CONTENT_TYPE);
                 }
             }).exceptionally(err -> {
-                log.error("Error while processing request", err);
-                return buildJsonErrorResponse(err);
+                Throwable throwable = err;
+                while (throwable.getCause() != null) {
+                    throwable = throwable.getCause();
+                }
+                if (throwable instanceof SchemaStorageException e) {
+                    return buildErrorResponse(e.getHttpStatusCode(), e.getMessage());
+                } else {
+                    log.error("Error while processing request", err);
+                    return buildJsonErrorResponse(err);
+                }
             });
         } catch (IOException err) {
             log.error("Cannot decode request", err);
