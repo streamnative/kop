@@ -21,10 +21,12 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.fail;
 
 import com.google.common.collect.Sets;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
@@ -754,6 +756,20 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         consumer.close();
     }
 
+    @Test(timeOut = 30000)
+    public void testSchemaNoAuth() {
+        final KafkaProducer<Integer, Object> producer = createAvroProducer(false, false);
+        try {
+            producer.send(new ProducerRecord<>("test-avro-wrong-auth", createAvroRecord())).get();
+            fail();
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RestClientException);
+            var restException = (RestClientException) e.getCause();
+            assertEquals(restException.getErrorCode(), HttpResponseStatus.UNAUTHORIZED.code());
+            assertTrue(restException.getMessage().contains("Missing AUTHORIZATION header"));
+        }
+        producer.close();
+    }
 
     private IndexedRecord createAvroRecord() {
         String userSchema = "{\"namespace\": \"example.avro\", \"type\": \"record\", "
@@ -766,6 +782,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     private KafkaProducer<Integer, Object> createAvroProducer(boolean withTokenPrefix) {
+        return createAvroProducer(withTokenPrefix, true);
+    }
+
+    private KafkaProducer<Integer, Object> createAvroProducer(boolean withTokenPrefix, boolean withSchemaToken) {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
@@ -782,11 +802,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         props.put("security.protocol", "SASL_PLAINTEXT");
         props.put("sasl.mechanism", "PLAIN");
 
-
-        props.put(KafkaAvroSerializerConfig.BASIC_AUTH_CREDENTIALS_SOURCE, "USER_INFO");
-
-        props.put(KafkaAvroSerializerConfig.USER_INFO_CONFIG,
-                username + ":" + (withTokenPrefix ? password : userToken));
+        if (withSchemaToken) {
+            props.put(KafkaAvroSerializerConfig.BASIC_AUTH_CREDENTIALS_SOURCE, "USER_INFO");
+            props.put(KafkaAvroSerializerConfig.USER_INFO_CONFIG,
+                    username + ":" + (withTokenPrefix ? password : userToken));
+        }
 
         return new KafkaProducer<>(props);
     }
