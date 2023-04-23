@@ -70,7 +70,7 @@ public class SchemaRestApiTest extends KopProtocolHandlerTestBase {
         assertEquals(getSubjects(), Collections.singletonList(subject));
 
         sendHttpRequest("DELETE", "/subjects/" + subject, null);
-
+        assertTrue(getSubjects().isEmpty());
         resetSchemaStorage();
         assertTrue(getSubjects().isEmpty());
     }
