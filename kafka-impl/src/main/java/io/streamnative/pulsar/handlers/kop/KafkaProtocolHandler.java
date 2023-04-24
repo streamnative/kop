@@ -104,6 +104,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
+    @VisibleForTesting
+    @Getter
     private SchemaRegistryManager schemaRegistryManager;
     private MigrationManager migrationManager;
     private ReplicaManager replicaManager;

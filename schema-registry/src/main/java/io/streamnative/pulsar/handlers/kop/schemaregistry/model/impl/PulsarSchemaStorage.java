@@ -331,11 +331,15 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
             try {
                 compatibility.put(op.subject, CompatibilityChecker.Mode.valueOf(op.compatibilityMode));
             } catch (IllegalArgumentException err) {
-                log.error("Unrecognized mode, skip op", op);
+                log.error("Unrecognized mode, skip op", err);
             }
         } else {
-            SchemaEntry schemaEntry = op.toSchemaEntry();
-            schemas.put(schemaEntry.id, schemaEntry);
+            if (op.status == SchemaStatus.DELETED) {
+                schemas.remove(op.schemaId);
+            } else {
+                SchemaEntry schemaEntry = op.toSchemaEntry();
+                schemas.put(schemaEntry.id, schemaEntry);
+            }
         }
     }
 

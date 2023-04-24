@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -42,6 +43,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import javax.naming.AuthenticationException;
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -60,6 +62,9 @@ public class SchemaRegistryManager {
     private final PulsarService pulsar;
     private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator;
     private final PulsarClient pulsarClient;
+    @Getter
+    @VisibleForTesting
+    private SchemaStorageAccessor schemaStorage;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
                                  PulsarService pulsar,
@@ -201,7 +206,7 @@ public class SchemaRegistryManager {
         }
         PulsarAdmin pulsarAdmin = pulsar.getAdminClient();
         SchemaRegistryHandler handler = new SchemaRegistryHandler();
-        SchemaStorageAccessor schemaStorage = new PulsarSchemaStorageAccessor((tenant) -> {
+        schemaStorage = new PulsarSchemaStorageAccessor((tenant) -> {
             try {
                 BrokerService brokerService = pulsar.getBrokerService();
                 final ClusterData clusterData = ClusterData.builder()
