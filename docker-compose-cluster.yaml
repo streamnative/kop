@@ -45,7 +45,7 @@ services:
   pulsar-init:
     container_name: pulsar-init
     hostname: pulsar-init
-    image: streamnative/sn-pulsar:2.10.3.4
+    image: streamnative/sn-pulsar:2.11.0.5
     networks:
       - pulsar
     command: >
@@ -61,7 +61,7 @@ services:
 
   # Start bookie
   bookie:
-    image: streamnative/sn-pulsar:2.10.3.4
+    image: streamnative/sn-pulsar:2.11.0.5
     container_name: bookie
     restart: "no"
     networks:
@@ -86,7 +86,7 @@ services:
 
   # Start broker
   broker:
-    image: streamnative/sn-pulsar:2.10.3.4
+    image: streamnative/sn-pulsar:2.11.0.5
     container_name: broker
     hostname: broker
     restart: "no"
