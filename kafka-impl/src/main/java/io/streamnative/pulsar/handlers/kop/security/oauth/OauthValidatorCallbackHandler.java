@@ -135,7 +135,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
             AuthData authData = AuthData.of(token.getBytes(StandardCharsets.UTF_8));
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     authData, null, null);
-            authState.authenticateAsync(authData).get(requestTimeoutMs, TimeUnit.MILLISECONDS);
+            authState.authenticate(authData);
             final String role = authState.getAuthRole();
             AuthenticationDataSource authDataSource = authState.getAuthDataSource();
             callback.token(new KopOAuthBearerToken() {
