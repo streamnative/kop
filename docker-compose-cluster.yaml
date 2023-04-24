@@ -19,7 +19,7 @@ networks:
 services:
   # Start zookeeper
   zookeeper:
-    image: streamnative/sn-pulsar:2.10.3.4
+    image: streamnative/sn-pulsar:2.11.0.5
     container_name: zookeeper
     restart: "no"
     networks:
@@ -109,6 +109,9 @@ services:
       - PULSAR_PREFIX_kafkaAdvertisedListeners=PLAINTEXT://127.0.0.1:9092
       - PULSAR_PREFIX_brokerEntryMetadataInterceptors=org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
       - PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled=false
+      - PULSAR_PREFIX_kopSchemaRegistryEnable=true
+      - PULSAR_PREFIX_kopSchemaRegistryPort=8081
+      - PULSAR_PREFIX_kafkaTransactionCoordinatorEnabled=true
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -119,4 +122,5 @@ services:
       - "8080:8080"
       #- "8001:8001" # what is this for?
       - "9092:9092"
+      - "8081:8081"
     command: bash -c "bin/apply-config-from-env.py conf/broker.conf &&  exec bin/pulsar broker"

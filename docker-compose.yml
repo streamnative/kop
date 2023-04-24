@@ -18,7 +18,7 @@ services:
   standalone:
     container_name: standalone
     hostname: localhost
-    image: streamnative/sn-pulsar:2.9.1.1
+    image: streamnative/sn-pulsar:2.11.0.5
     command: >
       bash -c "bin/apply-config-from-env.py conf/standalone.conf &&
       exec bin/pulsar standalone -nss -nfw" # disable stream storage and functions worker
@@ -29,7 +29,11 @@ services:
       PULSAR_PREFIX_kafkaListeners: PLAINTEXT://0.0.0.0:9092
       PULSAR_PREFIX_kafkaAdvertisedListeners: PLAINTEXT://127.0.0.1:19092
       PULSAR_PREFIX_brokerEntryMetadataInterceptors: org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
+      PULSAR_PREFIX_kopSchemaRegistryEnable: true
+      PULSAR_PREFIX_kopSchemaRegistryPort: 8081
+      PULSAR_PREFIX_kafkaTransactionCoordinatorEnabled: true
     ports:
       - 6650:6650
       - 8080:8080
       - 19092:9092
+      - 8081:8081
