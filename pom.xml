@@ -31,8 +31,7 @@
     <javac.target>1.8</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
     <!-- dependencies -->
-    <jackson.version>2.14.0</jackson.version>
-    <jackson-databind.version>2.13.4.1</jackson-databind.version>
+    <jackson.version>2.14.2</jackson.version>
     <kafka.version>2.0.0</kafka.version>
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>4.11.0</mockito.version>
@@ -47,7 +46,7 @@
     <junit.version>4.13.1</junit.version>
     <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
     <jsr305.version>3.0.2</jsr305.version>
-    <snakeyaml.version>1.31</snakeyaml.version>
+    <snakeyaml.version>2.0</snakeyaml.version>
     <commons-validator.version>1.7</commons-validator.version>
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -193,7 +192,7 @@
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
-        <version>${jackson-databind.version}</version>
+        <version>${jackson.version}</version>
       </dependency>
       <dependency>
         <groupId>com.fasterxml.jackson.dataformat</groupId>
