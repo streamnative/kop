@@ -89,9 +89,9 @@ public class EncodeResult {
 
         final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLoggerForTopicPartition(topicPartition);
 
-        statsLoggerForThisPartition.getCounter(BYTES_IN).add(numBytes);
-        statsLoggerForThisPartition.getCounter(MESSAGE_IN).add(numMessages);
-        statsLoggerForThisPartition.getCounter(PRODUCE_MESSAGE_CONVERSIONS).add(conversionCount);
+        statsLoggerForThisPartition.getCounter(BYTES_IN).addCount(numBytes);
+        statsLoggerForThisPartition.getCounter(MESSAGE_IN).addCount(numMessages);
+        statsLoggerForThisPartition.getCounter(PRODUCE_MESSAGE_CONVERSIONS).addCount(conversionCount);
         statsLoggerForThisPartition.getOpStatsLogger(PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS)
                 .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
 
