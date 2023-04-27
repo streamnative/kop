@@ -91,7 +91,7 @@ public class DelayedFetch extends DelayedOperation {
         replicaManager.readFromLocalLog(
             readCommitted, fetchMaxBytes, maxReadEntriesNum, readPartitionInfo, context
         ).thenAccept(readRecordsResult -> {
-            this.context.getStatsLogger().getWaitingFetchesTriggered().add(1);
+            this.context.getStatsLogger().getWaitingFetchesTriggered().addCount(1);
             this.callback.complete(readRecordsResult);
         }).thenAccept(__ -> {
             // Ensure the old decode result are recycled.
