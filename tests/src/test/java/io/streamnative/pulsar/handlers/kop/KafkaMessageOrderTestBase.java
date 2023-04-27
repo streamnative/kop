@@ -40,8 +40,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.impl.BatchMessageIdImpl;
-import org.apache.pulsar.client.impl.TopicMessageIdImpl;
+import org.apache.pulsar.client.api.MessageIdAdv;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.testng.annotations.AfterClass;
@@ -158,8 +157,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
 
                     consumer.acknowledge(msg);
 
-                    BatchMessageIdImpl id =
-                            (BatchMessageIdImpl) ((TopicMessageIdImpl) msg.getMessageId()).getInnerMessageId();
+                    MessageIdAdv id = (MessageIdAdv) msg.getMessageId();
                     if (id.getBatchIndex() == 0) {
                         numBatches++;
                     }
