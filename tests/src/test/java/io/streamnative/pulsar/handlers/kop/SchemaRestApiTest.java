@@ -14,10 +14,12 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.SubjectResource;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -40,14 +42,12 @@ public class SchemaRestApiTest extends KopProtocolHandlerTestBase {
 
     protected static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(SerializationFeature.INDENT_OUTPUT, true);
-    private String baseUrl;
 
     @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.enableSchemaRegistry = true;
         this.internalSetup();
-        baseUrl = "http://localhost:" + conf.getKopSchemaRegistryPort();
     }
 
     @AfterClass
@@ -75,6 +75,32 @@ public class SchemaRestApiTest extends KopProtocolHandlerTestBase {
         assertTrue(getSubjects().isEmpty());
     }
 
+    @Test
+    public void testGetSubjectByVersion() throws Exception {
+        final var createSchemaRequest = new SubjectResource.CreateSchemaRequest();
+        final var schemaDefinition = "{\"type\":\"record\",\"name\":\"User\",\"namespace\":\"example.avro\""
+                + ",\"fields\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"age\",\"type\":\"int\"}]}";
+        createSchemaRequest.setSchema(schemaDefinition);
+        final var subject = "test-get-subject-by-version";
+        sendHttpRequest("POST", "/subjects/" + subject + "/versions",
+                MAPPER.writeValueAsString(createSchemaRequest));
+
+        final var versions = MAPPER.readValue(
+                sendHttpRequest("GET", "/subjects/" + subject + "/versions", null),
+                Integer[].class);
+        assertEquals(Arrays.asList(versions), Collections.singletonList(1));
+
+        for (String version : new String[]{"1", "latest"}) {
+            final var schema = MAPPER.readValue(
+                    sendHttpRequest("GET", "/subjects/" + subject + "/versions/" + version, null),
+                    Schema.class);
+            assertEquals(schema.getVersion(), 1);
+            assertEquals(schema.getSubject(), subject);
+            assertEquals(schema.getSchemaDefinition(), schemaDefinition);
+            assertNull(schema.getType());
+        }
+    }
+
     private void resetSchemaStorage() {
         final var handler = getProtocolHandler();
         handler.getSchemaRegistryManager().getSchemaStorage().close();
@@ -86,7 +112,7 @@ public class SchemaRestApiTest extends KopProtocolHandlerTestBase {
     }
 
     private String sendHttpRequest(final String method, final String path, final String body) throws IOException {
-        final var url = new URL(baseUrl + path);
+        final var url = new URL(restConnect + path);
         final var conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod(method);
         if (body != null) {
