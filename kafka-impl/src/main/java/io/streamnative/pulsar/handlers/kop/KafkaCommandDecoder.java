@@ -189,7 +189,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         // Get a buffer that contains the full frame
         ByteBuf buffer = (ByteBuf) msg;
-        requestStats.getNetworkTotalBytesIn().add(buffer.readableBytes());
+        requestStats.getNetworkTotalBytesIn().addCount(buffer.readableBytes());
 
         // Update parse request latency metrics
         final BiConsumer<Long, Throwable> registerRequestParseLatency = (timeBeforeParse, throwable) -> {
@@ -448,7 +448,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         if (!future.isSuccess()) {
                             log.error("[{}] Failed to write {}", channel, request.getHeader(), future.cause());
                         } else {
-                            requestStats.getNetworkTotalBytesOut().add(resultSize);
+                            requestStats.getNetworkTotalBytesOut().addCount(resultSize);
                         }
                     });
                     requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
@@ -474,7 +474,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         final int resultSize = result.readableBytes();
         channel.writeAndFlush(result).addListener(future -> {
             if (future.isSuccess()) {
-                requestStats.getNetworkTotalBytesOut().add(resultSize);
+                requestStats.getNetworkTotalBytesOut().addCount(resultSize);
             }
         });
     }

@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.stats;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import org.apache.bookkeeper.stats.Counter;
 
@@ -48,8 +49,13 @@ public class LongAdderCounter implements Counter {
     }
 
     @Override
-    public void add(long delta) {
+    public void addCount(long delta) {
         counter.add(delta);
+    }
+
+    @Override
+    public void addLatency(long l, TimeUnit timeUnit) {
+        // No-op
     }
 
     @Override
