@@ -27,7 +27,7 @@ services:
       brokerDeleteInactiveTopicsEnabled: "false"
       PULSAR_PREFIX_messagingProtocols: kafka
       PULSAR_PREFIX_kafkaListeners: PLAINTEXT://0.0.0.0:9092
-      PULSAR_PREFIX_kafkaAdvertisedListeners: PLAINTEXT://127.0.0.1:19092
+      PULSAR_PREFIX_kafkaAdvertisedListeners: PLAINTEXT://127.0.0.1:9092
       PULSAR_PREFIX_brokerEntryMetadataInterceptors: org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor
       PULSAR_PREFIX_kopSchemaRegistryEnable: true
       PULSAR_PREFIX_kopSchemaRegistryPort: 8081
@@ -35,5 +35,5 @@ services:
     ports:
       - 6650:6650
       - 8080:8080
-      - 19092:9092
+      - 9092:9092
       - 8081:8081
