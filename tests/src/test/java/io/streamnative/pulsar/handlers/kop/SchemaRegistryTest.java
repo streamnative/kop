@@ -54,6 +54,8 @@ import org.testng.annotations.Test;
 @Slf4j
 public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
+    private static final String USER_SCHEMA = "{\"type\":\"record\",\"name\":\"User\","
+            + "\"namespace\":\"example.avro\",\"fields\":[{\"name\":\"name\",\"type\":\"string\"}]}";
     protected String bootstrapServers;
 
     public SchemaRegistryTest() {
@@ -75,10 +77,8 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
     }
 
     private IndexedRecord createAvroRecord() {
-        String userSchema = "{\"namespace\": \"example.avro\", \"type\": \"record\", "
-                + "\"name\": \"User\", \"fields\": [{\"name\": \"name\", \"type\": \"string\"}]}";
         Schema.Parser parser = new Schema.Parser();
-        Schema schema = parser.parse(userSchema);
+        Schema schema = parser.parse(USER_SCHEMA);
         GenericRecord avroRecord = new GenericData.Record(schema);
         avroRecord.put("name", "testUser");
         return avroRecord;
@@ -145,6 +145,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
     @Test
     public void testGetLatestSchemaMetadata() throws Throwable {
         final String topic = "SchemaRegistryTest-testGetLatestSchemaMetadata";
+        final String subject = topic + "-value";
         @Cleanup final KafkaAvroSerializer serializer = new KafkaAvroSerializer();
         final Map<String, String> configs = new HashMap<>();
         configs.put(KafkaAvroSerializerConfig.SCHEMA_REGISTRY_URL_CONFIG, restConnect);
@@ -154,10 +155,17 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         field.setAccessible(true);
         final SchemaRegistryClient client = (SchemaRegistryClient) field.get(serializer);
         try {
-            client.getLatestSchemaMetadata(topic);
+            client.getLatestSchemaMetadata(subject);
         } catch (RestClientException e) {
             assertEquals(e.getErrorCode(), 404);
             assertTrue(e.getMessage().contains("Not found"));
         }
+
+        @Cleanup final var producer = createAvroProducer();
+        producer.send(new ProducerRecord<>(topic, createAvroRecord())).get();
+
+        final var schemaMetadata = client.getLatestSchemaMetadata(subject);
+        assertEquals(schemaMetadata.getVersion(), 1);
+        assertEquals(schemaMetadata.getSchema(), USER_SCHEMA);
     }
 }
