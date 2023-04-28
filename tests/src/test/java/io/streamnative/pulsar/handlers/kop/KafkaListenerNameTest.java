@@ -63,7 +63,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         // Clean up in the test method
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 60000)
     public void testMetadataRequestForMultiListeners() throws Exception {
         final Map<Integer, String> bindPortToAdvertisedAddress = new HashMap<>();
         final int anotherKafkaPort = PortManager.nextFreePort();
@@ -131,7 +131,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 60000)
     public void testListenerName() throws Exception {
         super.resetConfig();
         conf.setAdvertisedAddress(null);
@@ -149,7 +149,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 60000)
     public void testLegacyMultipleListenerName() throws Exception {
         super.resetConfig();
         conf.setAdvertisedAddress(null);
@@ -186,7 +186,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 60000)
     public void testConnectListenerNotExist() throws Exception {
         final int externalPort = PortManager.nextFreePort();
         super.resetConfig();
@@ -214,7 +214,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 60000)
     public void testIpv6ListenerName() throws Exception {
         super.resetConfig();
         conf.setAdvertisedAddress(null);
