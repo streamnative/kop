@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -20,12 +21,15 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
 
+// This class is migrated from io.confluent.kafka.schemaregistry.client.rest.entities.Schema
 @Data
 @AllArgsConstructor
 @Builder
 @EqualsAndHashCode
+@NoArgsConstructor
 @ToString
 public final class Schema {
 
@@ -35,15 +39,19 @@ public final class Schema {
     private static final List<String> ALL_TYPES =
             Collections.unmodifiableList(Arrays.asList(TYPE_AVRO, TYPE_JSON, TYPE_PROTOBUF));
 
-    private final String tenant;
-    private final int id;
-    private final int version;
-    private final String schemaDefinition;
-    private final String subject;
-    private final String type;
+    private String tenant;
+    @JsonProperty("id")
+    private int id;
+    @JsonProperty("version")
+    private int version;
+    @JsonProperty("schema")
+    private String schemaDefinition;
+    @JsonProperty("subject")
+    private String subject;
+    @JsonProperty("type")
+    private String type;
 
     public static List<String> getAllTypes() {
         return ALL_TYPES;
     }
-
 }

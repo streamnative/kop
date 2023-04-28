@@ -57,7 +57,6 @@ public class SubjectResource extends AbstractResource {
         private String schema;
         private String subject;
         private int version;
-        private String type;
     }
 
     @Data
@@ -151,7 +150,7 @@ public class SubjectResource extends AbstractResource {
                         .thenApply(s -> s == null ? null : new GetSchemaBySubjectAndVersionResponse(
                                 s.getId(),
                                 s.getSchemaDefinition(),
-                                s.getSubject(), s.getVersion(), s.getType()));
+                                s.getSubject(), s.getVersion()));
             });
         }
 
@@ -204,7 +203,7 @@ public class SubjectResource extends AbstractResource {
                     return null;
                 }
                 return new GetSchemaBySubjectAndVersionResponse(s.getId(), s.getSchemaDefinition(), s.getSubject(),
-                        s.getVersion(), s.getType());
+                        s.getVersion());
             });
         }
 
