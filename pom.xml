@@ -76,6 +76,10 @@
     <spotbugs-maven-plugin.version>4.2.2</spotbugs-maven-plugin.version>
     <nexus-staging-maven-plugin.version>1.6.13</nexus-staging-maven-plugin.version>
     <maven-jacoco-plugin.version>0.8.8</maven-jacoco-plugin.version>
+    <kaml.version>0.53.0</kaml.version>
+    <kotlinx-serialization-core.version>1.5.0</kotlinx-serialization-core.version>
+    <kotlin.version>1.8.10</kotlin.version>
+    <org-json.version>20230227</org-json.version>
   </properties>
 
   <licenses>
@@ -280,6 +284,42 @@
         <groupId>com.github.luben</groupId>
         <artifactId>zstd-jni</artifactId>
         <version>${zstd-jni.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.charleskorn.kaml</groupId>
+        <artifactId>kaml</artifactId>
+        <version>${kaml.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.jetbrains.kotlinx</groupId>
+        <artifactId>kotlinx-serialization-bom</artifactId>
+        <version>${kotlinx-serialization-core.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>org.jetbrains.kotlinx</groupId>
+        <artifactId>kotlinx-coroutines-bom</artifactId>
+        <version>${kotlinx-serialization-core.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-bom</artifactId>
+        <version>${kotlin.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>org.json</groupId>
+        <artifactId>json</artifactId>
+        <version>${org-json.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
