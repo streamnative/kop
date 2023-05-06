@@ -142,8 +142,7 @@ public class SchemaResourceTest {
                 + "  \"id\" : 1,\n"
                 + "  \"schema\" : \"{SCHEMA-1}\",\n"
                 + "  \"subject\" : \"aaa\",\n"
-                + "  \"version\" : 17,\n"
-                + "  \"type\" : \"AVRO\"\n"
+                + "  \"version\" : 17\n"
                 + "}");
     }
 
@@ -217,8 +216,7 @@ public class SchemaResourceTest {
                 + "  \"id\" : 3,\n"
                 + "  \"schema\" : \"{SCHEMA3}\",\n"
                 + "  \"subject\" : \"subject1\",\n"
-                + "  \"version\" : 8,\n"
-                + "  \"type\" : \"AVRO\"\n"
+                + "  \"version\" : 8\n"
                 + "}");
 
         server.executeMethod("/subjects/subjectnotexists/versions/latest", "GET",
