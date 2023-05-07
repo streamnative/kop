@@ -738,7 +738,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         ));
         // NOTE: for all topics METADATA request, remove the default namespace prefix just for backward compatibility.
         final Function<String, String> getOriginalTopic = fullTopicName -> fullTopicNameToOriginal.isEmpty()
-                ? KopTopic.removePersistentDomain(fullTopicName)
+                ? KopTopic.removeDefaultNamespacePrefix(fullTopicName, namespacePrefix)
                 : fullTopicNameToOriginal.getOrDefault(fullTopicName, fullTopicName);
 
         final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
