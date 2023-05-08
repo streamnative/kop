@@ -18,7 +18,7 @@ services:
   standalone:
     container_name: standalone
     hostname: localhost
-    image: streamnative/sn-pulsar:2.11.0.5
+    image: streamnative/sn-pulsar:2.11.1.0
     command: >
       bash -c "bin/apply-config-from-env.py conf/standalone.conf &&
       exec bin/pulsar standalone -nss -nfw" # disable stream storage and functions worker
