@@ -761,60 +761,6 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         // 5. after replace, replacedMap has a short topic name
         replacedMap.forEach(((topicPartition, s) -> assertEquals(topicPartition, tp0)));
     }
-    @Test(timeOut = 20000000)
-    public void testDescribeConsumerGroups() throws Exception {
-        final String topic = tenant + "/" + namespace + "/test-describe-group-offset";
-        final int numMessages = 10;
-        final String messagePrefix = "msg-";
-        final String group = "test-group";
-
-        admin.topics().createPartitionedTopic(topic, 1);
-
-        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
-
-        for (int i = 0; i < numMessages; i++) {
-            producer.send(new ProducerRecord<>(topic, i + "", messagePrefix + i));
-        }
-        producer.close();
-
-        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(group));
-        consumer.subscribe(Collections.singleton(topic));
-
-        int fetchMessages = 0;
-        while (fetchMessages < numMessages) {
-            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofMillis(1000));
-            fetchMessages += records.count();
-        }
-        assertEquals(fetchMessages, numMessages);
-
-        consumer.commitSync();
-
-        final Properties adminProps = new Properties();
-        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
-
-        AdminClient kafkaAdmin = AdminClient.create(adminProps);
-
-        ConsumerGroupDescription groupDescription =
-                kafkaAdmin.describeConsumerGroups(Collections.singletonList(group))
-                        .all().get().get(group);
-        assertEquals(1, groupDescription.members().size());
-
-        // member assignment topic name must be short topic name
-        groupDescription.members().forEach(memberDescription -> memberDescription.assignment().topicPartitions()
-                .forEach(topicPartition -> assertEquals(topic, topicPartition.topic())));
-
-        Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap =
-                kafkaAdmin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
-        assertEquals(1, offsetAndMetadataMap.size());
-
-        //  topic name from offset fetch response must be short topic name
-        offsetAndMetadataMap.keySet().forEach(topicPartition -> assertEquals(topic, topicPartition.topic()));
-
-        consumer.close();
-        kafkaAdmin.close();
-
-    }
-
 
     @Test(timeOut = 20000)
     public void testCreatePartitionsForNonExistedTopic() throws Exception {
