@@ -159,7 +159,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         // timestamp
         if (record.timestamp() >= 0) {
-            builder.eventTime(record.timestamp());
+            builder.getMetadataBuilder().setEventTime(record.timestamp());
             builder.getMetadataBuilder().setPublishTime(record.timestamp());
         } else {
             builder.getMetadataBuilder().setPublishTime(System.currentTimeMillis());

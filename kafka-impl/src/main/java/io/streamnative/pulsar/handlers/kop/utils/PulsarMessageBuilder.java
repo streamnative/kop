@@ -93,12 +93,6 @@ public class PulsarMessageBuilder {
         return this;
     }
 
-    public PulsarMessageBuilder eventTime(long timestamp) {
-        checkArgument(timestamp > 0, "Invalid timestamp : '%s'", timestamp);
-        metadata.setEventTime(timestamp);
-        return this;
-    }
-
     public MessageMetadata getMetadataBuilder() {
         return metadata;
     }

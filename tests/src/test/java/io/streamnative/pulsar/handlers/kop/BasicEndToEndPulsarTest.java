@@ -20,16 +20,20 @@ import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Producer;
@@ -135,5 +139,33 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         assertEquals(kafkaReceives, messages);
         kafkaConsumer.commitSync(Duration.ofSeconds(1));
         kafkaConsumer.close();
+    }
+
+    @Test(timeOut = 30000)
+    public void testPublishZeroTimestampRecord() {
+        String topic = "test-publish-zero-timestamp-record";
+        String subscription = "test-group";
+        Properties properties = newKafkaProducerProperties();
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+        producer.send(new ProducerRecord<>(
+                topic,
+                null,
+                0L,
+                "k1",
+                "v1",
+                null)
+        );
+
+        producer.flush();
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = newKafkaConsumer(topic, subscription);
+        consumer.subscribe(Collections.singleton(topic));
+        List<ConsumerRecord<String, String>> consumerRecords = receiveRecords(consumer, 1);
+        assertEquals(consumerRecords.size(), 1);
+        assertEquals(consumerRecords.get(0).key(), "k1");
+        assertEquals(consumerRecords.get(0).value(), "v1");
+        assertEquals(consumerRecords.get(0).timestamp(), 0L);
     }
 }
