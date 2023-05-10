@@ -1028,7 +1028,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @VisibleForTesting
     public <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
                                           Map<TopicPartition, TopicPartition> replacingIndex) {
-        String namespacePrefix = currentNamespacePrefix();
         Map<TopicPartition, T> newMap = new HashMap<>();
         replacedMap.entrySet().removeIf(entry -> {
             if (replacingIndex.containsKey(entry.getKey())) {
@@ -1036,8 +1035,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return true;
             } else if (KopTopic.isFullTopicName(entry.getKey().topic())) {
                 newMap.put(new TopicPartition(
-                                KopTopic.removeDefaultNamespacePrefix(entry.getKey().topic(),
-                                        namespacePrefix),
+                                KopTopic.removePersistentDomain(entry.getKey().topic()),
                                 entry.getKey().partition()),
                         entry.getValue());
                 return true;

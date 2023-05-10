@@ -261,7 +261,7 @@ public class KafkaAdminTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testDescribeConsumerGroups() throws Exception {
-        final String topic = "test-describe-group-offset";
+        final String topic = "public/default/test-describe-group-offset";
         final int numMessages = 10;
         final String messagePrefix = "msg-";
         final String group = "test-group";
