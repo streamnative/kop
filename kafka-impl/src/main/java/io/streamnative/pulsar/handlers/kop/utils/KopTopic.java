@@ -42,6 +42,14 @@ public class KopTopic {
         }
     }
 
+    public static String removePersistentDomain(String fullTopicName) {
+        if (fullTopicName.startsWith(persistentDomain)) {
+            return fullTopicName.substring(persistentDomain.length());
+        } else {
+            return fullTopicName;
+        }
+    }
+
     @Getter
     private final String originalName;
     @Getter
