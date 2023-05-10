@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -79,7 +80,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testGreaterThanEndOffset() throws Exception {
-        final String topic = "test-reset-offset-topic";
+        final String topic = "public/default/test-reset-offset-topic";
         final String group = "test-reset-offset-groupid";
         final int numPartitions = 1;
 
@@ -313,8 +314,9 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
                     .map(info -> new TopicPartition(info.topic(), info.partition())).collect(Collectors.toList())) {
                 log.info("offset part: {}", adminClient.listConsumerGroupOffsets(group)
                         .partitionsToOffsetAndMetadata().get());
-                long offset = adminClient.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get()
-                        .get(topicPartition).offset();
+                Map<TopicPartition, OffsetAndMetadata> topicPartitionOffsetAndMetadataMap =
+                        adminClient.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
+                long offset = topicPartitionOffsetAndMetadataMap.get(topicPartition).offset();
                 long leo = consumer.endOffsets(Collections.singletonList(topicPartition))
                         .get(topicPartition);
                 lag += (leo - offset);
@@ -385,7 +387,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testCliReset() throws Exception {
-        String topic = "test-reset-offset-topic";
+        String topic = "public/default/test-reset-offset-topic";
         final String group = "test-reset-offset-groupid";
         final int numPartitions = 10;
 
@@ -419,7 +421,7 @@ public class OffsetResetTest extends KopProtocolHandlerTestBase {
         assertEquals(msgs, totalMsgs);
         kConsumer.getConsumer().commitSync();
         readFromOffsetMessagePulsar();
-        assertEquals(0, describeGroups(group, topic));
+        assertEquals(describeGroups(group, topic), 0);
 
         // simulate the consumer has closed
         kConsumer.close();
