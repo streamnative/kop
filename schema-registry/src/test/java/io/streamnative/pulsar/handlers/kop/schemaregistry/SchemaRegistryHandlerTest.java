@@ -72,8 +72,8 @@ public class SchemaRegistryHandlerTest {
     @Test
     public void testBasicJsonApiError401() throws Exception {
         assertEquals("{\n"
-                        + "  \"message\" : \"Bad auth\",\n"
-                        + "  \"error_code\" : 401\n"
+                        + "  \"error_code\" : 401,\n"
+                        + "  \"message\" : \"Bad auth\"\n"
                         + "}",
                 server.executePost("/subjects/errorsubject401", "{\n"
                         + "  \"value\" : \"/json/test\"\n"
@@ -83,8 +83,8 @@ public class SchemaRegistryHandlerTest {
     @Test
     public void testBasicJsonApiError403() throws Exception {
         assertEquals("{\n"
-                        + "  \"message\" : \"Forbidden\",\n"
-                        + "  \"error_code\" : 403\n"
+                        + "  \"error_code\" : 403,\n"
+                        + "  \"message\" : \"Forbidden\"\n"
                         + "}",
                 server.executePost("/subjects/errorsubject403", "{\n"
                         + "  \"value\" : \"/json/test\"\n"
@@ -94,8 +94,8 @@ public class SchemaRegistryHandlerTest {
     @Test
     public void testBasicJsonApiError500() throws Exception {
         assertEquals("{\n"
-                        + "  \"message\" : \"Error\",\n"
-                        + "  \"error_code\" : 500\n"
+                        + "  \"error_code\" : 500,\n"
+                        + "  \"message\" : \"Error\"\n"
                         + "}",
                 server.executePost("/subjects/errorsubject500", "{\n"
                         + "  \"value\" : \"/json/test\"\n"
