@@ -44,6 +44,9 @@ jobs:
     - name: kafka-impl test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
 
+    - name: schema registry test after build
+      run: mvn test -ntp -B -DfailIfNoTests=false -pl schema-registry
+
     - name: kafka-payload-processor test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-payload-processor-shaded-tests
 
