@@ -114,8 +114,17 @@ public class SchemaResourceTest {
         String result = server.executeGet("/schemas/ids/1");
         log.info("result {}", result);
         assertEquals(result, "{\n"
-                + "  \"schema\" : \"{SCHEMA-1}\"\n"
+                + "  \"schema\" : \"{SCHEMA-1}\",\n"
+                + "  \"schemaType\" : \"AVRO\"\n"
                 + "}");
+    }
+
+    @Test
+    public void getSchemaStringByIdTest() throws Exception {
+        putSchema(1, "{SCHEMA-1}");
+        String result = server.executeGet("/schemas/ids/1/schema");
+        log.info("result {}", result);
+        assertEquals(result, "{SCHEMA-1}");
     }
 
     @Test
@@ -124,7 +133,8 @@ public class SchemaResourceTest {
         String result = server.executeGet("/schemas/ids/1?fetchMaxId=false");
         log.info("result {}", result);
         assertEquals(result, "{\n"
-                + "  \"schema\" : \"{SCHEMA-1}\"\n"
+                + "  \"schema\" : \"{SCHEMA-1}\",\n"
+                + "  \"schemaType\" : \"AVRO\"\n"
                 + "}");
     }
 
@@ -239,7 +249,8 @@ public class SchemaResourceTest {
         assertEquals(result, "{\n"
                 + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",       "
                 + "\\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",             "
-                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\"\n"
+                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\",\n"
+                + "  \"schemaType\" : \"AVRO\"\n"
                 + "}");
     }
 
@@ -271,7 +282,8 @@ public class SchemaResourceTest {
         assertEquals(result, "{\n"
                 + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",       "
                 + "\\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",             "
-                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\"\n"
+                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\",\n"
+                + "  \"schemaType\" : \"AVRO\"\n"
                 + "}");
     }
 
