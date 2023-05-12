@@ -246,7 +246,8 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         // Verify listing offsets for timestamp return a correct offset
         try {
             final Map<TopicPartition, OffsetAndTimestamp> partitionToTimestamp =
-                    consumer.offsetsForTimes(Collections.singletonMap(new TopicPartition(topic, 0), 0L), Duration.ofSeconds(2));
+                    consumer.offsetsForTimes(Collections.singletonMap(new TopicPartition(topic, 0), 0L),
+                            Duration.ofSeconds(2));
             assertTrue(partitionToTimestamp.containsKey(topicPartition));
             assertEquals(partitionToTimestamp.get(topicPartition).offset(), numMessages);
         } catch (Exception e) {
