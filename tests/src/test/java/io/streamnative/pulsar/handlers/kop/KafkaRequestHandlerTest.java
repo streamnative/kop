@@ -807,7 +807,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final String topic = "test-topic";
 
         // 1. original tp
-        final TopicPartition tp0 = new TopicPartition(topic, 0);
+        final TopicPartition tp0 = new TopicPartition(namespace + "/" + topic, 0);
 
         // 2. full topic and tp
         final String fullNameTopic = "persistent://" + namespace + "/" + topic;
@@ -862,7 +862,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testDescribeConsumerGroups() throws Exception {
-        final String topic = "test-describe-group-offset";
+        final String topic = "public/default/test-describe-group-offset";
         final int numMessages = 10;
         final String messagePrefix = "msg-";
         final String group = "test-group";
