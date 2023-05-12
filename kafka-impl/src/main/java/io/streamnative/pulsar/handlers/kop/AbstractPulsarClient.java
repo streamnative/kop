@@ -64,7 +64,7 @@ public abstract class AbstractPulsarClient {
                                                          final Consumer<ClientConfigurationData> customConfig) {
         // It's migrated from PulsarService#getClient()
         final ClientConfigurationData conf = new ClientConfigurationData();
-        conf.setServiceUrl(kafkaConfig.isTlsEnabled()
+        conf.setServiceUrl(kafkaConfig.isBrokerClientTlsEnabled()
                 ? pulsarService.getBrokerServiceUrlTls()
                 : pulsarService.getBrokerServiceUrl());
         conf.setTlsAllowInsecureConnection(kafkaConfig.isTlsAllowInsecureConnection());
