@@ -37,6 +37,7 @@ import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -239,6 +240,17 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
             assertEquals(partitionToOffset.get(topicPartition).intValue(), numMessages);
         } catch (Exception e) {
             log.error("Failed to get beginning offsets: {}", e.getMessage());
+            fail(e.getMessage());
+        }
+
+        // Verify listing offsets for timestamp return a correct offset
+        try {
+            final Map<TopicPartition, OffsetAndTimestamp> partitionToTimestamp =
+                    consumer.offsetsForTimes(Collections.singletonMap(new TopicPartition(topic, 0), 0L), Duration.ofSeconds(2));
+            assertTrue(partitionToTimestamp.containsKey(topicPartition));
+            assertEquals(partitionToTimestamp.get(topicPartition).offset(), numMessages);
+        } catch (Exception e) {
+            log.error("Failed to get offsets for times: {}", e.getMessage());
             fail(e.getMessage());
         }
 
