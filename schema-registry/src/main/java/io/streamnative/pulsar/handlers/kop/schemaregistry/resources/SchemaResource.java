@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.resources;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.HttpJsonRequestProcessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
@@ -48,10 +49,15 @@ public class SchemaResource extends AbstractResource {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public static final class GetSchemaResponse {
         private String schema;
         private String schemaType;
         //todo: references, metadata, ruleSet, maxId
+
+        public String getSchemaType() {
+            return "AVRO".equals(schemaType) ? null : schemaType;
+        }
     }
 
     // /schemas/types
