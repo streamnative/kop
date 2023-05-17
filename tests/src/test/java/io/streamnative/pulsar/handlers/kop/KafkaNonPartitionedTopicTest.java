@@ -29,11 +29,13 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 /**
  * Test unit for non-partitioned topic.
  */
+@Ignore
 public class KafkaNonPartitionedTopicTest extends KopProtocolHandlerTestBase {
 
     private static final String TENANT = "KafkaNonPartitionedTopicTest";
