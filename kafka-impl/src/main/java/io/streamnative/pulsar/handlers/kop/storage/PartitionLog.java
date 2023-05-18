@@ -526,6 +526,11 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
+                if (readCommitted && producerStateManager.firstUndecidedOffset().isPresent()
+                        && producerStateManager.firstUndecidedOffset().get().compareTo(offset) <= 0) {
+                    future.complete(ReadRecordsResult.error(Errors.NONE));
+                    return;
+                }
                 readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes, topicManager)
                         .whenComplete((entries, throwable) -> {
                             if (throwable != null) {
@@ -682,7 +687,7 @@ public class PartitionLog {
         committedEntries = new ArrayList<>();
         for (Entry entry : entries) {
             try {
-                if (lso >= MessageMetadataUtils.peekBaseOffsetFromEntry(entry)) {
+                if (lso > MessageMetadataUtils.peekBaseOffsetFromEntry(entry)) {
                     committedEntries.add(entry);
                 } else {
                     break;

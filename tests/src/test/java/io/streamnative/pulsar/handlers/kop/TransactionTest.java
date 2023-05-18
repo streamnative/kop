@@ -17,6 +17,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
 
 import com.google.common.collect.ImmutableMap;
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -45,6 +47,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
@@ -367,6 +370,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
+        consumerProps.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 10);
         addCustomizeProps(consumerProps);
 
         return new KafkaConsumer<>(consumerProps);
@@ -517,4 +521,54 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     protected void addCustomizeProps(Properties producerProps) {
         // No-op
     }
+
+    @Test
+    public void unStableMessagesTest() throws InterruptedException, ExecutionException {
+        String topic = "unstable-message-test-" + RandomStringUtils.randomAlphabetic(5);
+
+        KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("group-pre-create-consumer",
+                IsolationLevel.READ_COMMITTED.name().toLowerCase());
+        consumer.subscribe(Collections.singleton(topic));
+
+        String tnxId = "txn-" + RandomStringUtils.randomAlphabetic(5);
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(tnxId);
+        producer.initTransactions();
+
+        String committedMsg = "test msg commit - ";
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topic, committedMsg + 0)).get();
+        producer.send(new ProducerRecord<>(topic, committedMsg + 1)).get();
+        producer.flush();
+
+        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
+        // make sure consumer can't receive unstable messages
+        assertTrue(records.isEmpty());
+
+        producer.commitTransaction();
+        producer.beginTransaction();
+        // these two unstable message shouldn't be received
+        producer.send(new ProducerRecord<>(topic, committedMsg + 2)).get();
+        producer.send(new ProducerRecord<>(topic, committedMsg + 3)).get();
+        producer.flush();
+
+        AtomicInteger messageCount = new AtomicInteger(0);
+        while (true) {
+            records = consumer.poll(Duration.ofSeconds(3));
+            if (records.isEmpty()) {
+                break;
+            }
+            assertFalse(records.isEmpty());
+            for (ConsumerRecord<Integer, String> record : records) {
+                assertEquals(record.value(), committedMsg + messageCount.getAndIncrement());
+            }
+        }
+        // make sure only receive two stable messages
+        assertEquals(messageCount.get(), 2);
+        records = consumer.poll(Duration.ofSeconds(3));
+        assertTrue(records.isEmpty());
+
+        consumer.close();
+        producer.close();
+    }
+
 }
