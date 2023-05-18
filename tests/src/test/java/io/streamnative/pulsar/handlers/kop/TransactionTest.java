@@ -573,7 +573,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             if (records.isEmpty()) {
                 break;
             }
-            assertFalse(records.isEmpty());
             for (ConsumerRecord<Integer, String> record : records) {
                 assertEquals(record.value(), baseMsg + messageCount.getAndIncrement());
             }
