@@ -522,53 +522,64 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // No-op
     }
 
-    @Test
-    public void unStableMessagesTest() throws InterruptedException, ExecutionException {
+    @DataProvider(name = "isolationProvider")
+    protected Object[][] isolationProvider() {
+        return new Object[][]{
+                {"read_committed"},
+                {"read_uncommitted"},
+        };
+    }
+
+    @Test(dataProvider = "isolationProvider", timeOut = 1000 * 30)
+    public void readUnStableMessagesTest(String isolation) throws InterruptedException, ExecutionException {
         String topic = "unstable-message-test-" + RandomStringUtils.randomAlphabetic(5);
 
-        KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("group-pre-create-consumer",
-                IsolationLevel.READ_COMMITTED.name().toLowerCase());
+        KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("unstable-read", isolation);
         consumer.subscribe(Collections.singleton(topic));
 
         String tnxId = "txn-" + RandomStringUtils.randomAlphabetic(5);
         KafkaProducer<Integer, String> producer = buildTransactionProducer(tnxId);
         producer.initTransactions();
 
-        String committedMsg = "test msg commit - ";
+        String baseMsg = "test msg commit - ";
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topic, committedMsg + 0)).get();
-        producer.send(new ProducerRecord<>(topic, committedMsg + 1)).get();
-        producer.flush();
-
-        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
-        // make sure consumer can't receive unstable messages
-        assertTrue(records.isEmpty());
-
-        producer.commitTransaction();
-        producer.beginTransaction();
-        // these two unstable message shouldn't be received
-        producer.send(new ProducerRecord<>(topic, committedMsg + 2)).get();
-        producer.send(new ProducerRecord<>(topic, committedMsg + 3)).get();
+        producer.send(new ProducerRecord<>(topic, baseMsg + 0)).get();
+        producer.send(new ProducerRecord<>(topic, baseMsg + 1)).get();
         producer.flush();
 
         AtomicInteger messageCount = new AtomicInteger(0);
+        // make sure consumer can't receive unstable messages in `read_committed` mode
+        readAndCheckMessages(consumer, baseMsg, messageCount, isolation.equals("read_committed") ? 0 : 2);
+
+        producer.commitTransaction();
+        producer.beginTransaction();
+        // these two unstable message shouldn't be received in `read_committed` mode
+        producer.send(new ProducerRecord<>(topic, baseMsg + 2)).get();
+        producer.send(new ProducerRecord<>(topic, baseMsg + 3)).get();
+        producer.flush();
+
+        readAndCheckMessages(consumer, baseMsg, messageCount, isolation.equals("read_committed") ? 2 : 4);
+        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
+        assertTrue(records.isEmpty());
+
+        consumer.close();
+        producer.close();
+    }
+
+    private void readAndCheckMessages(KafkaConsumer<Integer, String> consumer, String baseMsg,
+                                      AtomicInteger messageCount, int expectedMessageCount) {
         while (true) {
-            records = consumer.poll(Duration.ofSeconds(3));
+            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
             if (records.isEmpty()) {
                 break;
             }
             assertFalse(records.isEmpty());
             for (ConsumerRecord<Integer, String> record : records) {
-                assertEquals(record.value(), committedMsg + messageCount.getAndIncrement());
+                assertEquals(record.value(), baseMsg + messageCount.getAndIncrement());
             }
         }
         // make sure only receive two stable messages
-        assertEquals(messageCount.get(), 2);
-        records = consumer.poll(Duration.ofSeconds(3));
-        assertTrue(records.isEmpty());
-
-        consumer.close();
-        producer.close();
+        assertEquals(messageCount.get(), expectedMessageCount);
     }
 
 }
