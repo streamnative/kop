@@ -101,7 +101,7 @@ public class KafkaNonPartitionedTopicTest extends KopProtocolHandlerTestBase {
                     .getConsumer().listTopics(Duration.ofSeconds(1));
             assertEquals(result.size(), 1);
         } finally {
-            admin.topics().delete(topic);
+            admin.topics().delete(topic, true);
         }
     }
 
