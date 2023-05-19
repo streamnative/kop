@@ -528,7 +528,8 @@ public class PartitionLog {
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
                 if (readCommitted && producerStateManager.firstUndecidedOffset().isPresent()
                         && producerStateManager.firstUndecidedOffset().get().compareTo(offset) <= 0) {
-                    future.complete(ReadRecordsResult.error(Errors.NONE));
+                    future.complete(ReadRecordsResult.error(
+                            tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE));
                     return;
                 }
                 readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes, topicManager)
