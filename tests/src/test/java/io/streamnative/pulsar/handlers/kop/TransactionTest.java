@@ -558,8 +558,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.flush();
 
         readAndCheckMessages(consumer, baseMsg, messageCount, isolation.equals("read_committed") ? 2 : 4);
-        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
-        assertTrue(records.isEmpty());
 
         consumer.close();
         producer.close();
@@ -576,7 +574,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 assertEquals(record.value(), baseMsg + messageCount.getAndIncrement());
             }
         }
-        // make sure only receive two stable messages
+        // make sure there is no message can be received
+        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
+        assertTrue(records.isEmpty());
+        // make sure only receive the expected number of stable messages
         assertEquals(messageCount.get(), expectedMessageCount);
     }
 
