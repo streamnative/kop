@@ -1223,9 +1223,16 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             @Override
             public void findEntryFailed(ManagedLedgerException exception,
                                         Optional<Position> position, Object ctx) {
-                log.warn("Unable to find position for topic {} time {}. Exception:",
-                        topic, timestamp, exception);
-                partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
+                if (exception instanceof ManagedLedgerException.NonRecoverableLedgerException) {
+                    // The position doesn't exist, it usually happens when the rollover of managed ledger leads to
+                    // the deletion of all expired ledgers. In this case, there's only one empty ledger in the managed
+                    // ledger. So here we complete it with the latest offset.
+                    partitionData.complete(Pair.of(Errors.NONE, MessageMetadataUtils.getLogEndOffset(managedLedger)));
+                } else {
+                    log.warn("Unable to find position for topic {} time {}. Exception:",
+                            topic, timestamp, exception);
+                    partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, null));
+                }
             }
         });
     }
