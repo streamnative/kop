@@ -537,13 +537,19 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
-                if (readCommitted && producerStateManager.firstUndecidedOffset().isPresent()
-                        && producerStateManager.firstUndecidedOffset().get().compareTo(offset) <= 0) {
-                    long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
-                    future.complete(ReadRecordsResult.empty(highWaterMark,
-                            this.firstUndecidedOffset().orElse(highWaterMark),
-                            tcm.getManagedLedger().getLastConfirmedEntry()));
-                    return;
+                if (readCommitted) {
+                    long firstUndecidedOffset = producerStateManager.firstUndecidedOffset().orElse(-1L);
+                    if (firstUndecidedOffset >= 0 && firstUndecidedOffset <= offset) {
+                        long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
+                        future.complete(
+                                ReadRecordsResult.empty(
+                                        highWaterMark,
+                                        firstUndecidedOffset,
+                                        tcm.getManagedLedger().getLastConfirmedEntry()
+                                )
+                        );
+                        return;
+                    }
                 }
                 readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes, topicManager)
                         .whenComplete((entries, throwable) -> {

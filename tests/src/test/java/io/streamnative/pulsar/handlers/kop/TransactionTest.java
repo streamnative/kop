@@ -530,7 +530,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(dataProvider = "isolationProvider", timeOut = 1000 * 30)
-    public void readUnStableMessagesTest(String isolation) throws InterruptedException, ExecutionException {
+    public void readUnstableMessagesTest(String isolation) throws InterruptedException, ExecutionException {
         String topic = "unstable-message-test-" + RandomStringUtils.randomAlphabetic(5);
 
         KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("unstable-read", isolation);
