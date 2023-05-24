@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
 
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager;
@@ -33,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -362,6 +364,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
+        consumerProps.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 10);
         addCustomizeProps(consumerProps);
 
         return new KafkaConsumer<>(consumerProps);
@@ -389,4 +392,65 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     protected void addCustomizeProps(Properties producerProps) {
         // No-op
     }
+
+    @DataProvider(name = "isolationProvider")
+    protected Object[][] isolationProvider() {
+        return new Object[][]{
+                {"read_committed"},
+                {"read_uncommitted"},
+        };
+    }
+
+    @Test(dataProvider = "isolationProvider", timeOut = 1000 * 30)
+    public void readUnstableMessagesTest(String isolation) throws InterruptedException, ExecutionException {
+        String topic = "unstable-message-test-" + RandomStringUtils.randomAlphabetic(5);
+
+        KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("unstable-read", isolation);
+        consumer.subscribe(Collections.singleton(topic));
+
+        String tnxId = "txn-" + RandomStringUtils.randomAlphabetic(5);
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(tnxId);
+        producer.initTransactions();
+
+        String baseMsg = "test msg commit - ";
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topic, baseMsg + 0)).get();
+        producer.send(new ProducerRecord<>(topic, baseMsg + 1)).get();
+        producer.flush();
+
+        AtomicInteger messageCount = new AtomicInteger(0);
+        // make sure consumer can't receive unstable messages in `read_committed` mode
+        readAndCheckMessages(consumer, baseMsg, messageCount, isolation.equals("read_committed") ? 0 : 2);
+
+        producer.commitTransaction();
+        producer.beginTransaction();
+        // these two unstable message shouldn't be received in `read_committed` mode
+        producer.send(new ProducerRecord<>(topic, baseMsg + 2)).get();
+        producer.send(new ProducerRecord<>(topic, baseMsg + 3)).get();
+        producer.flush();
+
+        readAndCheckMessages(consumer, baseMsg, messageCount, isolation.equals("read_committed") ? 2 : 4);
+
+        consumer.close();
+        producer.close();
+    }
+
+    private void readAndCheckMessages(KafkaConsumer<Integer, String> consumer, String baseMsg,
+                                      AtomicInteger messageCount, int expectedMessageCount) {
+        while (true) {
+            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
+            if (records.isEmpty()) {
+                break;
+            }
+            for (ConsumerRecord<Integer, String> record : records) {
+                assertEquals(record.value(), baseMsg + messageCount.getAndIncrement());
+            }
+        }
+        // make sure there is no message can be received
+        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(3));
+        assertTrue(records.isEmpty());
+        // make sure only receive the expected number of stable messages
+        assertEquals(messageCount.get(), expectedMessageCount);
+    }
+
 }
