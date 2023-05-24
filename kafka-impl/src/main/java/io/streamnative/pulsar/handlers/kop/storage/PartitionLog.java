@@ -262,6 +262,17 @@ public class PartitionLog {
             return readRecordsResult;
         }
 
+        public static ReadRecordsResult empty(long highWatermark,
+                                            long lastStableOffset,
+                                            Position lastPosition) {
+            return ReadRecordsResult.get(
+                    DecodeResult.get(MemoryRecords.EMPTY),
+                    Collections.emptyList(),
+                    highWatermark,
+                    lastStableOffset,
+                    lastPosition);
+        }
+
         public static ReadRecordsResult error(Errors errors) {
             return ReadRecordsResult.error(PositionImpl.EARLIEST, errors);
         }
@@ -528,8 +539,10 @@ public class PartitionLog {
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
                 if (readCommitted && producerStateManager.firstUndecidedOffset().isPresent()
                         && producerStateManager.firstUndecidedOffset().get().compareTo(offset) <= 0) {
-                    future.complete(ReadRecordsResult.error(
-                            tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE));
+                    long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
+                    future.complete(ReadRecordsResult.empty(highWaterMark,
+                            this.firstUndecidedOffset().orElse(highWaterMark),
+                            tcm.getManagedLedger().getLastConfirmedEntry()));
                     return;
                 }
                 readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes, topicManager)
