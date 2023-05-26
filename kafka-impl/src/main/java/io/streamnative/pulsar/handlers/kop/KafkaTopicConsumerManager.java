@@ -113,21 +113,6 @@ public class KafkaTopicConsumerManager implements Closeable {
     // delete passed in cursor.
     public void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
         if (cursor != null) {
-            topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
-                @Override
-                public void deleteCursorComplete(Object ctx) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("[{}] Cursor {} for topic {} deleted successfully for reason: {}.",
-                            requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason);
-                    }
-                }
-
-                @Override
-                public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
-                    log.warn("[{}] Error deleting cursor {} for topic {} for reason: {}.",
-                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
-                }
-            }, null);
             createdCursors.remove(cursor.getName());
         }
     }
@@ -200,8 +185,6 @@ public class KafkaTopicConsumerManager implements Closeable {
         cursors.forEach((ignored, cursorFuture) -> cursorFuturesToClose.add(cursorFuture));
         cursors.clear();
         lastAccessTimes.clear();
-        final List<ManagedCursor> cursorsToClose = new ArrayList<>();
-        createdCursors.forEach((ignored, cursor) -> cursorsToClose.add(cursor));
         createdCursors.clear();
 
         cursorFuturesToClose.forEach(cursorFuture -> {
@@ -214,11 +197,6 @@ public class KafkaTopicConsumerManager implements Closeable {
             });
         });
         cursorFuturesToClose.clear();
-
-        // delete dangling createdCursors
-        cursorsToClose.forEach(cursor ->
-            deleteOneCursorAsync(cursor, "TopicConsumerManager close but cursor is still outstanding"));
-        cursorsToClose.clear();
     }
 
     private CompletableFuture<Pair<ManagedCursor, Long>> asyncGetCursorByOffset(long offset) {
