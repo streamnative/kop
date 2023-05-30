@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.resources;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.HttpJsonRequestProcessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
@@ -40,6 +41,7 @@ public class SchemaResource extends AbstractResource {
      */
     public void register(SchemaRegistryHandler schemaRegistryHandler) {
         schemaRegistryHandler.addProcessor(new GetSchemaById());
+        schemaRegistryHandler.addProcessor(new GetSchemaStringById());
         schemaRegistryHandler.addProcessor(new GetSchemaTypes());
         schemaRegistryHandler.addProcessor(new GetSchemaAliases());
     }
@@ -47,8 +49,15 @@ public class SchemaResource extends AbstractResource {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public static final class GetSchemaResponse {
         private String schema;
+        private String schemaType;
+        //todo: references, metadata, ruleSet, maxId
+
+        public String getSchemaType() {
+            return "AVRO".equals(schemaType) ? null : schemaType;
+        }
     }
 
     // /schemas/types
@@ -92,7 +101,30 @@ public class SchemaResource extends AbstractResource {
                 if (s == null) {
                     return null;
                 }
-                return new GetSchemaResponse(s.getSchemaDefinition());
+                return new GetSchemaResponse(s.getSchemaDefinition(), s.getType());
+            });
+        }
+    }
+
+    // GET /schemas/ids/{int: id}/schema     Get one schema string
+    public class GetSchemaStringById extends HttpJsonRequestProcessor<Void, String> {
+
+        public GetSchemaStringById() {
+            super(Void.class, "/schemas/ids/" + INT_PATTERN + "/schema", GET);
+        }
+
+        @Override
+        protected CompletableFuture<String> processRequest(Void payload, List<String> patternGroups,
+                                                                      FullHttpRequest request)
+                throws Exception {
+            int id = getInt(0, patternGroups);
+            SchemaStorage schemaStorage = getSchemaStorage(request);
+            CompletableFuture<Schema> schemaById = schemaStorage.findSchemaById(id);
+            return schemaById.thenApply(s -> {
+                if (s == null) {
+                    return null;
+                }
+                return s.getSchemaDefinition();
             });
         }
 
