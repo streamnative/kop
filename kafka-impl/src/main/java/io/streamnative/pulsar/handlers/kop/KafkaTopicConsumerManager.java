@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
@@ -112,6 +113,21 @@ public class KafkaTopicConsumerManager implements Closeable {
     // delete passed in cursor.
     public void deleteOneCursorAsync(ManagedCursor cursor, String reason) {
         if (cursor != null) {
+            topic.getManagedLedger().asyncDeleteCursor(cursor.getName(), new DeleteCursorCallback() {
+                @Override
+                public void deleteCursorComplete(Object ctx) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Cursor {} for topic {} deleted successfully for reason: {}.",
+                            requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason);
+                    }
+                }
+
+                @Override
+                public void deleteCursorFailed(ManagedLedgerException exception, Object ctx) {
+                    log.warn("[{}] Error deleting cursor {} for topic {} for reason: {}.",
+                        requestHandler.ctx.channel(), cursor.getName(), topic.getName(), reason, exception);
+                }
+            }, null);
             createdCursors.remove(cursor.getName());
         }
     }
