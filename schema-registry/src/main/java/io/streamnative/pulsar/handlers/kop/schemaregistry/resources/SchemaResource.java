@@ -83,6 +83,7 @@ public class SchemaResource extends AbstractResource {
         private int version;
     }
 
+    // GET /schemas/ids/{int: id}
     public class GetSchemaById extends HttpJsonRequestProcessor<Void, GetSchemaResponse> {
 
         public GetSchemaById() {
