@@ -119,6 +119,14 @@ public class SchemaResourceTest {
     }
 
     @Test
+    public void getSchemaStringByIdTest() throws Exception {
+        putSchema(1, "{SCHEMA-1}");
+        String result = server.executeGet("/schemas/ids/1/schema");
+        log.info("result {}", result);
+        assertEquals(result, "{SCHEMA-1}");
+    }
+
+    @Test
     public void getSchemaByIdWithQueryStringTest() throws Exception {
         putSchema(1, "{SCHEMA-1}");
         String result = server.executeGet("/schemas/ids/1?fetchMaxId=false");
