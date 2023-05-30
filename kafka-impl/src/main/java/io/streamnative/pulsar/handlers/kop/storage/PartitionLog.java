@@ -1178,7 +1178,6 @@ public class PartitionLog {
 
                     decodedEntries.thenAccept((decodeResult) -> {
                         try {
-
                             MemoryRecords records = decodeResult.getRecords();
                             Optional<Long> firstOffset = Optional
                                     .ofNullable(records.firstBatch())
@@ -1210,7 +1209,6 @@ public class PartitionLog {
                             }
 
                             readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter, future);
-
                         } finally {
                             decodeResult.recycle();
                         }
