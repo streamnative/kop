@@ -17,7 +17,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -422,7 +421,8 @@ public class TransactionMetadata {
         return flag;
     }
 
-    public TxnTransitMetadata prepareAddPartitions(ImmutableSet<TopicPartition> addedTopicPartitions, Long updateTimestamp) {
+    public TxnTransitMetadata prepareAddPartitions(ImmutableSet<TopicPartition> addedTopicPartitions,
+                                                   Long updateTimestamp) {
         long newTxnStartTimestamp;
         switch(state) {
             case EMPTY:
