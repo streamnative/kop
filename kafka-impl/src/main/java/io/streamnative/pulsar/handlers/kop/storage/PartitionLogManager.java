@@ -52,7 +52,7 @@ public class PartitionLogManager {
 
         return logMap.computeIfAbsent(kopTopic, key -> {
                 return new PartitionLog(kafkaConfig, requestStats, time, topicPartition, kopTopic, entryFilters,
-                        new ProducerStateManager(kopTopic));
+                        new ProducerStateManager(kopTopic, kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds()));
         });
     }
 

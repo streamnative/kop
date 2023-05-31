@@ -866,20 +866,7 @@ public class PartitionLog {
 
                 AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
                         encodeResult.getRecords(), Optional.of(offset), AppendOrigin.Client);
-                analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
-                                pid, producerAppendInfo, lastOffset);
-                    }
-                    producerStateManager.update(producerAppendInfo);
-                });
-                analyzeResult.completedTxns().forEach(completedTxn -> {
-                    // update to real last offset
-                    completedTxn.lastOffset(lastOffset - 1);
-                    long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                    producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-                    producerStateManager.completeTxn(completedTxn);
-                });
+                updateProducerStateManager(lastOffset, analyzeResult);
 
                 appendFuture.complete(offset);
             } else {
@@ -890,6 +877,26 @@ public class PartitionLog {
             }
             encodeResult.recycle();
         });
+    }
+
+    private void updateProducerStateManager(long lastOffset, AnalyzeResult analyzeResult) {
+        analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
+            if (log.isDebugEnabled()) {
+                log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
+                        pid, producerAppendInfo, lastOffset);
+            }
+            producerStateManager.update(producerAppendInfo);
+        });
+        analyzeResult.completedTxns().forEach(completedTxn -> {
+            long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+            producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+            producerStateManager.completeTxn(completedTxn);
+        });
+        producerStateManager.updateMapEndOffset(lastOffset);
+
+        // do system clean up stuff in this thread
+        // TODO maybe take snapshot (wait producer state manager to support recover)
+        producerStateManager.maybePurgeAbortedTx();
     }
 
     private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,

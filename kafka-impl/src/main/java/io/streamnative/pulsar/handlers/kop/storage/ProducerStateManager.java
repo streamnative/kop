@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -104,8 +106,15 @@ public class ProducerStateManager {
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
 
-    public ProducerStateManager(String topicPartition) {
+    private final int kafkaTxnPurgeAbortedTxnIntervalSeconds;
+    private volatile long mapEndOffset = -1;
+    private volatile long abortedTxnsPurgeOffset = -1;
+    private long lastPurgeAbortedTxnTime;
+
+    public ProducerStateManager(String topicPartition,
+                                int kafkaTxnPurgeAbortedTxnIntervalSeconds) {
         this.topicPartition = topicPartition;
+        this.kafkaTxnPurgeAbortedTxnIntervalSeconds = kafkaTxnPurgeAbortedTxnIntervalSeconds;
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
@@ -199,5 +208,52 @@ public class ProducerStateManager {
         }
         return abortedTransactions;
     }
+
+    public void updateMapEndOffset(long mapEndOffset) {
+        this.mapEndOffset = mapEndOffset;
+    }
+
+    long maybePurgeAbortedTx() {
+        if (mapEndOffset == -1 || kafkaTxnPurgeAbortedTxnIntervalSeconds <= 0) {
+            return 0;
+        }
+        long now = System.currentTimeMillis();
+        long deltaFromLast = (now - lastPurgeAbortedTxnTime) / 1000;
+        if (log.isDebugEnabled()) {
+            log.debug("maybePurgeAbortedTx deltaFromLast {} vs kafkaTxnPurgeAbortedTxnIntervalSeconds {} ",
+                    deltaFromLast, kafkaTxnPurgeAbortedTxnIntervalSeconds);
+        }
+        if (deltaFromLast < kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+            return 0;
+        }
+        lastPurgeAbortedTxnTime = now;
+        return executePurgeAbortedTx();
+    }
+
+    @VisibleForTesting
+    long executePurgeAbortedTx() {
+        return purgeAbortedTxns(abortedTxnsPurgeOffset);
+    }
+
+    public long purgeAbortedTxns(long offset) {
+        AtomicLong count = new AtomicLong();
+        synchronized (abortedIndexList) {
+            abortedIndexList.removeIf(tx -> {
+                boolean toRemove = tx.lastOffset() < offset;
+                if (toRemove) {
+                    log.info("Transaction {} can be removed (txnLastOffset {} < {})", tx, tx.lastOffset(), offset);
+                    count.incrementAndGet();
+                } else {
+                    if (log.isDebugEnabled()) {
+                        log.info("Transaction {} cannot be removed (txnLastOffset {} >= {})",
+                                tx, tx.lastOffset(), offset);
+                    }
+                }
+                return toRemove;
+            });
+        }
+        return count.get();
+    }
+
 
 }
