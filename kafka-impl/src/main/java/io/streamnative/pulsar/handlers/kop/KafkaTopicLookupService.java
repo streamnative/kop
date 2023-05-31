@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.netty.channel.Channel;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import lombok.NonNull;
