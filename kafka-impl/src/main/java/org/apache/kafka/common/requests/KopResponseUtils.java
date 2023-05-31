@@ -16,7 +16,6 @@ package org.apache.kafka.common.requests;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufOutputStream;
 import java.io.DataOutputStream;
-import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.Message;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
