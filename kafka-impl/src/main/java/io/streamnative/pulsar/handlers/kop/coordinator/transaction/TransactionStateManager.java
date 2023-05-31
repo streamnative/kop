@@ -74,8 +74,8 @@ public class TransactionStateManager {
     @VisibleForTesting
     protected final Set<Integer> leavingPartitions = Sets.newHashSet();
 
-    private final Map<Integer, CompletableFuture<Producer<ByteBuffer>>> txnLogProducerMap = Maps.newHashMap();
-    private final Map<Integer, CompletableFuture<Reader<ByteBuffer>>> txnLogReaderMap = Maps.newHashMap();
+    private final Map<Integer, CompletableFuture<Producer<ByteBuffer>>> txnLogProducerMap = Maps.newConcurrentMap();
+    private final Map<Integer, CompletableFuture<Reader<ByteBuffer>>> txnLogReaderMap = Maps.newConcurrentMap();
 
     // Transaction metadata cache indexed by assigned transaction topic partition ids
     // Map <partitionId, <transactionId, TransactionMetadata>>
