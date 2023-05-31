@@ -18,7 +18,6 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -433,13 +432,12 @@ public class TransactionMetadata {
             default:
                 newTxnStartTimestamp = txnStartTimestamp;
         }
-        Set<TopicPartition> newPartitionSet = new HashSet<>();
-        if (topicPartitions != null) {
-            newPartitionSet.addAll(topicPartitions);
-        }
-        newPartitionSet.addAll(addedTopicPartitions);
+        ImmutableSet<TopicPartition> partitions = ImmutableSet.<TopicPartition>builder()
+                .addAll((topicPartitions != null) ? topicPartitions : ImmutableSet.of())
+                .addAll(addedTopicPartitions)
+                .build();
         return prepareTransitionTo(TransactionState.ONGOING, producerId, producerEpoch, lastProducerEpoch,
-                txnTimeoutMs, ImmutableSet.copyOf(newPartitionSet), newTxnStartTimestamp, updateTimestamp);
+                txnTimeoutMs, partitions, newTxnStartTimestamp, updateTimestamp);
     }
 
     public TxnTransitMetadata prepareAbortOrCommit(TransactionState newState, Long updateTimestamp) {
