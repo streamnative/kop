@@ -20,6 +20,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicConsumerManager;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
@@ -43,11 +44,13 @@ import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.ToString;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +70,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
@@ -76,10 +80,12 @@ import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Analyze result.
@@ -114,13 +120,17 @@ public class PartitionLog {
     private final List<EntryFilter> entryFilters;
     private final boolean preciseTopicPublishRateLimitingEnable;
 
+    private final AtomicBoolean unloaded = new AtomicBoolean();
+    private final KafkaTopicLookupService kafkaTopicLookupService;
+
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         RequestStats requestStats,
                         Time time,
                         TopicPartition topicPartition,
                         String fullPartitionName,
                         List<EntryFilter> entryFilters,
-                        ProducerStateManager producerStateManager) {
+                        ProducerStateManager producerStateManager,
+                        KafkaTopicLookupService kafkaTopicLookupService) {
         this.kafkaConfig = kafkaConfig;
         this.entryFilters = entryFilters;
         this.requestStats = requestStats;
@@ -129,6 +139,7 @@ public class PartitionLog {
         this.fullPartitionName = fullPartitionName;
         this.producerStateManager = producerStateManager;
         this.preciseTopicPublishRateLimitingEnable = kafkaConfig.isPreciseTopicPublishRateLimiterEnable();
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
     }
 
     private CompletableFuture<EntryFormatter> getEntryFormatter(
@@ -1043,4 +1054,101 @@ public class PartitionLog {
             return MemoryRecords.readableRecords(validByteBuffer);
         }
     }
+
+    public void markAsUnloaded() {
+        unloaded.set(true);
+    }
+
+    public boolean isInitialised() {
+        // TODO wait producer state manager to be initialized
+        return false;
+    }
+
+    /**
+     * Remove all the AbortedTxn that are no more referred by existing data on the topic.
+     * @return
+     */
+    public CompletableFuture<?> updatePurgeAbortedTxnsOffset() {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            // no need to scan the topic, because transactions are disabled
+            return CompletableFuture.completedFuture(null);
+        }
+        if (!producerStateManager.hasSomeAbortedTransactions()) {
+            // nothing to do
+            return CompletableFuture.completedFuture(null);
+        }
+        if (unloaded.get()) {
+            // nothing to do
+            return CompletableFuture.completedFuture(null);
+        }
+        return fetchOldestAvailableIndexFromTopic()
+                .thenAccept(producerStateManager::updateAbortedTxnsPurgeOffset);
+
+    }
+
+    public CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
+        if (unloaded.get()) {
+            return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
+        }
+
+        final CompletableFuture<Long> future = new CompletableFuture<>();
+        kafkaTopicLookupService.getTopic(fullPartitionName, this).thenAccept(topicOp -> {
+            if (topicOp.isEmpty()) {
+                log.warn("Failed to fetch oldest offset, topic {} not found", fullPartitionName);
+                future.completeExceptionally(new BrokerServiceException.TopicNotFoundException(
+                        "Failed to fetch oldest offset, topic " + fullPartitionName + " not found"));
+                return;
+            }
+            ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) topicOp.get().getManagedLedger();
+            long numberOfEntries = managedLedger.getNumberOfEntries();
+            if (numberOfEntries == 0) {
+                long currentOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+                log.info("First offset for topic {} is {} as the topic is empty (numberOfEntries=0)",
+                        fullPartitionName, currentOffset);
+                future.complete(currentOffset);
+            }
+            log.info("{} numberOfEntries={}", fullPartitionName, numberOfEntries);
+            // this is a DUMMY entry with -1
+            PositionImpl firstPosition = managedLedger.getFirstPosition();
+            // look for the first entry with data
+            PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
+
+            fetchOldestAvailableIndexFromTopicReadNext(future, managedLedger, nextValidPosition);
+        }).exceptionally(throwable -> {
+            future.completeExceptionally(throwable);
+            return null;
+        });
+        return future;
+
+    }
+
+    private void fetchOldestAvailableIndexFromTopicReadNext(CompletableFuture<Long> future,
+                                                            ManagedLedgerImpl managedLedger, PositionImpl position) {
+        managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
+            @Override
+            public void readEntryComplete(Entry entry, Object ctx) {
+                try {
+                    long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
+                    log.info("First offset for topic {} is {} - position {}", fullPartitionName,
+                            startOffset, entry.getPosition());
+                    future.complete(startOffset);
+                } catch (MetadataCorruptedException.NoBrokerEntryMetadata noBrokerEntryMetadata) {
+                    long currentOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+                    log.info("Legacy entry for topic {} - position {} - returning current offset {}",
+                            fullPartitionName, entry.getPosition(), currentOffset);
+                    future.complete(currentOffset);
+                } catch (Exception err) {
+                    future.completeExceptionally(err);
+                } finally {
+                    entry.release();
+                }
+            }
+
+            @Override
+            public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
+                future.completeExceptionally(exception);
+            }
+        }, null);
+    }
+
 }

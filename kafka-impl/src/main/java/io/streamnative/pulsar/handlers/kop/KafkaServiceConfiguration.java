@@ -446,6 +446,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             DefaultRemoveExpiredTransactionalIdsIntervalMs;
 
     @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Interval for purging aborted transactions from memory (requires reads from storage)"
+    )
+    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 60 * 60 * 24;
+
+    @FieldContext(
             category = CATEGORY_KOP,
             doc = "The fully qualified name of a SASL server callback handler class that implements the "
                     + "AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. "

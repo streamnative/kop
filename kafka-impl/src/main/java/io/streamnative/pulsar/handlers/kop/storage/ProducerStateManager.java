@@ -104,6 +104,8 @@ public class ProducerStateManager {
     private final TreeMap<Long, TxnMetadata> ongoingTxns = Maps.newTreeMap();
     private final List<AbortedTxn> abortedIndexList = new ArrayList<>();
 
+    private volatile long abortedTxnsPurgeOffset = -1;
+
     public ProducerStateManager(String topicPartition) {
         this.topicPartition = topicPartition;
     }
@@ -198,6 +200,20 @@ public class ProducerStateManager {
             }
         }
         return abortedTransactions;
+    }
+
+    public boolean hasSomeAbortedTransactions() {
+        return !abortedIndexList.isEmpty();
+    }
+
+    void updateAbortedTxnsPurgeOffset(long abortedTxnsPurgeOffset) {
+        if (log.isDebugEnabled()) {
+            log.debug("{} updateAbortedTxnsPurgeOffset offset={}", topicPartition, abortedTxnsPurgeOffset);
+        }
+        if (abortedTxnsPurgeOffset < 0) {
+            return;
+        }
+        this.abortedTxnsPurgeOffset = abortedTxnsPurgeOffset;
     }
 
 }

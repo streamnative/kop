@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import lombok.Getter;
@@ -86,6 +87,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private SystemTopicClient txnTopicClient;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
     private DelayedOperationPurgatory<DelayedOperation> fetchPurgatory;
+    private KafkaTopicLookupService kafkaTopicLookupService;
     private LookupClient lookupClient;
     @VisibleForTesting
     @Getter
@@ -112,6 +114,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+
+    private ScheduledFuture<?> txUpdatedPurgeAbortedTxOffsetsTimeHandle;
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -282,6 +286,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
                 brokerService.getAuthenticationService());
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
+
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                && kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds() > 0) {
+            txUpdatedPurgeAbortedTxOffsetsTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
+                        getReplicaManager().updatePurgeAbortedTxnsOffsets();
+                    },
+                    kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds(),
+                    kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds(),
+                    TimeUnit.SECONDS);
+        }
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -426,13 +440,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
 
+        kafkaTopicLookupService = new KafkaTopicLookupService(brokerService);
+
         replicaManager = new ReplicaManager(
                 kafkaConfig,
                 requestStats,
                 Time.SYSTEM,
                 brokerService.getEntryFilterProvider().getBrokerEntryFilters(),
                 producePurgatory,
-                fetchPurgatory);
+                fetchPurgatory,
+                kafkaTopicLookupService);
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
@@ -462,6 +479,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void close() {
+        if (txUpdatedPurgeAbortedTxOffsetsTimeHandle != null) {
+            txUpdatedPurgeAbortedTxOffsetsTimeHandle.cancel(false);
+        }
+
         if (producePurgatory != null) {
             producePurgatory.shutdown();
         }

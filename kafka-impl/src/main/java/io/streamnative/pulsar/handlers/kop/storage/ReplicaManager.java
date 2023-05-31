@@ -17,6 +17,7 @@ import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -61,8 +62,10 @@ public class ReplicaManager {
                           Time time,
                           List<EntryFilter> entryFilters,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
-                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory) {
-        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryFilters, time);
+                          DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
+                          KafkaTopicLookupService kafkaTopicLookupService) {
+        this.logManager = new PartitionLogManager(
+                kafkaConfig, requestStats, entryFilters, time, kafkaTopicLookupService);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
@@ -268,6 +271,10 @@ public class ReplicaManager {
         if (log.isDebugEnabled()) {
             log.debug("Request key {} unblocked {} fetch requests.", key.keyLabel(), completed);
         }
+    }
+
+    public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
+        return logManager.updatePurgeAbortedTxnsOffsets();
     }
 
 }
