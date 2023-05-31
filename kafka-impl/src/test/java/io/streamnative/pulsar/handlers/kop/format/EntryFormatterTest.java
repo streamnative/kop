@@ -79,7 +79,8 @@ public class EntryFormatterTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            new ProducerStateManager("test",
+                    kafkaMixedServiceConfiguration.getKafkaTxnPurgeAbortedTxnIntervalSeconds()));
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

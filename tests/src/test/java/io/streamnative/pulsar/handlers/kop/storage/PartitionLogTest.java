@@ -46,7 +46,7 @@ public class PartitionLogTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            new ProducerStateManager("test", kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds()));
 
     @DataProvider(name = "compressionTypes")
     Object[] allCompressionTypes() {

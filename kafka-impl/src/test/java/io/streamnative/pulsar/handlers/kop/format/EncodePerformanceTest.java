@@ -48,7 +48,8 @@ public class EncodePerformanceTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            new ProducerStateManager("test",
+                    kafkaMixedServiceConfiguration.getKafkaTxnPurgeAbortedTxnIntervalSeconds()));
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
