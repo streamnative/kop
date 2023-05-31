@@ -655,12 +655,6 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 this.header, this.request, this.remoteAddress);
         }
 
-        public void bufferReleased() {
-            if (!released.compareAndSet(false, true)) {
-                throw new IllegalStateException("Already released");
-            }
-        }
-
         public void close() {
            if (!released.compareAndSet(false, true)) {
                return;

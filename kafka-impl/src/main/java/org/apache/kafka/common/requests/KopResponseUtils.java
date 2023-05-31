@@ -14,8 +14,8 @@
 package org.apache.kafka.common.requests;
 
 import io.netty.buffer.ByteBuf;
-import java.nio.ByteBuffer;
 import io.netty.buffer.Unpooled;
+import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Message;
