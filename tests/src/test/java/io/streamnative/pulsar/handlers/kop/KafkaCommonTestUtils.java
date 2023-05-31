@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -115,11 +116,12 @@ public class KafkaCommonTestUtils {
 
         ByteBuf byteBuf = KopResponseUtils.serializeRequest(mockHeader, request);
 
-        RequestHeader header = RequestHeader.parse(byteBuf.nioBuffer());
+        ByteBuffer byteBuffer = byteBuf.nioBuffer();
+        RequestHeader header = RequestHeader.parse(byteBuffer);
 
         ApiKeys apiKey = header.apiKey();
         short apiVersion = header.apiVersion();
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, byteBuf.nioBuffer()).request;
+        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, byteBuffer).request;
         return new KafkaCommandDecoder.KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
     }
 }
