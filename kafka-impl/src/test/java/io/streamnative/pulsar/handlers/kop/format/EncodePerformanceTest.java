@@ -13,7 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static org.mockito.Mockito.mock;
+
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
@@ -48,7 +51,8 @@ public class EncodePerformanceTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            new ProducerStateManager("test"),
+            mock(KafkaTopicLookupService.class));
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

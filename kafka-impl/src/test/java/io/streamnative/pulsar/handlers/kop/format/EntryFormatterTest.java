@@ -19,6 +19,7 @@ import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
 import static org.mockito.Mockito.mock;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.io.DataOutputStream;
@@ -79,7 +80,8 @@ public class EntryFormatterTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            new ProducerStateManager("test"),
+            mock(KafkaTopicLookupService.class));
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
