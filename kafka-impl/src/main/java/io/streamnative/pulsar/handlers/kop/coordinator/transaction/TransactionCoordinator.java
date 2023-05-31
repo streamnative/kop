@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.Transa
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
@@ -29,7 +30,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionSt
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -502,7 +502,7 @@ public class TransactionCoordinator {
             } else {
                 return Either.right(new EpochAndTxnTransitMetadata(
                         coordinatorEpoch, txnMetadata.prepareAddPartitions(
-                        new HashSet<>(partitionList), time.milliseconds())));
+                        ImmutableSet.copyOf(partitionList), time.milliseconds())));
             }
         });
 

@@ -13,12 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -132,7 +131,7 @@ public class TransactionMetadata {
                                      short newEpoch,
                                      short newLastEpoch,
                                      int newTxnTimeoutMs,
-                                     Set<TopicPartition> newTopicPartitions,
+                                     ImmutableSet<TopicPartition> newTopicPartitions,
                                      long newTxnStartTimestamp,
                                      long updateTimestamp) {
         if (pendingState.isPresent()) {
@@ -175,6 +174,8 @@ public class TransactionMetadata {
 
     /**
      * Transaction transit metadata.
+     *
+     * this is a immutable object representing the target transition of the transaction metadata.
      */
     @ToString
     @Builder
@@ -187,7 +188,7 @@ public class TransactionMetadata {
         private short lastProducerEpoch;
         private int txnTimeoutMs;
         private TransactionState txnState;
-        private Set<TopicPartition> topicPartitions;
+        private ImmutableSet<TopicPartition> topicPartitions;
         private long txnStartTimestamp;
         private long txnLastUpdateTimestamp;
     }
@@ -308,7 +309,7 @@ public class TransactionMetadata {
         // do not call transitTo as it will set the pending state,
         // a follow-up call to abort the transaction will set its pending state
         return new TxnTransitMetadata(producerId, lastProducerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
-                state, topicPartitions, txnStartTimestamp, txnLastUpdateTimestamp);
+                state, ImmutableSet.copyOf(topicPartitions), txnStartTimestamp, txnLastUpdateTimestamp);
     }
 
     public TxnTransitMetadata prepareFenceProducerEpoch() {
@@ -332,7 +333,7 @@ public class TransactionMetadata {
                 bumpedEpoch,
                 RecordBatch.NO_PRODUCER_EPOCH,
                 txnTimeoutMs,
-                topicPartitions,
+                ImmutableSet.copyOf(topicPartitions),
                 txnStartTimestamp,
                 txnLastUpdateTimestamp);
     }
@@ -377,7 +378,7 @@ public class TransactionMetadata {
 
         return errorsOrBumpEpochResult.map(bumpEpochResult -> prepareTransitionTo(TransactionState.EMPTY,
                 producerId, bumpEpochResult.bumpedEpoch, bumpEpochResult.lastEpoch, newTxnTimeoutMs,
-                Collections.emptySet(), -1, updateTimestamp));
+                ImmutableSet.of(), -1, updateTimestamp));
     }
 
     @AllArgsConstructor
@@ -400,7 +401,7 @@ public class TransactionMetadata {
                 (short) 0,
                 recordLastEpoch ? producerEpoch : RecordBatch.NO_PRODUCER_EPOCH,
                 newTxnTimeoutMs,
-                Collections.emptySet(),
+                ImmutableSet.of(),
                 -1,
                 updateTimestamp);
     }
@@ -419,7 +420,8 @@ public class TransactionMetadata {
         return flag;
     }
 
-    public TxnTransitMetadata prepareAddPartitions(Set<TopicPartition> addedTopicPartitions, Long updateTimestamp) {
+    public TxnTransitMetadata prepareAddPartitions(ImmutableSet<TopicPartition> addedTopicPartitions,
+                                                   Long updateTimestamp) {
         long newTxnStartTimestamp;
         switch(state) {
             case EMPTY:
@@ -430,18 +432,17 @@ public class TransactionMetadata {
             default:
                 newTxnStartTimestamp = txnStartTimestamp;
         }
-        Set<TopicPartition> newPartitionSet = new HashSet<>();
-        if (topicPartitions != null) {
-            newPartitionSet.addAll(topicPartitions);
-        }
-        newPartitionSet.addAll(new HashSet<>(addedTopicPartitions));
+        ImmutableSet<TopicPartition> partitions = ImmutableSet.<TopicPartition>builder()
+                .addAll((topicPartitions != null) ? topicPartitions : ImmutableSet.of())
+                .addAll(addedTopicPartitions)
+                .build();
         return prepareTransitionTo(TransactionState.ONGOING, producerId, producerEpoch, lastProducerEpoch,
-                txnTimeoutMs, newPartitionSet, newTxnStartTimestamp, updateTimestamp);
+                txnTimeoutMs, partitions, newTxnStartTimestamp, updateTimestamp);
     }
 
     public TxnTransitMetadata prepareAbortOrCommit(TransactionState newState, Long updateTimestamp) {
         return prepareTransitionTo(newState, producerId, producerEpoch, lastProducerEpoch,
-                txnTimeoutMs, topicPartitions, txnStartTimestamp, updateTimestamp);
+                txnTimeoutMs, ImmutableSet.copyOf(topicPartitions), txnStartTimestamp, updateTimestamp);
     }
 
     public TxnTransitMetadata prepareComplete(Long updateTimestamp) {
@@ -455,12 +456,12 @@ public class TransactionMetadata {
         hasFailedEpochFence = false;
 
         return prepareTransitionTo(newState, producerId, producerEpoch, lastProducerEpoch,
-                txnTimeoutMs, Collections.emptySet(), txnStartTimestamp, updateTimestamp);
+                txnTimeoutMs, ImmutableSet.of(), txnStartTimestamp, updateTimestamp);
     }
 
     public TxnTransitMetadata prepareDead() {
         return prepareTransitionTo(TransactionState.DEAD, producerId, producerEpoch, lastProducerEpoch, txnTimeoutMs,
-                Collections.emptySet(), txnStartTimestamp, txnLastUpdateTimestamp);
+                ImmutableSet.of(), txnStartTimestamp, txnLastUpdateTimestamp);
     }
 
     private void throwStateTransitionFailure(TxnTransitMetadata txnTransitMetadata) throws IllegalStateException {
