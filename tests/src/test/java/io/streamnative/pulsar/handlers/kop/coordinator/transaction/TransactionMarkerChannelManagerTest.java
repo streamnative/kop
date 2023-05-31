@@ -19,6 +19,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
@@ -110,7 +111,7 @@ public class TransactionMarkerChannelManagerTest {
                 .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                 .txnTimeoutMs(txnTimeoutMs)
                 .txnState(TransactionState.COMPLETE_COMMIT)
-                .topicPartitions(partitions)
+                .topicPartitions(ImmutableSet.copyOf(partitions))
                 .txnStartTimestamp(time.milliseconds())
                 .txnLastUpdateTimestamp(time.milliseconds())
                 .build();

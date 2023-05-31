@@ -21,6 +21,7 @@ import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 import static org.testng.AssertJUnit.fail;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
@@ -219,7 +220,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                         (short) 0,
                         0,
                         TransactionState.COMPLETE_COMMIT,
-                        Collections.emptySet(),
+                        ImmutableSet.of(),
                         now,
                         now);
 
@@ -233,7 +234,7 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
                         (short) 0,
                         0,
                         TransactionState.COMPLETE_COMMIT,
-                        Collections.emptySet(),
+                        ImmutableSet.of(),
                         now + txnConfig.getTransactionalIdExpirationMs(),
                         now + txnConfig.getTransactionalIdExpirationMs());
 
