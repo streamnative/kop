@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.util.ReferenceCountUtil;
 import io.streamnative.pulsar.handlers.kop.security.PlainSaslServer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -121,18 +122,23 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
-        ByteBuffer nio = ((ByteBuf) o).nioBuffer();
-        ResponseHeader responseHeader = ResponseHeader.parse(nio);
-        PendingRequest pendingRequest = pendingRequestMap.remove(responseHeader.correlationId());
-        if (pendingRequest != null) {
-            pendingRequest.complete(responseContext.set(
-                    channelHandlerContext.channel().remoteAddress(),
-                    pendingRequest.getApiVersion(),
-                    responseHeader.correlationId(),
-                    pendingRequest.parseResponse(nio)
-            ));
-        } else {
-            log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
+        ByteBuf buffer = (ByteBuf) o;
+        try {
+            ByteBuffer nio = buffer.nioBuffer();
+            ResponseHeader responseHeader = ResponseHeader.parse(nio);
+            PendingRequest pendingRequest = pendingRequestMap.remove(responseHeader.correlationId());
+            if (pendingRequest != null) {
+                pendingRequest.complete(responseContext.set(
+                        channelHandlerContext.channel().remoteAddress(),
+                        pendingRequest.getApiVersion(),
+                        responseHeader.correlationId(),
+                        pendingRequest.parseResponse(nio)
+                ));
+            } else {
+                log.error("Miss the inFlightRequest with correlationId {}.", responseHeader.correlationId());
+            }
+        } finally {
+            ReferenceCountUtil.safeRelease(buffer);
         }
     }
 
