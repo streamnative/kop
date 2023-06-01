@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.util.ReferenceCountUtil;
 import io.streamnative.pulsar.handlers.kop.security.PlainSaslServer;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -122,23 +123,28 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
-        ByteBuffer nio = ((ByteBuf) o).nioBuffer();
-        if (nio.remaining() < 4) {
-            log.error("Short read from channel {}", channelHandlerContext.channel());
-            channelHandlerContext.close();
-            return;
-        }
-        int correlationId = nio.getInt(0);
-        PendingRequest pendingRequest = pendingRequestMap.remove(correlationId);
-        if (pendingRequest != null) {
-            pendingRequest.complete(responseContext.set(
-                    channelHandlerContext.channel().remoteAddress(),
-                    pendingRequest.getApiVersion(),
-                    correlationId,
-                    pendingRequest.parseResponse(nio)
-            ));
-        } else {
-            log.error("Miss the inFlightRequest with correlationId {}.", correlationId);
+        ByteBuf buffer = (ByteBuf) o;
+        try {
+            ByteBuffer nio = buffer.nioBuffer();
+            if (nio.remaining() < 4) {
+                log.error("Short read from channel {}", channelHandlerContext.channel());
+                channelHandlerContext.close();
+                return;
+            }
+            int correlationId = nio.getInt(0);
+            PendingRequest pendingRequest = pendingRequestMap.remove(correlationId);
+            if (pendingRequest != null) {
+                pendingRequest.complete(responseContext.set(
+                        channelHandlerContext.channel().remoteAddress(),
+                        pendingRequest.getApiVersion(),
+                        correlationId,
+                        pendingRequest.parseResponse(nio)
+                ));
+            } else {
+                log.error("Miss the inFlightRequest with correlationId {}.", correlationId);
+            }
+        } finally {
+            ReferenceCountUtil.safeRelease(buffer);
         }
     }
 
