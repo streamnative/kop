@@ -888,6 +888,8 @@ public class PartitionLog {
             producerStateManager.update(producerAppendInfo);
         });
         analyzeResult.completedTxns().forEach(completedTxn -> {
+            // update to real last offset
+            completedTxn.lastOffset(lastOffset - 1);
             long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
             producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
             producerStateManager.completeTxn(completedTxn);
