@@ -141,12 +141,12 @@ public class KopEventManager {
                 registerEventQueuedLatency(eventWrapper);
 
                 if (eventWrapper.kopEvent instanceof ShutdownEventThread) {
-                    log.info("Shutting down KopEventThread.");
+                    log.debug("Shutting down KopEventThread.");
                 } else {
                     eventWrapper.kopEvent.process(registerEventLatency, MathUtils.nowInNano());
                 }
             } catch (InterruptedException e) {
-                log.error("Error processing event {}", eventWrapper, e);
+                log.debug("Error processing event {}", eventWrapper, e);
             }
         }
 
