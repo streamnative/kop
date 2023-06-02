@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.CURRENT_GROUP_VALUE_SCHEMA_VERSION;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.groupMetadataKey;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.groupMetadataValue;
@@ -22,13 +21,15 @@ import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadat
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.readGroupMessageValue;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.readMessageKey;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.readOffsetMessageValue;
+import static io.streamnative.pulsar.handlers.kop.utils.CoreUtils.groupBy;
 import static io.streamnative.pulsar.handlers.kop.utils.CoreUtils.inLock;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.coordinator.CompactedPartitionedTopic;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
@@ -50,11 +51,11 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
 import lombok.experimental.Accessors;
@@ -79,11 +80,8 @@ import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.Reader;
-import org.apache.pulsar.client.api.ReaderBuilder;
+import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -111,12 +109,6 @@ public class GroupMetadataManager {
     /* shutting down flag */
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
-    // Map of <PartitionId, Producer>
-    private final ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> offsetsProducers =
-            new ConcurrentHashMap<>();
-    private final ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> offsetsReaders =
-            new ConcurrentHashMap<>();
-
     /* single-thread scheduler to handle offset/group metadata cache loading and unloading */
     private final ScheduledExecutorService scheduler;
     /**
@@ -127,8 +119,9 @@ public class GroupMetadataManager {
      */
     private final Map<Long, Set<String>> openGroupsForProducer = new HashMap<>();
 
-    private final ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder;
-    private final ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder;
+    @Getter
+    @VisibleForTesting
+    private final CompactedPartitionedTopic<ByteBuffer> offsetTopic;
     private final Time time;
 
     /**
@@ -173,6 +166,22 @@ public class GroupMetadataManager {
 
     }
 
+    @AllArgsConstructor
+    public static class UnknownKey implements BaseKey {
+
+        private final short version;
+
+        @Override
+        public short version() {
+            return version;
+        }
+
+        @Override
+        public Object key() {
+            return null;
+        }
+    }
+
     /**
      * The group on a topic partition.
      */
@@ -201,15 +210,15 @@ public class GroupMetadataManager {
     }
 
     public GroupMetadataManager(OffsetConfig offsetConfig,
-                                ProducerBuilder<ByteBuffer> metadataTopicProducerBuilder,
-                                ReaderBuilder<ByteBuffer> metadataTopicReaderBuilder,
+                                SystemTopicClient client,
                                 ScheduledExecutorService scheduler,
                                 String namespacePrefixForMetadata,
                                 Time time) {
         this.offsetConfig = offsetConfig;
         this.compressionType = offsetConfig.offsetsTopicCompressionType();
-        this.metadataTopicProducerBuilder = metadataTopicProducerBuilder;
-        this.metadataTopicReaderBuilder = metadataTopicReaderBuilder;
+        this.offsetTopic = new CompactedPartitionedTopic<>(client.getPulsarClient(), Schema.BYTEBUFFER,
+                client.getMaxPendingMessages(), offsetConfig.offsetsTopicName(), scheduler,
+                buffer -> buffer.limit() == 0);
         this.scheduler = scheduler;
         this.namespacePrefix = namespacePrefixForMetadata;
         this.time = time;
@@ -232,44 +241,8 @@ public class GroupMetadataManager {
 
     public void shutdown() {
         shuttingDown.set(true);
-        List<CompletableFuture<Void>> producerCloses = offsetsProducers.values().stream()
-            .map(producerCompletableFuture -> producerCompletableFuture
-                    .thenComposeAsync(Producer::closeAsync, scheduler))
-            .collect(Collectors.toList());
-        offsetsProducers.clear();
-        List<CompletableFuture<Void>> readerCloses = offsetsReaders.values().stream()
-            .map(readerCompletableFuture -> readerCompletableFuture
-                    .thenComposeAsync(Reader::closeAsync, scheduler))
-            .collect(Collectors.toList());
-        offsetsReaders.clear();
-
-        FutureUtil.waitForAll(producerCloses).whenCompleteAsync((ignore, t) -> {
-            if (t != null) {
-                log.error("Error when close all the {} offsetsProducers in GroupMetadataManager",
-                    producerCloses.size(), t);
-            }
-            if (log.isDebugEnabled()) {
-                log.debug("Closed all the {} offsetsProducers in GroupMetadataManager", producerCloses.size());
-            }
-        }, scheduler);
-
-        FutureUtil.waitForAll(readerCloses).whenCompleteAsync((ignore, t) -> {
-            if (t != null) {
-                log.error("Error when close all the {} offsetsReaders in GroupMetadataManager",
-                    readerCloses.size(), t);
-            }
-            if (log.isDebugEnabled()) {
-                log.debug("Closed all the {} offsetsReaders in GroupMetadataManager.", readerCloses.size());
-            }
-        }, scheduler);
+        offsetTopic.close();
         scheduler.shutdown();
-    }
-
-    public ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> getOffsetsProducers() {
-        return offsetsProducers;
-    }
-    public ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> getOffsetsReaders() {
-        return offsetsReaders;
     }
 
     public Iterable<GroupMetadata> currentGroups() {
@@ -373,36 +346,29 @@ public class GroupMetadataManager {
         recordsBuilder.append(timestamp, key, value);
         MemoryRecords records = recordsBuilder.build();
 
-        return getOffsetsTopicProducer(group.groupId())
-            .thenComposeAsync(f -> f.newMessage()
-                    .keyBytes(key)
-                    .value(records.buffer())
-                    .eventTime(timestamp).sendAsync()
-                , scheduler)
-            .thenApplyAsync(msgId -> {
-                if (!isGroupLocal(group.groupId())) {
-                    if (log.isDebugEnabled()) {
-                        log.warn("add partition ownership for group {}",
-                            group.groupId());
-                    }
-                    addPartitionOwnership(partitionFor(group.groupId()));
-                }
-                return Errors.NONE;
-            }, scheduler)
-            .exceptionally(cause -> Errors.COORDINATOR_NOT_AVAILABLE);
+        String groupId = group.groupId();
+        int partition = partitionFor(groupId);
+        return storeOffsetMessageAsync(partition, key, records.buffer(), timestamp).thenApplyAsync(__ -> {
+            if (!isGroupLocal(groupId)) {
+                log.warn("add partition ownership for group {}", groupId);
+                addPartitionOwnership(partition);
+            }
+            return Errors.NONE;
+        }, scheduler).exceptionally(cause -> {
+            log.error("Coordinator failed to store group {}", groupId, cause);
+            return Errors.COORDINATOR_NOT_AVAILABLE;
+        });
     }
 
     // visible for mock
-    CompletableFuture<MessageId> storeOffsetMessage(String groupId,
-                                                    byte[] key,
-                                                    ByteBuffer buffer,
-                                                    long timestamp) {
-        return getOffsetsTopicProducer(groupId)
-            .thenComposeAsync(f -> f.newMessage()
-                    .keyBytes(key)
-                    .value(buffer)
-                    .eventTime(timestamp).sendAsync()
-                , scheduler);
+    CompletableFuture<MessageId> storeOffsetMessageAsync(
+            int partition, byte[] key, ByteBuffer value, long timestamp) {
+        return offsetTopic.sendAsync(partition, key, value, timestamp);
+    }
+
+    @VisibleForTesting
+    void storeOffsetMessage(int partition, byte[] key, ByteBuffer value) {
+        storeOffsetMessageAsync(partition, key, value, System.currentTimeMillis()).join();
     }
 
     public CompletableFuture<Map<TopicPartition, Errors>> storeOffsets(
@@ -501,8 +467,10 @@ public class GroupMetadataManager {
         }
 
         // dummy offset commit key
-        byte[] key = offsetCommitKey(group.groupId(), new TopicPartition("", -1), namespacePrefix);
-        return storeOffsetMessage(group.groupId(), key, entries.buffer(), timestamp)
+        String groupId = group.groupId();
+        int partition = partitionFor(groupId);
+        byte[] key = offsetCommitKey(groupId, new TopicPartition("", -1), namespacePrefix);
+        return storeOffsetMessageAsync(partition, key, entries.buffer(), timestamp)
             .thenApplyAsync(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
@@ -536,11 +504,10 @@ public class GroupMetadataManager {
                 }
 
                 log.error("Offset commit {} from group {}, consumer {} with generation {} failed"
-                                + " when appending to log due to ",
-                        filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause);
+                                + " when appending to log due to {}",
+                        filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause.getMessage());
 
                 if (cause.getCause() instanceof PulsarClientException.AlreadyClosedException) {
-                    this.offsetsProducers.remove(partitionFor(group.groupId()));
                     return Errors.NOT_COORDINATOR;
                 }
                 return Errors.UNKNOWN_SERVER_ERROR;
@@ -673,378 +640,209 @@ public class GroupMetadataManager {
                                                                Consumer<GroupMetadata> onGroupLoaded) {
         final String topicPartition = getTopicPartitionName(offsetsPartition);
         if (addLoadingPartition(offsetsPartition)) {
+            final var future = new CompletableFuture<Void>();
             log.info("Scheduling loading of offsets and group metadata from {}", topicPartition);
-            long startMs = time.milliseconds();
-            return getOffsetsTopicProducer(offsetsPartition)
-                .thenComposeAsync(f -> f.newMessage()
-                        .value(ByteBuffer.allocate(0))
-                        .eventTime(time.milliseconds()).sendAsync()
-                    , scheduler)
-                .thenComposeAsync(lastMessageId -> {
-                    if (log.isTraceEnabled()) {
-                        log.trace("Successfully write a placeholder record into {} @ {}",
-                            topicPartition, lastMessageId);
-                    }
-                    return doLoadGroupsAndOffsets(getOffsetsTopicReader(offsetsPartition),
-                        lastMessageId, onGroupLoaded);
-                }, scheduler)
-                .whenCompleteAsync((ignored, cause) -> {
-                    inLock(partitionLock, () -> {
-                        ownedPartitions.add(offsetsPartition);
-                        loadingPartitions.remove(offsetsPartition);
-                        return null;
-                    });
-                    if (null != cause) {
-                        log.error("Error loading offsets from {}", topicPartition, cause);
-                        return;
-                    }
-                    log.info("Finished loading offsets and group metadata from {} in {} milliseconds",
-                        topicPartition, time.milliseconds() - startMs);
-                }, scheduler);
+            final var loadedOffsets = new HashMap<GroupTopicPartition, CommitRecordMetadataAndOffset>();
+            final var pendingOffsets = new HashMap<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>>();
+            final var loadedGroups = new HashMap<String, GroupMetadata>();
+            final var removedGroups = new HashSet<String>();
+            offsetTopic.readToLatest(offsetsPartition, msg -> {
+                if (!shuttingDown.get()) {
+                    processOffsetMessage(msg, loadedOffsets, pendingOffsets, loadedGroups, removedGroups);
+                }
+            }).thenApplyAsync(result -> {
+                processLoadedAndRemovedGroups(topicPartition, onGroupLoaded, loadedOffsets, pendingOffsets,
+                        loadedGroups, removedGroups);
+                return result;
+            }, scheduler).whenCompleteAsync((result, cause) -> {
+                inLock(partitionLock, () -> {
+                    ownedPartitions.add(offsetsPartition);
+                    loadingPartitions.remove(offsetsPartition);
+                    return null;
+                });
+                if (null != cause) {
+                    log.error("Error loading offsets from {}", topicPartition, cause);
+                    future.completeExceptionally(cause);
+                    return;
+                }
+                log.info("Finished loading {} offsets and group metadata from {} in {} milliseconds",
+                        topicPartition, result.numMessages(), result.timeMs());
+                future.complete(null);
+            }, scheduler);
+            return future;
         } else {
             log.info("Already loading offsets and group metadata from {}", topicPartition);
             return CompletableFuture.completedFuture(null);
         }
     }
 
-    private CompletableFuture<Void> doLoadGroupsAndOffsets(
-        CompletableFuture<Reader<ByteBuffer>> metadataConsumer,
-        MessageId endMessageId,
-        Consumer<GroupMetadata> onGroupLoaded
-    ) {
-        final Map<GroupTopicPartition, CommitRecordMetadataAndOffset> loadedOffsets = new HashMap<>();
-        final Map<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>> pendingOffsets = new HashMap<>();
-        final Map<String, GroupMetadata> loadedGroups = new HashMap<>();
-        final Set<String> removedGroups = new HashSet<>();
-        final CompletableFuture<Void> resultFuture = new CompletableFuture<>();
-
-        loadNextMetadataMessage(
-            metadataConsumer,
-            endMessageId,
-            resultFuture,
-            onGroupLoaded,
-            loadedOffsets,
-            pendingOffsets,
-            loadedGroups,
-            removedGroups);
-
-        return resultFuture;
-    }
-
-    private void loadNextMetadataMessage(CompletableFuture<Reader<ByteBuffer>> metadataConsumer,
-                                         MessageId endMessageId,
-                                         CompletableFuture<Void> resultFuture,
-                                         Consumer<GroupMetadata> onGroupLoaded,
-                                         Map<GroupTopicPartition, CommitRecordMetadataAndOffset> loadedOffsets,
-                                         Map<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>>
-                                             pendingOffsets,
-                                         Map<String, GroupMetadata> loadedGroups,
-                                         Set<String> removedGroups) {
-        try {
-            unsafeLoadNextMetadataMessage(
-                metadataConsumer,
-                endMessageId,
-                resultFuture,
-                onGroupLoaded,
-                loadedOffsets,
-                pendingOffsets,
-                loadedGroups,
-                removedGroups
-            );
-        } catch (Throwable cause) {
-            log.error("Unknown exception caught when loading group and offsets from topic",
-                cause);
-            resultFuture.completeExceptionally(cause);
+    private void processOffsetMessage(Message<ByteBuffer> msg,
+                                      Map<GroupTopicPartition, CommitRecordMetadataAndOffset> loadedOffsets,
+                                      Map<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>> pendingOffsets,
+                                      Map<String, GroupMetadata> loadedGroups,
+                                      Set<String> removedGroups) {
+        if (log.isTraceEnabled()) {
+            log.trace("Reading the next metadata message from topic {}", msg.getTopicName());
         }
-    }
-
-    private void unsafeLoadNextMetadataMessage(CompletableFuture<Reader<ByteBuffer>> metadataConsumer,
-                                               MessageId endMessageId,
-                                               CompletableFuture<Void> resultFuture,
-                                               Consumer<GroupMetadata> onGroupLoaded,
-                                               Map<GroupTopicPartition, CommitRecordMetadataAndOffset> loadedOffsets,
-                                               Map<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>>
-                                                   pendingOffsets,
-                                               Map<String, GroupMetadata> loadedGroups,
-                                               Set<String> removedGroups) {
-        if (shuttingDown.get()) {
-            resultFuture.completeExceptionally(
-                new Exception("Group metadata manager is shutting down"));
+        if (!msg.hasKey()) {
+            // the messages without key are placeholders
             return;
         }
-
-        if (log.isTraceEnabled()) {
-            log.trace("Reading the next metadata message from topic {}",
-                metadataConsumer.join().getTopic());
-        }
-
-        BiConsumer<Message<ByteBuffer>, Throwable> readNextComplete = (message, cause) -> {
-            if (log.isTraceEnabled()) {
-                log.trace("Metadata consumer received a metadata message from {} @ {}",
-                    metadataConsumer.join().getTopic(), message.getMessageId());
-            }
-
-            if (null != cause) {
-                resultFuture.completeExceptionally(cause);
-                return;
-            }
-
-            if (message.getMessageId().compareTo(endMessageId) >= 0) {
-                // reach the end of partition
-                processLoadedAndRemovedGroups(
-                    resultFuture,
-                    onGroupLoaded,
-                    loadedOffsets,
-                    pendingOffsets,
-                    loadedGroups,
-                    removedGroups
-                );
-                return;
-            }
-
-            if (!message.hasKey()) {
-                // the messages without key are placeholders
-                loadNextMetadataMessage(
-                    metadataConsumer,
-                    endMessageId,
-                    resultFuture,
-                    onGroupLoaded,
-                    loadedOffsets,
-                    pendingOffsets,
-                    loadedGroups,
-                    removedGroups
-                );
-                return;
-            }
-
-            ByteBuffer buffer = message.getValue();
-            MemoryRecords memRecords = MemoryRecords.readableRecords(buffer);
-
-            memRecords.batches().forEach(batch -> {
-                boolean isTxnOffsetCommit = batch.isTransactional();
-                if (batch.isControlBatch()) {
-                    Iterator<Record> recordIterator = batch.iterator();
-                    if (recordIterator.hasNext()) {
-                        Record record = recordIterator.next();
-                        ControlRecordType controlRecord = ControlRecordType.parse(record.key());
-                        if (controlRecord == ControlRecordType.COMMIT) {
-                            pendingOffsets.getOrDefault(batch.producerId(), Collections.emptyMap())
-                                .forEach((groupTopicPartition, commitRecordMetadataAndOffset) -> {
+        MemoryRecords.readableRecords(msg.getValue()).batches().forEach(batch -> {
+            boolean isTxnOffsetCommit = batch.isTransactional();
+            if (batch.isControlBatch()) {
+                Iterator<Record> recordIterator = batch.iterator();
+                if (recordIterator.hasNext()) {
+                    Record record = recordIterator.next();
+                    ControlRecordType controlRecord = ControlRecordType.parse(record.key());
+                    if (controlRecord == ControlRecordType.COMMIT) {
+                        pendingOffsets.getOrDefault(batch.producerId(), Collections.emptyMap())
+                                .forEach(((groupTopicPartition, commitRecordMetadataAndOffset) -> {
                                     if (!loadedOffsets.containsKey(groupTopicPartition)
-                                        || loadedOffsets.get(groupTopicPartition)
-                                        .olderThan(commitRecordMetadataAndOffset)) {
+                                            || loadedOffsets.get(groupTopicPartition)
+                                            .olderThan(commitRecordMetadataAndOffset)) {
                                         loadedOffsets.put(groupTopicPartition, commitRecordMetadataAndOffset);
                                     }
-                                });
-                        }
-                        pendingOffsets.remove(batch.producerId());
+                                }));
                     }
-                } else {
-                    Optional<PositionImpl> batchBaseOffset = Optional.empty();
-                    for (Record record : batch) {
-                        checkArgument(record.hasKey(), "Group metadata/offset entry key should not be null");
-                        if (!batchBaseOffset.isPresent()) {
-                            batchBaseOffset = Optional.of(new PositionImpl(0, record.offset()));
+                    pendingOffsets.remove(batch.producerId());
+                }
+            } else {
+                Optional<PositionImpl> batchBaseOffset = Optional.empty();
+                for (Record record : batch) {
+                    if (!record.hasKey()) {
+                        // It throws an exception here in Kafka. However, the exception will be caught and processed
+                        // later in Kafka, while we cannot catch the exception in KoP. So here just skip it.
+                        log.warn("[{}] Group metadata/offset entry key should not be null", msg.getMessageId());
+                        continue;
+                    }
+                    if (batchBaseOffset.isEmpty()) {
+                        batchBaseOffset = Optional.of(new PositionImpl(0, record.offset()));
+                    }
+                    BaseKey bk = readMessageKey(record.key());
+                    if (log.isTraceEnabled()) {
+                        log.trace("Applying metadata record {} received from {}", bk, msg.getTopicName());
+                    }
+                    if (bk instanceof OffsetKey) {
+                        OffsetKey offsetKey = (OffsetKey) bk;
+                        if (isTxnOffsetCommit && !pendingOffsets.containsKey(batch.producerId())) {
+                            pendingOffsets.put(batch.producerId(), new HashMap<>());
                         }
-                        BaseKey bk = readMessageKey(record.key());
-
-                        if (log.isTraceEnabled()) {
-                            log.trace("Applying metadata record {} received from {}",
-                                bk, metadataConsumer.join().getTopic());
-                        }
-
-                        if (bk instanceof OffsetKey) {
-                            OffsetKey offsetKey = (OffsetKey) bk;
-                            if (isTxnOffsetCommit && !pendingOffsets.containsKey(batch.producerId())) {
-                                pendingOffsets.put(
-                                    batch.producerId(),
-                                    new HashMap<>()
-                                );
-                            }
-                            // load offset
-                            GroupTopicPartition groupTopicPartition = offsetKey.key();
-                            if (!record.hasValue()) {
-                                if (isTxnOffsetCommit) {
-                                    pendingOffsets.get(batch.producerId()).remove(groupTopicPartition);
-                                } else {
-                                    loadedOffsets.remove(groupTopicPartition);
-                                }
+                        // load offset
+                        GroupTopicPartition groupTopicPartition = offsetKey.key();
+                        if (!record.hasValue()) { // TODO: when should we send null messages?
+                            if (isTxnOffsetCommit) {
+                                pendingOffsets.get(batch.producerId()).remove(groupTopicPartition);
                             } else {
-                                OffsetAndMetadata offsetAndMetadata = readOffsetMessageValue(record.value());
-                                CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
-                                    new CommitRecordMetadataAndOffset(
-                                        batchBaseOffset,
-                                        offsetAndMetadata
-                                    );
-                                if (isTxnOffsetCommit) {
-                                    pendingOffsets.get(batch.producerId()).put(
-                                        groupTopicPartition,
-                                        commitRecordMetadataAndOffset);
-                                } else {
-                                    loadedOffsets.put(
-                                        groupTopicPartition,
-                                        commitRecordMetadataAndOffset
-                                    );
-                                }
-                            }
-                        } else if (bk instanceof GroupMetadataKey) {
-                            GroupMetadataKey groupMetadataKey = (GroupMetadataKey) bk;
-                            String gid = groupMetadataKey.key();
-                            GroupMetadata gm = readGroupMessageValue(gid, record.value());
-                            if (gm != null) {
-                                removedGroups.remove(gid);
-                                loadedGroups.put(gid, gm);
-                            } else {
-                                loadedGroups.remove(gid);
-                                removedGroups.add(gid);
+                                loadedOffsets.remove(groupTopicPartition);
                             }
                         } else {
-                            resultFuture.completeExceptionally(
-                                new IllegalStateException(
-                                    "Unexpected message key " + bk + " while loading offsets and group metadata"));
-                            return;
+                            OffsetAndMetadata offsetAndMetadata = readOffsetMessageValue(record.value());
+                            CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
+                                    new CommitRecordMetadataAndOffset(batchBaseOffset, offsetAndMetadata);
+                            if (isTxnOffsetCommit) {
+                                pendingOffsets.get(batch.producerId())
+                                        .put(groupTopicPartition, commitRecordMetadataAndOffset);
+                            } else {
+                                loadedOffsets.put(groupTopicPartition, commitRecordMetadataAndOffset);
+                            }
                         }
+                    } else if (bk instanceof GroupMetadataKey) {
+                        GroupMetadataKey groupMetadataKey = (GroupMetadataKey) bk;
+                        String groupId = groupMetadataKey.key();
+                        GroupMetadata groupMetadata = readGroupMessageValue(groupId, record.value());
+                        if (groupMetadata != null) {
+                            removedGroups.remove(groupId);
+                            loadedGroups.put(groupId, groupMetadata);
+                        } else {
+                            loadedGroups.remove(groupId);
+                            removedGroups.add(groupId);
+                        }
+                    } else {
+                        log.warn("Unknown message key with version {}"
+                                + " while loading offsets and group metadata from {}."
+                                + "Ignoring it. It could be a left over from an aborted upgrade.",
+                                bk.version(), msg.getTopicName());
                     }
                 }
-
-            });
-
-            loadNextMetadataMessage(
-                metadataConsumer,
-                endMessageId,
-                resultFuture,
-                onGroupLoaded,
-                loadedOffsets,
-                pendingOffsets,
-                loadedGroups,
-                removedGroups
-            );
-        };
-
-        metadataConsumer.thenComposeAsync(Reader::readNextAsync).whenCompleteAsync((message, cause) -> {
-            try {
-                readNextComplete.accept(message, cause);
-            } catch (Throwable completeCause) {
-                log.error("Unknown exception caught when processing the received metadata message from topic {}",
-                    metadataConsumer.join().getTopic(), completeCause);
-                resultFuture.completeExceptionally(completeCause);
             }
-        }, scheduler);
+        });
     }
 
-    private void processLoadedAndRemovedGroups(CompletableFuture<Void> resultFuture,
-                                               Consumer<GroupMetadata> onGroupLoaded,
-                                               Map<GroupTopicPartition, CommitRecordMetadataAndOffset> loadedOffsets,
-                                               Map<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>>
-                                                   pendingOffsets,
-                                               Map<String, GroupMetadata> loadedGroups,
-                                               Set<String> removedGroups) {
+    private void processLoadedAndRemovedGroups(
+            String topicPartition,
+            Consumer<GroupMetadata> onGroupLoaded,
+            Map<GroupTopicPartition, CommitRecordMetadataAndOffset> loadedOffsets,
+            Map<Long, Map<GroupTopicPartition, CommitRecordMetadataAndOffset>> pendingOffsets,
+            Map<String, GroupMetadata> loadedGroups,
+            Set<String> removedGroups) {
         if (log.isTraceEnabled()) {
             log.trace("Completing loading : {} loaded groups, {} removed groups, {} loaded offsets, {} pending offsets",
-                loadedGroups.size(), removedGroups.size(), loadedOffsets.size(), pendingOffsets.size());
+                    loadedGroups.size(), removedGroups.size(), loadedOffsets.size(), pendingOffsets.size());
         }
-        try {
-            Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>> groupLoadedOffsets =
-                loadedOffsets.entrySet().stream()
-                    .collect(Collectors.groupingBy(
-                        e -> e.getKey().group(),
-                        Collectors.toMap(
-                            f -> f.getKey().topicPartition(),
-                                Map.Entry::getValue
-                        ))
-                    );
-            Map<Boolean, Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>>> partitionedLoadedOffsets =
-                CoreUtils.partition(groupLoadedOffsets, loadedGroups::containsKey);
-            Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>> groupOffsets =
-                partitionedLoadedOffsets.get(true);
-            Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>> emptyGroupOffsets =
-                partitionedLoadedOffsets.get(false);
 
-            Map<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>> pendingOffsetsByGroup =
-                new HashMap<>();
-            pendingOffsets.forEach((producerId, producerOffsets) -> {
-                producerOffsets.keySet().stream()
-                    .map(GroupTopicPartition::group)
+        final var groupOffsetsPair = CoreUtils.partition(
+                CoreUtils.groupBy(loadedOffsets, GroupTopicPartition::group, GroupTopicPartition::topicPartition),
+                loadedGroups::containsKey);
+        final var groupOffsets = groupOffsetsPair.get(true);
+        final var emptyGroupOffsets = groupOffsetsPair.get(false);
+
+        final var pendingOffsetsByGroup =
+                new HashMap<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>>();
+        pendingOffsets.forEach((producerId, producerOffsets) -> {
+            producerOffsets.keySet().stream().map(GroupTopicPartition::group)
                     .forEach(group -> addProducerGroup(producerId, group));
-                producerOffsets
-                    .entrySet()
-                    .stream()
-                    .collect(Collectors.groupingBy(
-                        e -> e.getKey().group,
-                        Collectors.toMap(
-                            f -> f.getKey().topicPartition(),
-                                Map.Entry::getValue
-                        )
-                    ))
-                    .forEach((group, offsets) -> {
-                        Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>> groupPendingOffsets =
-                            pendingOffsetsByGroup.computeIfAbsent(
-                                group,
-                                g -> new HashMap<>());
-                        Map<TopicPartition, CommitRecordMetadataAndOffset> groupProducerOffsets =
-                            groupPendingOffsets.computeIfAbsent(
-                                producerId,
-                                p -> new HashMap<>());
-                        groupProducerOffsets.putAll(offsets);
-                    });
+            groupBy(producerOffsets, GroupTopicPartition::group).forEach((group, offsets) -> {
+                final var groupPendingOffsets = pendingOffsetsByGroup.computeIfAbsent(group, __ -> new HashMap<>());
+                final var groupProducerOffsets = groupPendingOffsets.computeIfAbsent(producerId, __ -> new HashMap<>());
+                offsets.forEach((groupTopicPartition, offset) -> {
+                    groupProducerOffsets.put(groupTopicPartition.topicPartition(), offset);
+                });
             });
+        });
 
-            Map<Boolean, Map<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>>>
-                    partitionedPendingOffsetsByGroup = CoreUtils.partition(
-                    pendingOffsetsByGroup,
-                    loadedGroups::containsKey
-            );
-            Map<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>> pendingGroupOffsets =
-                partitionedPendingOffsetsByGroup.get(true);
-            Map<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>> pendingEmptyGroupOffsets =
-                partitionedPendingOffsetsByGroup.get(false);
+        final var pendingGroupOffsetsPair = CoreUtils.partition(pendingOffsetsByGroup, loadedGroups::containsKey);
+        final var pendingGroupOffsets = pendingGroupOffsetsPair.get(true);
+        final var pendingEmptyGroupOffsets = pendingGroupOffsetsPair.get(false);
 
-            loadedGroups.values().forEach(group -> {
-                Map<TopicPartition, CommitRecordMetadataAndOffset> offsets =
-                    groupOffsets.getOrDefault(group.groupId(), Collections.emptyMap());
-                Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>> pOffsets =
+        // load groups which store offsets in kafka, but which have no active members and thus no group
+        // metadata stored in the log
+        Stream.concat(
+                emptyGroupOffsets.keySet().stream(), pendingEmptyGroupOffsets.keySet().stream()).forEach(groupId -> {
+            // TODO: add the time field to GroupMetadata, see https://github.com/apache/kafka/pull/4896
+            final var group = new GroupMetadata(groupId, GroupState.Empty);
+            final var offsets = emptyGroupOffsets.getOrDefault(groupId, Collections.emptyMap());
+            final var pendingOffsetsOfTheGroup = pendingEmptyGroupOffsets.getOrDefault(groupId, Collections.emptyMap());
+            if (log.isDebugEnabled()) {
+                log.debug("Loaded group metadata {} with offsets {} and pending offsets {}",
+                        group, offsets, pendingOffsetsOfTheGroup);
+            }
+            loadGroup(group, offsets, pendingOffsetsOfTheGroup);
+            onGroupLoaded.accept(group);
+        });
+
+        loadedGroups.values().forEach(group -> {
+            final var offsets = groupOffsets.getOrDefault(group.groupId(), Collections.emptyMap());
+            final var pendingOffsetsOfTheGroup =
                     pendingGroupOffsets.getOrDefault(group.groupId(), Collections.emptyMap());
+            if (log.isDebugEnabled()) {
+                log.debug("Loaded group metadata {} with offsets {} and pending offsets {}",
+                        group, offsets, pendingOffsetsOfTheGroup);
+            }
+            loadGroup(group, offsets, pendingOffsetsOfTheGroup);
+            onGroupLoaded.accept(group);
+        });
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Loaded group metadata {} with offsets {} and pending offsets {}",
-                        group, offsets, pOffsets);
-                }
-
-                loadGroup(group, offsets, pOffsets);
-                onGroupLoaded.accept(group);
-            });
-
-            Sets.union(
-                emptyGroupOffsets.keySet(),
-                pendingEmptyGroupOffsets.keySet()
-            ).forEach(groupId -> {
-                GroupMetadata group = new GroupMetadata(groupId, GroupState.Empty);
-                Map<TopicPartition, CommitRecordMetadataAndOffset> offsets =
-                    emptyGroupOffsets.getOrDefault(groupId, Collections.emptyMap());
-                Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>> pOffsets =
-                    pendingEmptyGroupOffsets.getOrDefault(groupId, Collections.emptyMap());
-                if (log.isDebugEnabled()) {
-                    log.debug("Loaded group metadata {} with offsets {} and pending offsets {}",
-                        group, offsets, pOffsets);
-                }
-                loadGroup(group, offsets, pOffsets);
-                onGroupLoaded.accept(group);
-            });
-
-            removedGroups.forEach(groupId -> {
-                // if the cache already contains a group which should be removed, raise an error. Note that it
-                // is possible (however unlikely) for a consumer group to be removed, and then to be used only for
-                // offset storage (i.e. by "simple" consumers)
-                if (groupMetadataCache.containsKey(groupId)
-                    && !emptyGroupOffsets.containsKey(groupId)) {
-                    throw new IllegalStateException("Unexpected unload of active group " + groupId
-                        + " while loading partition");
-                }
-            });
-            resultFuture.complete(null);
-        } catch (RuntimeException re) {
-            resultFuture.completeExceptionally(re);
-        }
+        removedGroups.forEach(groupId -> {
+            // if the cache already contains a group which should be removed, raise an error. Note that it
+            // is possible (however unlikely) for a consumer group to be removed, and then to be used only for
+            // offset storage (i.e. by "simple" consumers)
+            // TODO: Should we throw an exception here?
+            if (groupMetadataCache.containsKey(groupId) && !emptyGroupOffsets.containsKey(groupId)) {
+                log.warn("Unexpected unload of active group {} while loading partition {}",
+                        groupId, topicPartition);
+            }
+        });
     }
 
     private void loadGroup(GroupMetadata group,
@@ -1136,7 +934,7 @@ public class GroupMetadataManager {
             partitionLock.unlock();
         }
 
-        removeProducerAndReaderFromCache(partition);
+        offsetTopic.remove(partition);
         log.info("Finished unloading {}. Removed {} cached offsets and {} cached groups.",
                 getTopicPartitionName(partition), numOffsetsRemoved, numGroupsRemoved);
     }
@@ -1204,11 +1002,7 @@ public class GroupMetadataManager {
                 byte[] groupKey = groupMetadataKey(
                     group.groupId()
                 );
-                return getOffsetsTopicProducer(group.groupId())
-                    .thenComposeAsync(f -> f.newMessage()
-                        .keyBytes(groupKey)
-                        .value(records.buffer())
-                        .eventTime(timestamp).sendAsync(), scheduler)
+                return storeOffsetMessageAsync(partitionFor(group.groupId()), groupKey, records.buffer(), timestamp)
                     .thenApplyAsync(ignored -> removedOffsets.size(), scheduler)
                     .exceptionally(cause -> {
                         log.error("Failed to append {} tombstones to topic {} for expired/deleted "
@@ -1301,59 +1095,6 @@ public class GroupMetadataManager {
             } else {
                 return loadingPartitions.add(partition);
             }
-        });
-    }
-
-    CompletableFuture<Producer<ByteBuffer>> getOffsetsTopicProducer(String groupId) {
-        return getOffsetsTopicProducer(partitionFor(groupId));
-    }
-
-    CompletableFuture<Producer<ByteBuffer>> getOffsetsTopicProducer(int partitionId) {
-        return offsetsProducers.computeIfAbsent(partitionId,
-            id -> {
-                final String partitionName = getTopicPartitionName(partitionId);
-                if (log.isDebugEnabled()) {
-                    log.debug("Will create Partitioned producer: {}", partitionName);
-                }
-                return metadataTopicProducerBuilder.clone()
-                    .topic(partitionName)
-                    .createAsync();
-            });
-    }
-
-    CompletableFuture<Reader<ByteBuffer>> getOffsetsTopicReader(int partitionId) {
-        return offsetsReaders.computeIfAbsent(partitionId,
-            id -> {
-                final String partitionName = getTopicPartitionName(partitionId);
-                if (log.isDebugEnabled()) {
-                    log.debug("Will create Partitioned reader: {}", partitionName);
-                }
-                return metadataTopicReaderBuilder.clone()
-                    .topic(partitionName)
-                    .readCompacted(true)
-                    .createAsync();
-            });
-    }
-
-    private void removeProducerAndReaderFromCache(int partition) {
-        final String partitionName = getTopicPartitionName(partition);
-        Optional.ofNullable(offsetsProducers.remove(partition)).ifPresent(producerFuture -> {
-            producerFuture.thenApplyAsync(Producer::closeAsync).whenCompleteAsync((__, e) -> {
-                if (e != null) {
-                    log.error("Failed to close producer for {}", partitionName);
-                } else if (log.isDebugEnabled()) {
-                    log.debug("Closed offset producer for {}", partitionName);
-                }
-            }, scheduler);
-        });
-        Optional.ofNullable(offsetsReaders.remove(partition)).ifPresent(readerFuture -> {
-            readerFuture.thenApplyAsync(Reader::closeAsync).whenCompleteAsync((__, e) -> {
-                if (e != null) {
-                    log.error("Failed to close reader for {}", partitionName);
-                } else if (log.isDebugEnabled()) {
-                    log.debug("Closed offset reader for {}", partitionName);
-                }
-            }, scheduler);
         });
     }
 }

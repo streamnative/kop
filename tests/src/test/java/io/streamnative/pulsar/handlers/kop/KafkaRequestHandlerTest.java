@@ -53,6 +53,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -106,7 +107,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
@@ -1073,14 +1074,19 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 records.forEach(record -> {
                     consumer.commitSync();
                     if (flag.get()) {
-                        handler.getGroupCoordinator().getOffsetsProducers().values()
-                                .forEach(producerCompletableFuture -> {
-                            try {
-                                producerCompletableFuture.get().close();
-                            } catch (PulsarClientException | InterruptedException | ExecutionException e) {
-                                log.error("Close offset producer failed.");
+                        var compactedTopic = handler.getGroupCoordinator().getGroupManager().getOffsetTopic();
+                        try {
+                            var field = compactedTopic.getClass().getDeclaredField("producers");
+                            field.setAccessible(true);
+                            @SuppressWarnings("unchecked")
+                            var producers = (ConcurrentHashMap<String, Future<Producer<ByteBuffer>>>)
+                                    field.get(compactedTopic);
+                            for (var offsetProducer : producers.values()) {
+                                offsetProducer.get().close();
                             }
-                        });
+                        } catch (Throwable e) {
+                            throw new RuntimeException(e);
+                        }
                         flag.set(false);
                     }
                 });
