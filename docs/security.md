@@ -308,6 +308,15 @@ brokerClientAuthenticationPlugin=org.apache.pulsar.client.impl.auth.Authenticati
 brokerClientAuthenticationParameters=tlsCertFile:/path/to/admin.cert.pem,tlsKeyFile:/path/to/my-ca/admin.key-pk8.pem
 ```
 
+> **Note**
+>
+> `tlsEnabled` is actually not required to enable TLS authentication at the broker side. However, for some legacy versions of KoP, you have to enable it.
+>
+> The following versions of KoP don't need to enable `tlsEnabled`:
+> - Pulsar 3.x.y: KoP 3.0.0.1 or later
+> - Pulsar 2.11.x: KoP 2.11.1.2 or later
+> - Pulsar 2.10.x: KoP 2.10.4.3 or later
+
 See [Transport Encryption using TLS](https://pulsar.apache.org/docs/en/security-tls-transport/) and [Authentication using TLS](https://pulsar.apache.org/docs/en/security-tls-authentication/) for how to generate certificates and keys for TLS authentication.
 
 ## Authorization
