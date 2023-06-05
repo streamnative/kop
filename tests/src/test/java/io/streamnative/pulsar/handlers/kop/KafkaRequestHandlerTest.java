@@ -219,7 +219,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kopRequest, apiVersionsResponse);
 
         // 1. serialize response into ByteBuf
-        ByteBuf serializedResponse = KafkaCommandDecoder.responseToByteBuf(kopResponse.getResponse(), kopRequest);
+        ByteBuf serializedResponse = KafkaCommandDecoder.responseToByteBuf(kopResponse.getResponse(), kopRequest, true);
 
         // 2. verify responseToByteBuf works well.
         ByteBuffer byteBuffer = serializedResponse.nioBuffer();
