@@ -158,7 +158,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         return ListOffsetRequestV0.parse(nio, apiVersion);
     }
 
-    protected static ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request) {
+    protected static ByteBuf responseToByteBuf(AbstractResponse response, KafkaHeaderAndRequest request,
+            boolean release) {
         try (KafkaHeaderAndResponse kafkaHeaderAndResponse =
                  KafkaHeaderAndResponse.responseForRequest(request, response)) {
             // Lowering Client API_VERSION request to the oldest API_VERSION KoP supports, this is to make \
@@ -176,8 +177,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 kafkaHeaderAndResponse.getResponse()
             );
         } finally {
-            // the request is not needed any more.
-            request.close();
+            if (release) {
+                // the request is not needed any more.
+                request.close();
+            }
         }
     }
 
@@ -413,7 +416,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (responseFuture.isCompletedExceptionally()) {
                 responseFuture.exceptionally(e -> {
                     log.error("[{}] request {} completed exceptionally", channel, request.getHeader(), e);
-                    sendErrorResponse(request, channel, e);
+                    sendErrorResponse(request, channel, e, true);
 
                     requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
                             .registerFailedEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
@@ -429,7 +432,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                         // It should not be null, just check it for safety
                         log.error("[{}] Unexpected null completed future for request {}",
                                 ctx.channel(), request.getHeader());
-                        sendErrorResponse(request, channel, new ApiException("response is null"));
+                        sendErrorResponse(request, channel, new ApiException("response is null"), true);
                         return;
                     }
                     if (log.isDebugEnabled()) {
@@ -439,7 +442,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                 request, response);
                     }
 
-                    final ByteBuf result = responseToByteBuf(response, request);
+                    final ByteBuf result = responseToByteBuf(response, request, true);
                     final int resultSize = result.readableBytes();
                     channel.writeAndFlush(result).addListener(future -> {
                         if (response instanceof ResponseCallbackWrapper) {
@@ -462,15 +465,17 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 log.error("[{}] request {} is not completed for {} ns (> {} ms)",
                         channel, request.getHeader(), nanoSecondsSinceCreated, kafkaConfig.getRequestTimeoutMs());
                 responseFuture.cancel(true);
-                sendErrorResponse(request, channel, new ApiException("request is expired from server side"));
+                sendErrorResponse(request, channel, new ApiException("request is expired from server side"),
+                        false); // we cannot release the request, because the request is still processed somewhere
                 requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
                         .registerFailedEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
             }
         }
     }
 
-    private void sendErrorResponse(KafkaHeaderAndRequest request, Channel channel, Throwable customError) {
-        ByteBuf result = request.createErrorResponse(customError);
+    private void sendErrorResponse(KafkaHeaderAndRequest request, Channel channel, Throwable customError,
+            boolean releaseRequest) {
+        ByteBuf result = request.createErrorResponse(customError, releaseRequest);
         final int resultSize = result.readableBytes();
         channel.writeAndFlush(result).addListener(future -> {
             if (future.isSuccess()) {
@@ -640,8 +645,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             }
         }
 
-        public ByteBuf createErrorResponse(Throwable e) {
-            return responseToByteBuf(request.getErrorResponse(e), this);
+        public ByteBuf createErrorResponse(Throwable e, boolean release) {
+            return responseToByteBuf(request.getErrorResponse(e), this,
+                    release);
         }
 
         @Override
