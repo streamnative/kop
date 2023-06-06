@@ -228,5 +228,13 @@ public class CompactedPartitionedTopic<T> implements Closeable {
         return topic + TopicName.PARTITIONED_TOPIC_SUFFIX + partition;
     }
 
-    public record ReadResult(long timeMs, long numMessages) {}
+    public record ReadResult(long timeMs, long numMessages) {
+        @Override
+        public boolean equals(Object obj) {
+            if (!(obj instanceof ReadResult that)) {
+                return false;
+            }
+            return this.timeMs == that.timeMs && this.numMessages == that.numMessages;
+        }
+    }
 }
