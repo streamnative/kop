@@ -168,4 +168,47 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         assertEquals(consumerRecords.get(0).value(), "v1");
         assertEquals(consumerRecords.get(0).timestamp(), 0L);
     }
+
+    @Test(timeOut = 30000)
+    public void testPublishTimestampInBatch() {
+        String topic = "test-publish-timestamp-in-batch";
+        String subscription = "test-group";
+        Properties properties = newKafkaProducerProperties();
+        int numRecords = 100;
+        @Cleanup
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+        for (int i = 0; i < numRecords; i++) {
+            producer.send(new ProducerRecord<>(topic, null, (long) i, "k1", "v1", null));
+        }
+
+        producer.flush();
+
+        @Cleanup
+        final KafkaConsumer<String, String> consumer = newKafkaConsumer(topic, subscription);
+        consumer.subscribe(Collections.singleton(topic));
+        List<ConsumerRecord<String, String>> consumerRecords = receiveRecords(consumer, numRecords);
+        assertEquals(consumerRecords.size(), numRecords);
+        for (int i = 0; i < numRecords; i++) {
+            assertEquals(consumerRecords.get(i).key(), "k1");
+            assertEquals(consumerRecords.get(i).value(), "v1");
+            assertEquals(consumerRecords.get(i).timestamp(), i);
+        }
+
+        // Test first record has specified timestamp
+        producer.send(new ProducerRecord<>(topic, null, 1L, "k1", "v1", null));
+        for (int i = 0; i < numRecords; i++) {
+            producer.send(new ProducerRecord<>(topic, null, "k1", "v1", null));
+        }
+
+        consumerRecords = receiveRecords(consumer, numRecords);
+        assertEquals(consumerRecords.size(), numRecords + 1);
+        assertEquals(consumerRecords.get(0).key(), "k1");
+        assertEquals(consumerRecords.get(0).value(), "v1");
+        assertEquals(consumerRecords.get(0).timestamp(), 1L);
+        for (int i = 1; i < numRecords + 1; i++) {
+            assertEquals(consumerRecords.get(i).key(), "k1");
+            assertEquals(consumerRecords.get(i).value(), "v1");
+            assertTrue(consumerRecords.get(i).timestamp() > 0);
+        }
+    }
 }
