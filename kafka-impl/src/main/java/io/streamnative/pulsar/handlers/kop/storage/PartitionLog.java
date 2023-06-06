@@ -854,11 +854,12 @@ public class PartitionLog {
 
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();
+        final int byteBufSize = byteBuf.readableBytes();
         final long beforePublish = time.nanoseconds();
 
         publishMessage(persistentTopic, byteBuf, appendInfo)
                 .whenComplete((offset, e) -> {
-            appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBuf.readableBytes());
+            appendRecordsContext.getCompleteSendOperationForThrottling().accept(byteBufSize);
 
             if (e == null) {
                 requestStats.getMessagePublishStats().registerSuccessfulEvent(
