@@ -17,6 +17,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
+import org.apache.kafka.common.protocol.Message;
+import org.apache.kafka.common.protocol.ObjectSerializationCache;
 
 /**
  * Provide util classes to access protected fields in kafka structures.
@@ -34,12 +37,34 @@ public class KopResponseUtils {
     public static ByteBuf serializeResponse(short version,
                                             ResponseHeader responseHeader,
                                             AbstractResponse response) {
-        return Unpooled.wrappedBuffer(response.serializeWithHeader(responseHeader, version));
+        return serializeWithHeader(response, responseHeader, version);
     }
 
-    public static ByteBuffer serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
-        return RequestUtils.serialize(requestHeader.data(), requestHeader.headerVersion(),
+    private static ByteBuf serializeWithHeader(AbstractResponse response, ResponseHeader header, short version) {
+        return serialize(header.data(), header.headerVersion(), response.data(), version);
+    }
+
+    public static ByteBuf serializeRequest(RequestHeader requestHeader, AbstractRequest request) {
+        return serialize(requestHeader.data(), requestHeader.headerVersion(),
                 request.data(), request.version());
+    }
+
+    public static ByteBuf serialize(
+            Message header,
+            short headerVersion,
+            Message apiMessage,
+            short apiVersion
+    ) {
+        ObjectSerializationCache cache = new ObjectSerializationCache();
+
+        int headerSize = header.size(cache, headerVersion);
+        int messageSize = apiMessage.size(cache, apiVersion);
+        ByteBuffer result = ByteBuffer.allocate(headerSize + messageSize);
+        ByteBufferAccessor writable = new ByteBufferAccessor(result);
+        header.write(writable, cache, headerVersion);
+        apiMessage.write(writable, cache, apiVersion);
+        result.flip();
+        return Unpooled.wrappedBuffer(result);
     }
 
 }
