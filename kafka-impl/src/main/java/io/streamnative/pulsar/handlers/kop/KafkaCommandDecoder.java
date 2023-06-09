@@ -386,7 +386,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                 break;
             }
 
-            if (PRODUCE.equals(responseAndRequest.request.getHeader().apiKey()) ) {
+            if (PRODUCE.equals(responseAndRequest.request.getHeader().apiKey())) {
                 ProduceRequest produceRequest = (ProduceRequest) responseAndRequest.request.getRequest();
                 if (produceRequest.acks() == 0) {
                     if (requestQueue.remove(responseAndRequest)) {
