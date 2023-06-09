@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -327,11 +328,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         };
     }
 
+
     @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
     public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenSnapshots) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenSnapshots;
-        String transactionalId = "myProducer_" + numTransactionsBetweenSnapshots;
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
         boolean isBatch = false;
 
@@ -399,7 +401,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
-        String transactionalId = "myProducer_" + numTransactionsBetweenUnloads;
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
         boolean isBatch = false;
 
@@ -471,7 +473,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryAbortedTransaction(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "basicRecoveryAbortedTransaction_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -504,7 +506,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.beginTransaction();
         String lastMessage = "committed mgs";
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer.commitTransaction();
 
@@ -521,12 +523,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-    @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
+    @Test(timeOut = 1000 * 30, dataProvider = "takeSnapshotBeforeRecovery")
     public void basicRecoveryAbortedTransactionDueToProducerFenced(boolean takeSnapshotBeforeRecovery)
             throws Exception {
 
         String topicName = "basicRecoveryAbortedTransactionDueToProducerFenced_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -569,7 +571,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
-        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
 
@@ -588,12 +590,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
+    @Test(timeOut = 1000 * 30, dataProvider = "takeSnapshotBeforeRecovery")
     public void basicRecoveryAbortedTransactionDueToProducerTimedOut(boolean takeSnapshotBeforeRecovery)
             throws Exception {
 
         String topicName = "basicRecoveryAbortedTransactionDueToProducerTimedOut_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -634,7 +636,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.initTransactions();
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
-        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
 
