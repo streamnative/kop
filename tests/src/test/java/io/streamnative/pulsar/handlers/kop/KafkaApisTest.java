@@ -1040,6 +1040,28 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 20000)
+    public void testNoAcksProduce() throws Exception {
+        final String topic = "testAcks";
+        admin.topics().createPartitionedTopic(topic, 1);
+
+        final TopicPartition topicPartition = new TopicPartition(topic, 0);
+
+        Properties producerNoAckProperties = newKafkaProducerProperties();
+        producerNoAckProperties.put(ProducerConfig.ACKS_CONFIG, "1");
+        @Cleanup
+        final KafkaProducer<String, String> producerNoAck = new KafkaProducer<>(producerNoAckProperties);
+        RecordMetadata noAckMetadata = producerNoAck.send(new ProducerRecord<>(topic, "test")).get();
+        assertEquals(noAckMetadata.offset(), 0);
+
+        Properties producerAckProperties = newKafkaProducerProperties();
+        producerAckProperties.put(ProducerConfig.ACKS_CONFIG, "0");
+        @Cleanup
+        final KafkaProducer<String, String> producerAck = new KafkaProducer<>(producerAckProperties);
+        RecordMetadata ackMetadata = producerAck.send(new ProducerRecord<>(topic, "test")).get();
+        assertEquals(ackMetadata.offset(), -1);
+    }
+
+    @Test(timeOut = 20000)
     public void testIllegalManagedLedger() throws Exception {
         final String topic = "testIllegalManagedLedger";
         admin.topics().createPartitionedTopic(topic, 1);

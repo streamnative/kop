@@ -259,13 +259,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private int requestTimeoutMs = 30000;
 
     @FieldContext(
-        category = CATEGORY_KOP,
-        doc = "controls the criteria under which requests are considered complete, \n"
-            + "like acks in kafka\n"
-    )
-    private short requiredAcks = 1;
-
-    @FieldContext(
             category = CATEGORY_KOP,
             doc = "Idle connections timeout: the server handler close the connections that idle more than this, \n"
                     + "like connections.max.idle.ms in kafka server."

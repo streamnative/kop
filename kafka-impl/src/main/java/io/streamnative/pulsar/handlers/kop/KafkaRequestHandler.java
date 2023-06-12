@@ -2411,7 +2411,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     ctx);
             getReplicaManager().appendRecords(
                     kafkaConfig.getRequestTimeoutMs(),
-                    kafkaConfig.getRequiredAcks(),
+                    (short) 1,
                     true,
                     currentNamespacePrefix(),
                     controlRecords,
