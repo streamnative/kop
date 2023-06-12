@@ -310,7 +310,7 @@ public class TransactionCoordinator {
             return;
         }
         if (errorsOrEpochAndTransitMetadata.isLeft()) {
-            log.error("Failed to init producerId: {}", errorsOrEpochAndTransitMetadata.getLeft());
+            log.error("Failed to init producerId {} : {}", transactionalId, errorsOrEpochAndTransitMetadata.getLeft());
             responseCallback.accept(initTransactionError(errorsOrEpochAndTransitMetadata.getLeft()));
             return;
         }
