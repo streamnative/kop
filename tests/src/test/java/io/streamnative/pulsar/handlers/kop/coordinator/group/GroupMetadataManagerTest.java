@@ -37,6 +37,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.BaseKey;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupMetadataKey;
@@ -81,7 +82,6 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.ReaderBuilder;
@@ -114,6 +114,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     private ReaderBuilder<ByteBuffer> readerBuilder = null;
     private Consumer<ByteBuffer> consumer;
     private OrderedScheduler scheduler;
+    private SystemTopicClient systemTopicClient;
 
     @BeforeClass
     @Override
@@ -153,10 +154,10 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 .name("test-scheduler")
                 .numThreads(1)
                 .build();
+        systemTopicClient = new SystemTopicClient(pulsar, conf);
         groupMetadataManager = new GroupMetadataManager(
                 offsetConfig,
-                producerBuilder,
-                readerBuilder,
+                systemTopicClient,
                 scheduler,
                 "public/default",
                 Time.SYSTEM
@@ -365,12 +366,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer buffer = newMemoryRecordsBuffer(offsetCommitRecords);
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -416,12 +412,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer buffer = newMemoryRecordsBuffer(offsetCommitRecords);
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -471,12 +462,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         buffer.flip();
 
         byte[] key = groupMetadataKey(groupId);
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -519,12 +505,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         groupMetadataManager.scheduleLoadGroupAndOffsets(
             groupPartitionId,
@@ -556,12 +537,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         byte[] key = groupMetadataKey(groupId);
 
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -616,12 +592,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         byte[] key = groupMetadataKey(groupId);
 
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -691,12 +662,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         byte[] key = groupMetadataKey(groupId);
 
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -777,12 +743,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -818,7 +779,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     }
 
-    @Test
+    @Test(timeOut = 10000)
     public void testGroupLoadWithConsumerAndTransactionalOffsetCommitsTransactionWins() throws Exception {
         long producerId = 1000L;
         short producerEpoch = 2;
@@ -847,12 +808,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -884,8 +840,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     public void testGroupNotExits() {
         groupMetadataManager = new GroupMetadataManager(
             offsetConfig,
-            producerBuilder,
-            readerBuilder,
+            systemTopicClient,
             scheduler,
             NAMESPACE_PREFIX,
             new MockTime()
@@ -933,12 +888,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -996,12 +946,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -1057,12 +1002,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         byte[] key = groupMetadataKey(groupId);
 
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
 
         groupMetadataManager.scheduleLoadGroupAndOffsets(
             groupPartitionId,
@@ -1113,12 +1053,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         byte[] key = groupMetadataKey(groupId);
         int consumerGroupPartitionId =
                 GroupMetadataManager.getPartitionId(groupId, conf.getOffsetsTopicNumPartitions());
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(consumerGroupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, buffer);
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(consumerGroupPartitionId,
             groupMetadata -> onLoadedFuture.complete(groupMetadata)
@@ -1180,19 +1115,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer segment2Buffer = newMemoryRecordsBuffer(segment2Records);
 
         byte[] key = groupMetadataKey(groupId);
-
-        Producer<ByteBuffer> producer = groupMetadataManager.getOffsetsTopicProducer(groupPartitionId).get();
-        producer.newMessage()
-            .keyBytes(key)
-            .value(segment1Buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
-
-        producer.newMessage()
-            .keyBytes(key)
-            .value(segment2Buffer)
-            .eventTime(Time.SYSTEM.milliseconds())
-            .send();
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, segment1Buffer);
+        groupMetadataManager.storeOffsetMessage(groupPartitionId, key, segment2Buffer);
 
         CompletableFuture<GroupMetadata> onLoadedFuture = new CompletableFuture<>();
         groupMetadataManager.scheduleLoadGroupAndOffsets(
@@ -1230,8 +1154,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     public void testAddGroup() {
         groupMetadataManager = new GroupMetadataManager(
             offsetConfig,
-            producerBuilder,
-            readerBuilder,
+            systemTopicClient,
             scheduler,
             NAMESPACE_PREFIX,
             new MockTime()
@@ -1509,8 +1432,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 (CompletableFuture<MessageId>) invocationOnMock.callRealMethod();
             realWriteFutureRef.set(realWriteFuture);
             return writeOffsetMessageFuture;
-        }).when(spyGroupManager).storeOffsetMessage(
-            any(String.class), any(byte[].class), any(ByteBuffer.class), anyLong()
+        }).when(spyGroupManager).storeOffsetMessageAsync(
+            any(Integer.class), any(byte[].class), any(ByteBuffer.class), anyLong()
         );
 
         CompletableFuture<Map<TopicPartition, Errors>> storeFuture = spyGroupManager.storeOffsets(
@@ -1566,8 +1489,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 (CompletableFuture<MessageId>) invocationOnMock.callRealMethod();
             realWriteFutureRef.set(realWriteFuture);
             return writeOffsetMessageFuture;
-        }).when(spyGroupManager).storeOffsetMessage(
-            any(String.class), any(byte[].class), any(ByteBuffer.class), anyLong()
+        }).when(spyGroupManager).storeOffsetMessageAsync(
+            any(Integer.class), any(byte[].class), any(ByteBuffer.class), anyLong()
         );
 
         CompletableFuture<Map<TopicPartition, Errors>> storeFuture = spyGroupManager.storeOffsets(
@@ -1620,8 +1543,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 (CompletableFuture<MessageId>) invocationOnMock.callRealMethod();
             realWriteFutureRef.set(realWriteFuture);
             return writeOffsetMessageFuture;
-        }).when(spyGroupManager).storeOffsetMessage(
-            any(String.class), any(byte[].class), any(ByteBuffer.class), anyLong()
+        }).when(spyGroupManager).storeOffsetMessageAsync(
+            any(Integer.class), any(byte[].class), any(ByteBuffer.class), anyLong()
         );
 
         CompletableFuture<Map<TopicPartition, Errors>> storeFuture = spyGroupManager.storeOffsets(
