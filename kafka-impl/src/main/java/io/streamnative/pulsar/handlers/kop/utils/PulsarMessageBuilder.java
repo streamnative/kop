@@ -29,7 +29,7 @@ import org.apache.pulsar.common.api.proto.MessageMetadata;
  */
 public class PulsarMessageBuilder {
     private static final ByteBuffer EMPTY_CONTENT = ByteBuffer.allocate(0);
-    private static final Schema<byte[]> SCHEMA = Schema.BYTES;
+    private static final Schema<ByteBuffer> SCHEMA = Schema.BYTEBUFFER;
 
     private final transient MessageMetadata metadata;
     private transient ByteBuffer content;
@@ -63,12 +63,12 @@ public class PulsarMessageBuilder {
         return this;
     }
 
-    public PulsarMessageBuilder value(byte[] value) {
+    public PulsarMessageBuilder value(ByteBuffer value) {
         if (value == null) {
             metadata.setNullValue(true);
             return this;
         }
-        this.content = ByteBuffer.wrap(SCHEMA.encode(value));
+        this.content = value;
         return this;
     }
 
@@ -103,7 +103,7 @@ public class PulsarMessageBuilder {
         return this;
     }
 
-    public Message<byte[]> getMessage() {
+    public Message<ByteBuffer> getMessage() {
         return MessageImpl.create(metadata, content, SCHEMA, null);
     }
 
