@@ -23,13 +23,13 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTimer;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -49,11 +49,7 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.ReaderBuilder;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -122,20 +118,13 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         OffsetConfig offsetConfig = OffsetConfig.builder().offsetsTopicName(topicName).build();
 
         timer = new MockTimer();
-
-        ProducerBuilder<ByteBuffer> producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
-
-        ReaderBuilder<ByteBuffer> readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
-                .startMessageId(MessageId.earliest);
-
         groupPartitionId = 0;
         otherGroupPartitionId = 1;
         otherGroupId = "otherGroup";
         offsetConfig.offsetsTopicNumPartitions(2);
         groupMetadataManager = spy(new GroupMetadataManager(
                 offsetConfig,
-                producerBuilder,
-                readerBuilder,
+                new SystemTopicClient(pulsar, conf),
                 scheduler,
                 "public/default",
                 timer.time()

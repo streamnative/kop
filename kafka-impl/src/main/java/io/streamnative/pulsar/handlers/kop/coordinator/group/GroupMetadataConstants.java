@@ -25,6 +25,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupMetadataKey;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.GroupTopicPartition;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.OffsetKey;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.UnknownKey;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -373,11 +374,12 @@ public final class GroupMetadataConstants {
 
             return new GroupMetadataKey(version, group);
         } else {
-            throw new IllegalStateException("Unknown version " + version + " for group metadata message");
+            return new UnknownKey(version);
         }
     }
 
     public static OffsetAndMetadata readOffsetMessageValue(ByteBuffer buffer) {
+        // TODO: should we check empty buffer?
         if (null == buffer) {
             return null;
         }

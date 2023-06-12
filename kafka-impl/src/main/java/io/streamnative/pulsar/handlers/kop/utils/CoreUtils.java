@@ -95,6 +95,18 @@ public final class CoreUtils {
         return map.entrySet().stream().map(e -> function.apply(e.getKey(), e.getValue())).collect(Collectors.toList());
     }
 
+    public static <K1, K2, K3, V> Map<K2, Map<K3, V>> groupBy(final Map<K1, V> map,
+                                                              final Function<K1, K2> groupFunction,
+                                                              final Function<K1, K3> keyMapper) {
+        return map.entrySet().stream().collect(Collectors.groupingBy(e -> groupFunction.apply(e.getKey()),
+                Collectors.toMap(e -> keyMapper.apply(e.getKey()), Entry::getValue)));
+    }
+
+    public static <K1, K2, V> Map<K2, Map<K1, V>> groupBy(final Map<K1, V> map,
+                                                          final Function<K1, K2> groupFunction) {
+        return groupBy(map, groupFunction, key -> key);
+    }
+
     public static <T> CompletableFuture<Void> waitForAll(final Collection<CompletableFuture<T>> futures) {
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
     }

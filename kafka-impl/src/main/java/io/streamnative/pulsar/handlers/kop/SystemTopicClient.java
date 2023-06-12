@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import java.nio.ByteBuffer;
+import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ProducerBuilder;
@@ -25,6 +26,7 @@ import org.apache.pulsar.client.api.Schema;
  */
 public class SystemTopicClient extends AbstractPulsarClient {
 
+    @Getter
     private final int maxPendingMessages;
 
     public SystemTopicClient(final PulsarService pulsarService, final KafkaServiceConfiguration kafkaConfig) {
