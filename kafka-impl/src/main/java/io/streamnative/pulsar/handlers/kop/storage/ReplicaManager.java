@@ -305,8 +305,15 @@ public class ReplicaManager {
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             getPartitionLog(tp, context.getNamespacePrefix())
                     .awaitInitialisation()
-                    .thenCompose(partitionLog ->{
-                        return partitionLog
+                    .whenComplete((partitionLog, failed) ->{
+                        if (failed != null) {
+                            result.put(tp,
+                                    PartitionLog.ReadRecordsResult
+                                            .error(Errors.forException(failed.getCause()), null));
+                            complete.run();
+                            return;
+                        }
+                        partitionLog
                                 .readRecords(fetchInfo, readCommitted,
                                         limitBytes, maxReadEntriesNum, context
                                 )
