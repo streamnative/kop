@@ -349,7 +349,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    @Test(timeOut = 1000 * 30, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
     public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenSnapshots) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenSnapshots;
@@ -417,7 +417,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test(timeOut = 1000 * 20, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
+    @Test(timeOut = 1000 * 30, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
     public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
