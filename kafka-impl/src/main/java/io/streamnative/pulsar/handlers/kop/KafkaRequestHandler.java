@@ -849,6 +849,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<TopicPartition, PartitionResponse> invalidRequestResponses = new HashMap<>();
         final Map<TopicPartition, MemoryRecords> authorizedRequestInfo = new ConcurrentHashMap<>();
         int timeoutMs = produceRequest.timeout();
+        short requiredAcks = produceRequest.acks();
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
         Runnable completeOne = () -> {
@@ -867,6 +868,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ReplicaManager replicaManager = getReplicaManager();
                 replicaManager.appendRecords(
                         timeoutMs,
+                        requiredAcks,
                         false,
                         namespacePrefix,
                         authorizedRequestInfo,
@@ -2409,6 +2411,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     ctx);
             getReplicaManager().appendRecords(
                     kafkaConfig.getRequestTimeoutMs(),
+                    (short) 1,
                     true,
                     currentNamespacePrefix(),
                     controlRecords,
