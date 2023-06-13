@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
+import static org.apache.kafka.common.protocol.ApiKeys.PRODUCE;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -45,6 +46,7 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
+import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -382,6 +384,16 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (responseAndRequest == null) {
                 // requestQueue is empty
                 break;
+            }
+
+            if (PRODUCE.equals(responseAndRequest.request.getHeader().apiKey())) {
+                ProduceRequest produceRequest = (ProduceRequest) responseAndRequest.request.getRequest();
+                if (produceRequest.acks() == 0) {
+                    if (requestQueue.remove(responseAndRequest)) {
+                        RequestStats.REQUEST_QUEUE_SIZE_INSTANCE.decrementAndGet();
+                    }
+                    continue;
+                }
             }
 
             final CompletableFuture<AbstractResponse> responseFuture = responseAndRequest.getResponseFuture();

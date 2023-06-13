@@ -120,6 +120,7 @@ public class ReplicaManager {
 
     public CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> appendRecords(
             final long timeout,
+            final short requiredAcks,
             final boolean internalTopicsAllowed,
             final String namespacePrefix,
             final Map<TopicPartition, MemoryRecords> entriesPerPartition,
@@ -155,14 +156,18 @@ public class ReplicaManager {
                                 String.format("Cannot append to internal topic %s", topicPartition.topic())))));
             } else {
                 PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
-                partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
+                if (requiredAcks == 0) {
+                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext);
+                } else {
+                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                         .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
-                                new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
+                            new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                         .exceptionally(ex -> {
                             addPartitionResponse.accept(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                             return null;
                         });
+                }
             }
         });
         // delay produce
