@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.Random;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -51,7 +52,8 @@ public class EncodePerformanceTest {
             "test",
             null,
             mock(KafkaTopicLookupService.class),
-            new MemoryProducerStateManagerSnapshotBuffer());
+            new MemoryProducerStateManagerSnapshotBuffer(),
+            mock(OrderedExecutor.class));
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

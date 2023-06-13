@@ -76,10 +76,10 @@ public class PartitionLogManager {
             PartitionLog partitionLog = new PartitionLog(kafkaConfig, requestStats,
                     time, topicPartition, key, entryFilters,
                     kafkaTopicLookupService,
-                    prodPerTenant);
+                    prodPerTenant, recoveryExecutor);
 
             CompletableFuture<PartitionLog> initialiseResult = partitionLog
-                    .initialise(recoveryExecutor);
+                    .initialise();
 
             initialiseResult.whenComplete((___, error) -> {
                 if (error != null) {

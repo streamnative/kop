@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -84,6 +85,7 @@ import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.awaitility.Awaitility;
 import org.testng.Assert;
 
 /**
@@ -840,28 +842,31 @@ public abstract class KopProtocolHandlerTestBase {
      * @throws Exception
      */
     public void trimConsumedLedgers(String topic) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
         log.info("trimConsumedLedgers {}", topic);
+        log.info("Stats {}",
+                mapper.writeValueAsString(admin
+                        .topics()
+                        .getInternalStats(topic)));
         TopicName topicName = TopicName.get(topic);
         String namespace = topicName.getNamespace();
 
         RetentionPolicies oldRetentionPolicies = admin.namespaces().getRetention(namespace);
-        Integer deduplicationSnapshotInterval = admin.namespaces().getDeduplicationSnapshotInterval(namespace);
+        Boolean deduplicationStatus = admin.namespaces().getDeduplicationStatus(namespace);
         try {
             admin.namespaces().setRetention(namespace, new RetentionPolicies(0, 0));
-            admin.namespaces().setDeduplicationSnapshotInterval(namespace, 1);
+            admin.namespaces().setDeduplicationStatus(namespace, false);
 
-            // ensure that the snapshot interval elapsed
-            Thread.sleep(2000);
 
             KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
             PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
 
-            // in transaction tests we have deduplication, that is a subscription
-            // and it may prevent the topic to be trimmed
-            topicHandle.checkDeduplicationSnapshot();
+            Awaitility.await().untilAsserted(() -> {
+                log.debug("Subscriptions {}", topicHandle.getSubscriptions());
+                assertTrue(topicHandle.getSubscriptions().isEmpty());
+            });
 
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.enable(SerializationFeature.INDENT_OUTPUT);
             log.info("Stats {}",
                     mapper.writeValueAsString(admin
                             .topics()
@@ -875,7 +880,11 @@ public abstract class KopProtocolHandlerTestBase {
             future.get(10, TimeUnit.SECONDS);
         } finally {
             admin.namespaces().setRetention(namespace, oldRetentionPolicies);
-            admin.namespaces().setDeduplicationSnapshotInterval(namespace, deduplicationSnapshotInterval);
+            if (deduplicationStatus != null) {
+                admin.namespaces().setDeduplicationStatus(namespace, deduplicationStatus);
+            } else {
+                admin.namespaces().removeDeduplicationStatus(namespace);
+            }
         }
     }
 }

@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
@@ -81,7 +82,8 @@ public class EntryFormatterTest {
             "test",
             null,
             mock(KafkaTopicLookupService.class),
-            new MemoryProducerStateManagerSnapshotBuffer());
+            new MemoryProducerStateManagerSnapshotBuffer(),
+            mock(OrderedExecutor.class));
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

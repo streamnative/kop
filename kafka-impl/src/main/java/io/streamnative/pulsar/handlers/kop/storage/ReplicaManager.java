@@ -334,9 +334,4 @@ public class ReplicaManager {
         }
     }
 
-
-    public CompletableFuture<Void> takeProducerStateSnapshots() {
-        return logManager.takeProducerStateSnapshots();
-    }
-
 }
