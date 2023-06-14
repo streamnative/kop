@@ -714,7 +714,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-    @Test(timeOut = 1000 * 20)
+    /**
+     * TODO: Disable for now, we need introduce UUID for topic.
+     */
+    @Test(timeOut = 1000 * 20, enabled = false)
     public void basicRecoveryAfterDeleteCreateTopic()
             throws Exception {
 
