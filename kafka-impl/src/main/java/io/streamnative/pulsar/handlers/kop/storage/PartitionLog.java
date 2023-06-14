@@ -582,11 +582,8 @@ public class PartitionLog {
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
                 if (readCommitted) {
                     long firstUndecidedOffset = producerStateManager.firstUndecidedOffset().orElse(-1L);
-                    long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
-                    log.info("DEBUG_LOG: readRecords for topic {} with fetch offset {} and maxBytes {} firstUndecidedOffset {} highWaterMark {}",
-                            topicPartition, offset, adjustedMaxBytes, firstUndecidedOffset, highWaterMark);
                     if (firstUndecidedOffset >= 0 && firstUndecidedOffset <= offset) {
-
+                        long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
                         future.complete(
                                 ReadRecordsResult.empty(
                                         highWaterMark,

@@ -484,7 +484,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 1000 * 30, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
     public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
 
-        String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
+        String topicName = "basicTestWithTopicUnload_" + numTransactionsBetweenUnloads;
         String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
         boolean isBatch = false;
@@ -524,6 +524,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             if (numTransactionsBetweenUnloads > 0
                     && (txnIndex % numTransactionsBetweenUnloads) == 0) {
+
+                // dump the state before un load, this helps troubleshooting
+                // problems in case of flaky test
+                TransactionState transactionState = dumpTransactionState(transactionalId);
+                assertEquals(TransactionState.ONGOING, transactionState);
 
                 // unload the namespace, this will force a recovery
                 pulsar.getAdminClient().namespaces().unload(namespace);
@@ -838,7 +843,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get(); // OFFSET 5
         producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get(); // OFFSET 6
         producer.commitTransaction();  // OFFSET 7
-        log.info("DEBUG_LOG: Before take snapshot");
+
         // take a snapshot now, it refers to the offset of the last written record
         takeSnapshot(topicName);
 

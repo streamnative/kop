@@ -69,20 +69,23 @@ public class ProducerStateManager {
     private CompletableFuture<Void> applySnapshotAndRecover(ProducerStateManagerSnapshot snapshot,
                                                             PartitionLog partitionLog,
                                                             Executor executor) {
-        this.abortedIndexList.clear();
-        this.producers.clear();
-        this.ongoingTxns.clear();
         long offSetPosition = 0;
-        if (snapshot != null) {
-            this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
-            this.producers.putAll(snapshot.getProducers());
-            this.ongoingTxns.putAll(snapshot.getOngoingTxns());
-            offSetPosition = snapshot.getOffset();
-            log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
-            log.info("ongoingTxns transactions after recovery {}", snapshot.getOngoingTxns());
-            log.info("Aborted transactions after recovery {}", snapshot.getAbortedIndexList());
-        } else {
-            log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
+        synchronized (abortedIndexList) {
+            this.abortedIndexList.clear();
+            this.producers.clear();
+            this.ongoingTxns.clear();
+            if (snapshot != null) {
+                this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
+                this.producers.putAll(snapshot.getProducers());
+                this.ongoingTxns.putAll(snapshot.getOngoingTxns());
+                this.mapEndOffset = snapshot.getOffset();
+                offSetPosition = snapshot.getOffset();
+                log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
+                log.info("ongoingTxns transactions after recovery {}", snapshot.getOngoingTxns());
+                log.info("Aborted transactions after recovery {}", snapshot.getAbortedIndexList());
+            } else {
+                log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
+            }
         }
         long startRecovery = System.currentTimeMillis();
         // recover from log
@@ -110,7 +113,7 @@ public class ProducerStateManager {
                     return;
                 }
                 ProducerStateManagerSnapshot snapshot = getProducerStateManagerSnapshot();
-                log.info("DEBUG_LOG: Taking snapshot for {} at {}", topicPartition, snapshot);
+                log.info("Taking snapshot for {} at {}", topicPartition, snapshot);
                 producerStateManagerSnapshotBuffer
                         .write(snapshot)
                         .whenComplete((res, error) -> {
@@ -268,14 +271,12 @@ public class ProducerStateManager {
     }
 
     public void completeTxn(CompletedTxn completedTxn) {
-        log.info("DEBUG_LOG: completeTxn: {}", completedTxn);
         TxnMetadata txnMetadata = ongoingTxns.remove(completedTxn.firstOffset());
         if (txnMetadata == null) {
             String msg = String.format("Attempted to complete transaction %s on partition "
                     + "%s which was not started.", completedTxn, topicPartition);
             throw new IllegalArgumentException(msg);
         }
-        log.info("DEBUG_LOG: completeTxn: txnMetadata: {}", txnMetadata);
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
