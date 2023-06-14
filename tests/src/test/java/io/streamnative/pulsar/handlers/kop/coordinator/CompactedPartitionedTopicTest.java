@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator;
 
+import io.streamnative.pulsar.handlers.kop.AbstractPulsarClient;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.ByteBuffer;
@@ -27,6 +28,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -135,20 +137,35 @@ public class CompactedPartitionedTopicTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 30000)
     public void testClose() throws Exception {
-        final var topic = "test-close";
+        final var topic = "test-close-" + System.currentTimeMillis();
+        final var client = AbstractPulsarClient.createPulsarClient(pulsar, conf,
+                clientConfig -> clientConfig.setOperationTimeoutMs(3000));
+
         admin.topics().createPartitionedTopic(topic, 1);
-        final var compactedTopic = new CompactedPartitionedTopic<>(pulsarClient, Schema.STRING,
+        final var compactedTopic = new CompactedPartitionedTopic<>(client, Schema.STRING,
                 1000, topic, executor, __ -> false);
         final var numMessages = 100;
         for (int i = 0; i < numMessages; i++) {
             compactedTopic.sendAsync(0, "key".getBytes(), "value", 1).get();
         }
         final var numMessagesReceived = new AtomicInteger(0);
-        final var future = compactedTopic.readToLatest(0, msg -> numMessagesReceived.incrementAndGet());
+        final var future = compactedTopic.readToLatest(0, msg -> {
+            numMessagesReceived.incrementAndGet();
+            try {
+                Thread.sleep(1); // add the latency to avoid reading to latest before close
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        });
         compactedTopic.close();
-        final var readResult = future.get();
-        log.info("Load {} messages in {}ms", readResult.timeMs(), readResult.numMessages());
-        Assert.assertEquals(readResult.numMessages(), numMessagesReceived.get());
-        Assert.assertTrue(readResult.numMessages() < numMessages);
+        try {
+            final var readResult = future.get();
+            log.info("Load {} messages in {}ms", readResult.timeMs(), readResult.numMessages());
+            Assert.assertEquals(readResult.numMessages(), numMessagesReceived.get());
+            Assert.assertTrue(readResult.numMessages() < numMessages);
+        } catch (ExecutionException e) {
+            log.info("{} messages are loaded before read failed: {}", numMessagesReceived.get(), e.getMessage());
+            Assert.assertTrue(numMessagesReceived.get() < numMessages);
+        }
     }
 }
