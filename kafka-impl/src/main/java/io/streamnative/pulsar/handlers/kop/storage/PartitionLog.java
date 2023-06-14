@@ -582,8 +582,11 @@ public class PartitionLog {
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
                 if (readCommitted) {
                     long firstUndecidedOffset = producerStateManager.firstUndecidedOffset().orElse(-1L);
+                    long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
+                    log.info("DEBUG_LOG: readRecords for topic {} with fetch offset {} and maxBytes {} firstUndecidedOffset {} highWaterMark {}",
+                            topicPartition, offset, adjustedMaxBytes, firstUndecidedOffset, highWaterMark);
                     if (firstUndecidedOffset >= 0 && firstUndecidedOffset <= offset) {
-                        long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
+
                         future.complete(
                                 ReadRecordsResult.empty(
                                         highWaterMark,
@@ -672,8 +675,8 @@ public class PartitionLog {
         final List<Entry> committedEntries = readCommitted ? getCommittedEntries(entries, lso) : entries;
 
         if (log.isDebugEnabled()) {
-            log.debug("Read {} entries but only {} entries are committed",
-                    entries.size(), committedEntries.size());
+            log.debug("Read {} entries but only {} entries are committed, lso {}, highWatermark {}",
+                    entries.size(), committedEntries.size(), lso, highWatermark);
         }
         if (committedEntries.isEmpty()) {
             future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE,
@@ -711,7 +714,7 @@ public class PartitionLog {
                 log.debug("Partition {} read entry completed in {} ns",
                         topicPartition, MathUtils.nowInNano() - startDecodingEntriesNanos);
             }
-
+            log.info("Partition {} read entry completed. {} ", topicPartition, abortedTransactions);
             future.complete(ReadRecordsResult
                     .get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition, this));
         }, context.getDecodeExecutor()).exceptionally(ex -> {

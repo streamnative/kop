@@ -238,7 +238,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         List<String> messages = new ArrayList<>();
 
-        log.info("the last message is: {}", lastMessage);
+        log.info("waiting for message {} in topic {}", lastMessage, topicName);
         AtomicInteger receiveCount = new AtomicInteger(0);
         while (true) {
             ConsumerRecords<Integer, String> consumerRecords =
@@ -271,7 +271,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         log.info("Fetch for finish consume messages. isolation: {}", isolation);
 
         return messages;
-    }    @Test(timeOut = 1000 * 15)
+    }
+
+    @Test(timeOut = 1000 * 15)
     public void offsetCommitTest() throws Exception {
         txnOffsetTest("txn-offset-commit-test", 10, true);
     }
@@ -831,13 +833,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // unload and reload in order to have at least 2 ledgers in the
         // topic, this way we can drop the head ledger
         admin.namespaces().unload(namespace);
-        admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
         producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get(); // OFFSET 5
         producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get(); // OFFSET 6
         producer.commitTransaction();  // OFFSET 7
-
+        log.info("DEBUG_LOG: Before take snapshot");
         // take a snapshot now, it refers to the offset of the last written record
         takeSnapshot(topicName);
 

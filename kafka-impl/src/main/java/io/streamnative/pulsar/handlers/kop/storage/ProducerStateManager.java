@@ -110,6 +110,7 @@ public class ProducerStateManager {
                     return;
                 }
                 ProducerStateManagerSnapshot snapshot = getProducerStateManagerSnapshot();
+                log.info("DEBUG_LOG: Taking snapshot for {} at {}", topicPartition, snapshot);
                 producerStateManagerSnapshotBuffer
                         .write(snapshot)
                         .whenComplete((res, error) -> {
@@ -255,18 +256,26 @@ public class ProducerStateManager {
 
     public void updateTxnIndex(CompletedTxn completedTxn, long lastStableOffset) {
         if (completedTxn.isAborted()) {
-            abortedIndexList.add(new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
-                    completedTxn.lastOffset(), lastStableOffset));
+            AbortedTxn abortedTxn = new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
+                    completedTxn.lastOffset(), lastStableOffset);
+            if (log.isDebugEnabled()) {
+                log.debug("Adding new AbortedTxn {}", abortedTxn);
+            }
+            synchronized (abortedIndexList) {
+                abortedIndexList.add(abortedTxn);
+            }
         }
     }
 
     public void completeTxn(CompletedTxn completedTxn) {
+        log.info("DEBUG_LOG: completeTxn: {}", completedTxn);
         TxnMetadata txnMetadata = ongoingTxns.remove(completedTxn.firstOffset());
         if (txnMetadata == null) {
             String msg = String.format("Attempted to complete transaction %s on partition "
                     + "%s which was not started.", completedTxn, topicPartition);
             throw new IllegalArgumentException(msg);
         }
+        log.info("DEBUG_LOG: completeTxn: txnMetadata: {}", txnMetadata);
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
