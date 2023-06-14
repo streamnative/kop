@@ -169,8 +169,11 @@ public class ReplicaManager {
                             Errors.forException(new InvalidTopicException(
                                     String.format("Cannot append to internal topic %s", topicPartition.topic())))));
                 } else {
-                    PartitionLog partitionLog =
-                            getPartitionLog(topicPartition, namespacePrefix);
+                    PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
+                    if (requiredAcks == 0) {
+                        partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext);
+                        return;
+                    }
                     partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                             .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
