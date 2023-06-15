@@ -22,7 +22,12 @@ import static org.testng.Assert.assertTrue;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -31,10 +36,13 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.BundlesData;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -103,10 +111,139 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
 
     }
 
+    @DataProvider(name = "testEvents")
+    protected static Object[][] testEvents() {
+        // isBatch
+        return new Object[][]{
+                {List.of(TopicOwnershipListener.EventType.LOAD), false, false,
+                        List.of(TopicOwnershipListener.EventType.LOAD)},
+                {List.of(TopicOwnershipListener.EventType.UNLOAD), true, false,
+                        List.of(TopicOwnershipListener.EventType.UNLOAD)},
+                {List.of(TopicOwnershipListener.EventType.UNLOAD), false, true,
+                        List.of()},
+                {List.of(TopicOwnershipListener.EventType.UNLOAD), true, true,
+                        List.of(TopicOwnershipListener.EventType.UNLOAD)},
+                {List.of(TopicOwnershipListener.EventType.DELETE), true, true,
+                        List.of(TopicOwnershipListener.EventType.DELETE)},
+                {List.of(TopicOwnershipListener.EventType.DELETE), false, true,
+                        List.of(TopicOwnershipListener.EventType.DELETE)},
+                // PartitionLog listener
+                {List.of(TopicOwnershipListener.EventType.UNLOAD, TopicOwnershipListener.EventType.DELETE),
+                        false, true,
+                        List.of(TopicOwnershipListener.EventType.DELETE)},
+                {List.of(TopicOwnershipListener.EventType.UNLOAD, TopicOwnershipListener.EventType.DELETE),
+                        true, true,
+                        List.of(TopicOwnershipListener.EventType.UNLOAD, TopicOwnershipListener.EventType.DELETE)},
+                {List.of(TopicOwnershipListener.EventType.UNLOAD, TopicOwnershipListener.EventType.DELETE),
+                        true, false,
+                        List.of(TopicOwnershipListener.EventType.UNLOAD)},
+                {List.of(TopicOwnershipListener.EventType.UNLOAD, TopicOwnershipListener.EventType.DELETE),
+                        false, false,
+                        List.of()},
+                // Group and TransactionCoordinators
+                {List.of(TopicOwnershipListener.EventType.LOAD,
+                        TopicOwnershipListener.EventType.UNLOAD), true, true,
+                        List.of(TopicOwnershipListener.EventType.LOAD,
+                        TopicOwnershipListener.EventType.UNLOAD)},
+                {List.of(TopicOwnershipListener.EventType.LOAD,
+                        TopicOwnershipListener.EventType.UNLOAD), false, true,
+                        List.of(TopicOwnershipListener.EventType.LOAD)},
+                {List.of(TopicOwnershipListener.EventType.LOAD,
+                        TopicOwnershipListener.EventType.UNLOAD), true, false,
+                        List.of(TopicOwnershipListener.EventType.LOAD,
+                        TopicOwnershipListener.EventType.UNLOAD)},
+                {List.of(TopicOwnershipListener.EventType.LOAD,
+                        TopicOwnershipListener.EventType.UNLOAD), false, false,
+                        List.of(TopicOwnershipListener.EventType.LOAD)}
+        };
+    }
+
+    @Test(dataProvider = "testEvents")
+    public void testEvents(List<TopicOwnershipListener.EventType> eventTypes, boolean unload, boolean delete,
+                           List<TopicOwnershipListener.EventType> exepctedEventTypes)
+            throws Exception {
+
+        KafkaProtocolHandler protocolHandler = getProtocolHandler();
+
+        NamespaceBundleOwnershipListenerImpl bundleListener = protocolHandler.getBundleListener();
+
+        String namespace = tenant + "/" + "my-namespace_test_" + UUID.randomUUID();
+        admin.namespaces().createNamespace(namespace, 10);
+        NamespaceName namespaceName = NamespaceName.get(namespace);
+
+        Map<TopicOwnershipListener.EventType, List<TopicName>> events = new ConcurrentHashMap<>();
+
+        bundleListener.addTopicOwnershipListener(new TopicOwnershipListener() {
+            @Override
+            public String name() {
+                return "tester";
+            }
+
+            @Override
+            public void whenLoad(TopicName topicName) {
+                log.info("whenLoad {}", topicName);
+                events.computeIfAbsent(EventType.LOAD, e -> new CopyOnWriteArrayList<>())
+                        .add(topicName);
+            }
+
+            @Override
+            public void whenUnload(TopicName topicName) {
+                log.info("whenUnload {}", topicName);
+                events.computeIfAbsent(EventType.UNLOAD, e -> new CopyOnWriteArrayList<>())
+                        .add(topicName);
+            }
+
+            @Override
+            public void whenDelete(TopicName topicName) {
+                log.info("whenDelete {}", topicName);
+                events.computeIfAbsent(EventType.DELETE, e -> new CopyOnWriteArrayList<>())
+                        .add(topicName);
+            }
+
+            @Override
+            public boolean interestedInEvent(NamespaceName theNamespaceName, EventType event) {
+                log.info("interestedInEvent {} {}", theNamespaceName, event);
+                return namespaceName.equals(theNamespaceName) && eventTypes.contains(event);
+            }
+        });
+
+        int numPartitions = 10;
+        String topicName = namespace + "/test-topic-" + UUID.randomUUID();
+        admin.topics().createPartitionedTopic(topicName, numPartitions);
+        admin.lookups().lookupPartitionedTopic(topicName);
+
+        if (unload) {
+            admin.topics().unload(topicName);
+        }
+
+        if (delete) {
+            // DELETE triggers also UNLOAD so we do delete only
+            admin.topics().deletePartitionedTopic(topicName);
+        }
+        if (exepctedEventTypes.isEmpty()) {
+            Awaitility.await().during(5, TimeUnit.SECONDS).untilAsserted(() -> {
+                log.info("Events {}", events);
+                assertTrue(events.isEmpty());
+            });
+        } else {
+            Awaitility.await().untilAsserted(() -> {
+                log.info("Events {}", events);
+                assertEquals(events.size(), exepctedEventTypes.size());
+                for (TopicOwnershipListener.EventType eventType : exepctedEventTypes) {
+                    assertEquals(events.get(eventType).size(), numPartitions);
+                }
+            });
+        }
+
+        admin.namespaces().deleteNamespace(namespace, true);
+
+    }
+
     @BeforeClass
     @Override
     protected void setup() throws Exception {
         conf.setKafkaTransactionCoordinatorEnabled(true);
+        conf.setTopicLevelPoliciesEnabled(false);
         super.internalSetup();
     }
 
