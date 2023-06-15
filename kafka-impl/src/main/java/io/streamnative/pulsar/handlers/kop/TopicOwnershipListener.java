@@ -13,33 +13,49 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import java.util.function.Predicate;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * Listener that is triggered when a topic's ownership changed via load or unload.
  */
-public interface TopicOwnershipListener extends Predicate<NamespaceName> {
+public interface TopicOwnershipListener  {
+
+    enum EventType {
+        LOAD,
+        UNLOAD,
+        DELETE
+    }
 
     /**
      * It's triggered when the topic is loaded by a broker.
      *
      * @param topicName
      */
-    void whenLoad(TopicName topicName);
+    default void whenLoad(TopicName topicName) {
+    }
 
     /**
      * It's triggered when the topic is unloaded by a broker.
      *
      * @param topicName
      */
-    void whenUnload(TopicName topicName);
+    default void whenUnload(TopicName topicName) {
+    }
+
+    /**
+     * It's triggered when the topic is deleted by a broker.
+     *
+     * @param topicName
+     */
+    default void whenDelete(TopicName topicName) {
+    }
 
     /** Returns the name of the listener. */
     String name();
 
-    default boolean test(NamespaceName namespaceName) {
-        return true;
+    default boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
+        return false;
     }
+
 }
