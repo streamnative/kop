@@ -86,6 +86,7 @@ import org.testng.Assert;
 @Slf4j
 public abstract class KopProtocolHandlerTestBase {
 
+    protected static final String DEFAULT_GROUP_ID = "my-group";
     protected KafkaServiceConfiguration conf;
     protected PulsarService pulsar;
     protected PulsarAdmin admin;
@@ -770,7 +771,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected Properties newKafkaConsumerProperties() {
         final Properties props = new Properties();
         props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
-        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "my-group");
+        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, DEFAULT_GROUP_ID);
         props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");

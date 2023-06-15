@@ -545,6 +545,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             .maxMetadataSize(kafkaConfig.getOffsetMetadataMaxSize())
             .offsetsRetentionCheckIntervalMs(kafkaConfig.getOffsetsRetentionCheckIntervalMs())
             .offsetsRetentionMs(TimeUnit.MINUTES.toMillis(kafkaConfig.getOffsetsRetentionMinutes()))
+            .offsetCommitTimeoutMs(kafkaConfig.getOffsetCommitTimeoutMs())
             .build();
 
         GroupCoordinator groupCoordinator = GroupCoordinator.of(
