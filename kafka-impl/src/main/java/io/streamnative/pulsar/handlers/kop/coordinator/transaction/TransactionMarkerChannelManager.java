@@ -333,7 +333,7 @@ public class TransactionMarkerChannelManager {
                                 if (throwable instanceof PulsarClientException.LookupException
                                         || throwable.getCause() instanceof PulsarClientException.LookupException) {
                                     log.warn("Failed to find broker for topic partition {} - {}", topicPartition,
-                                            throwable + "");
+                                            throwable.toString());
                                 } else {
                                     log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
                                 }
