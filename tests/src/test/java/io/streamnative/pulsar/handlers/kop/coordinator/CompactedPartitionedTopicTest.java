@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator;
 
 import io.streamnative.pulsar.handlers.kop.AbstractPulsarClient;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -54,6 +55,7 @@ public class CompactedPartitionedTopicTest extends KopProtocolHandlerTestBase {
     @Override
     public void setup() throws Exception {
         super.internalSetup();
+
     }
 
     @AfterClass(alwaysRun = true)
@@ -63,13 +65,21 @@ public class CompactedPartitionedTopicTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
+    private OffsetConfig offsetConfig(String topic) {
+        return OffsetConfig.builder()
+                .offsetsTopicName(topic)
+                .offsetsTopicNumPartitions(conf.getOffsetsTopicNumPartitions())
+                .offsetCommitTimeoutMs(conf.getOffsetCommitTimeoutMs())
+                .build();
+    }
+
     @Test(timeOut = 30000)
     public void testCompaction() throws Exception {
         final var topic = "test-compaction";
         final var numPartitions = 3;
         admin.topics().createPartitionedTopic(topic, numPartitions);
         @Cleanup final var compactedTopic = new CompactedPartitionedTopic<>(pulsarClient, Schema.STRING,
-                1000, topic, executor, String::isEmpty);
+                1000, offsetConfig(topic), executor, String::isEmpty);
 
         final var numMessages = 100;
         final var futures = new ArrayList<CompletableFuture<MessageId>>();
@@ -122,7 +132,7 @@ public class CompactedPartitionedTopicTest extends KopProtocolHandlerTestBase {
         final var topic = "test-skip-empty-messages";
         admin.topics().createPartitionedTopic(topic, 1);
         @Cleanup final var compactedTopic = new CompactedPartitionedTopic<>(pulsarClient, Schema.BYTEBUFFER,
-                1000, topic, executor, buffer -> buffer.limit() == 0);
+                1000, offsetConfig(topic), executor, buffer -> buffer.limit() == 0);
         @Cleanup final var producer = pulsarClient.newProducer(Schema.BYTEBUFFER)
                 .topic(topic + TopicName.PARTITIONED_TOPIC_SUFFIX + 0).create();
         final var numMessages = 3 * 100;
@@ -143,7 +153,7 @@ public class CompactedPartitionedTopicTest extends KopProtocolHandlerTestBase {
 
         admin.topics().createPartitionedTopic(topic, 1);
         final var compactedTopic = new CompactedPartitionedTopic<>(client, Schema.STRING,
-                1000, topic, executor, __ -> false);
+                1000, offsetConfig(topic), executor, __ -> false);
         final var numMessages = 100;
         for (int i = 0; i < numMessages; i++) {
             compactedTopic.sendAsync(0, "key".getBytes(), "value", 1).get();

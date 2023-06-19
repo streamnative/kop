@@ -196,6 +196,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Offset commit will be delayed until the offset metadata be persisted or this timeout is reached"
+    )
+    private int offsetCommitTimeoutMs = 5000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "send queue size of system client to produce system topic."
     )
     private int kafkaMetaMaxPendingMessages = 10000;
