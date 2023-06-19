@@ -14,9 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.coordinator;
 
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +48,13 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class CompactedPartitionedTopic<T> implements Closeable {
 
+    private static class ExceptionWrapper extends Throwable {
+
+        ExceptionWrapper(Throwable cause) {
+            super(cause);
+        }
+    }
+
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Map<Integer, Future<Producer<T>>> producers = new ConcurrentHashMap<>();
     private final Map<Integer, Future<Reader<T>>> readers = new ConcurrentHashMap<>();
@@ -66,16 +73,17 @@ public class CompactedPartitionedTopic<T> implements Closeable {
     public CompactedPartitionedTopic(final PulsarClient client,
                                      final Schema<T> schema,
                                      final int maxPendingMessages,
-                                     final String topic,
+                                     final OffsetConfig offsetConfig,
                                      final Executor executor,
                                      final Function<T, Boolean> valueIsEmpty) {
         this.producerBuilder = client.newProducer(schema)
                 .maxPendingMessages(maxPendingMessages)
+                .sendTimeout(offsetConfig.offsetCommitTimeoutMs(), TimeUnit.MILLISECONDS)
                 .blockIfQueueFull(true);
         this.readerBuilder = client.newReader(schema)
                 .startMessageId(MessageId.earliest)
                 .readCompacted(true);
-        this.topic = topic;
+        this.topic = offsetConfig.offsetsTopicName();
         this.executor = executor;
         this.valueIsEmpty = valueIsEmpty;
         this.createAsyncExecutor = Executors.newSingleThreadExecutor();
@@ -88,22 +96,23 @@ public class CompactedPartitionedTopic<T> implements Closeable {
         final Producer<T> producer;
         try {
             producer = getProducer(partition);
-        } catch (IOException e) {
+        } catch (ExceptionWrapper e) {
             return CompletableFuture.failedFuture(e.getCause());
         }
 
         final var future = new CompletableFuture<MessageId>();
-        producer.newMessage().keyBytes(key).value(value).eventTime(timestamp).sendAsync().whenComplete((msgId, e) -> {
-            if (e == null) {
-                future.complete(msgId);
-            } else {
-                if (e instanceof PulsarClientException.AlreadyClosedException) {
-                    // The producer is already closed, we don't need to close it again.
-                    producers.remove(partition);
-                }
-                future.completeExceptionally(e);
-            }
-        });
+        producer.newMessage().keyBytes(key).value(value).eventTime(timestamp).sendAsync().whenCompleteAsync(
+                (msgId, e) -> {
+                    if (e == null) {
+                        future.complete(msgId);
+                    } else {
+                        if (e instanceof PulsarClientException.AlreadyClosedException) {
+                            // The producer is already closed, we don't need to close it again.
+                            producers.remove(partition);
+                        }
+                        future.completeExceptionally(e);
+                    }
+                }, executor);
         return future;
     }
 
@@ -120,7 +129,7 @@ public class CompactedPartitionedTopic<T> implements Closeable {
             try {
                 final Reader<T> reader = getReader(partition);
                 readToLatest(reader, partition, messageConsumer, future, System.currentTimeMillis(), 0);
-            } catch (IOException e) {
+            } catch (ExceptionWrapper e) {
                 future.completeExceptionally(e.getCause());
             }
         });
@@ -204,23 +213,23 @@ public class CompactedPartitionedTopic<T> implements Closeable {
         }
     }
 
-    private Producer<T> getProducer(int partition) throws IOException {
+    private Producer<T> getProducer(int partition) throws ExceptionWrapper {
         try {
             return producers.computeIfAbsent(partition, __ ->
                 createAsyncExecutor.submit(() -> producerBuilder.clone().topic(getPartition(partition)).create())
             ).get();
         } catch (Throwable e) {
-            throw new IOException(e);
+            throw new ExceptionWrapper(e);
         }
     }
 
-    private Reader<T> getReader(int partition) throws IOException {
+    private Reader<T> getReader(int partition) throws ExceptionWrapper {
         try {
             return readers.computeIfAbsent(partition, __ ->
                     createAsyncExecutor.submit(() -> readerBuilder.clone().topic(getPartition(partition)).create())
             ).get();
         } catch (Throwable e) {
-            throw new IOException(e);
+            throw new ExceptionWrapper(e);
         }
     }
 

@@ -217,7 +217,7 @@ public class GroupMetadataManager {
         this.offsetConfig = offsetConfig;
         this.compressionType = offsetConfig.offsetsTopicCompressionType();
         this.offsetTopic = new CompactedPartitionedTopic<>(client.getPulsarClient(), Schema.BYTEBUFFER,
-                client.getMaxPendingMessages(), offsetConfig.offsetsTopicName(), scheduler,
+                client.getMaxPendingMessages(), offsetConfig, scheduler,
                 buffer -> buffer.limit() == 0);
         this.scheduler = scheduler;
         this.namespacePrefix = namespacePrefixForMetadata;
@@ -348,15 +348,22 @@ public class GroupMetadataManager {
 
         String groupId = group.groupId();
         int partition = partitionFor(groupId);
-        return storeOffsetMessageAsync(partition, key, records.buffer(), timestamp).thenApplyAsync(__ -> {
+        return storeOffsetMessageAsync(partition, key, records.buffer(), timestamp).thenApply(__ -> {
             if (!isGroupLocal(groupId)) {
                 log.warn("add partition ownership for group {}", groupId);
                 addPartitionOwnership(partition);
             }
             return Errors.NONE;
-        }, scheduler).exceptionally(cause -> {
-            log.error("Coordinator failed to store group {}", groupId, cause);
-            return Errors.COORDINATOR_NOT_AVAILABLE;
+        }).exceptionally(e -> {
+            Throwable cause = e.getCause();
+            log.error("Coordinator failed to store group {}: {}", groupId, cause.getMessage());
+            if (cause instanceof PulsarClientException.AlreadyClosedException) {
+                return Errors.NOT_COORDINATOR;
+            } else if (cause instanceof PulsarClientException.TimeoutException) {
+                return Errors.REBALANCE_IN_PROGRESS;
+            } else {
+                return Errors.UNKNOWN_SERVER_ERROR;
+            }
         });
     }
 
@@ -471,7 +478,7 @@ public class GroupMetadataManager {
         int partition = partitionFor(groupId);
         byte[] key = offsetCommitKey(groupId, new TopicPartition("", -1), namespacePrefix);
         return storeOffsetMessageAsync(partition, key, entries.buffer(), timestamp)
-            .thenApplyAsync(messageId -> {
+            .thenApply(messageId -> {
                 if (!group.is(GroupState.Dead)) {
                     MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
                     filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
@@ -488,8 +495,8 @@ public class GroupMetadataManager {
                     });
                 }
                 return Errors.NONE;
-            }, scheduler)
-            .exceptionally(cause -> {
+            })
+            .exceptionally(e -> {
                 if (!group.is(GroupState.Dead)) {
                     if (!group.hasPendingOffsetCommitsFromProducer(producerId)) {
                         removeProducerGroup(producerId, group.groupId());
@@ -503,16 +510,19 @@ public class GroupMetadataManager {
                     });
                 }
 
+                Throwable cause = e.getCause();
                 log.error("Offset commit {} from group {}, consumer {} with generation {} failed"
                                 + " when appending to log due to {}",
                         filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause.getMessage());
-
-                if (cause.getCause() instanceof PulsarClientException.AlreadyClosedException) {
+                if (cause instanceof PulsarClientException.AlreadyClosedException) {
                     return Errors.NOT_COORDINATOR;
+                } else if (cause instanceof PulsarClientException.TimeoutException) {
+                    return Errors.REQUEST_TIMED_OUT;
+                } else {
+                    return Errors.UNKNOWN_SERVER_ERROR;
                 }
-                return Errors.UNKNOWN_SERVER_ERROR;
             })
-            .thenApplyAsync(errors -> offsetMetadata.entrySet()
+            .thenApply(errors -> offsetMetadata.entrySet()
                 .stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
@@ -523,7 +533,7 @@ public class GroupMetadataManager {
                             return Errors.OFFSET_METADATA_TOO_LARGE;
                         }
                     }
-                )), scheduler);
+                )));
     }
 
     /**
@@ -993,6 +1003,7 @@ public class GroupMetadataManager {
                 tombstones.add(new SimpleRecord(timestamp, groupMetadataKey, null));
             }
 
+            final CompletableFuture<Integer> future = new CompletableFuture<>();
             if (!tombstones.isEmpty()) {
                 MemoryRecords records = MemoryRecords.withRecords(
                     magicValue, 0L, compressionType,
@@ -1002,20 +1013,21 @@ public class GroupMetadataManager {
                 byte[] groupKey = groupMetadataKey(
                     group.groupId()
                 );
-                return storeOffsetMessageAsync(partitionFor(group.groupId()), groupKey, records.buffer(), timestamp)
-                    .thenApplyAsync(ignored -> removedOffsets.size(), scheduler)
-                    .exceptionally(cause -> {
-                        log.error("Failed to append {} tombstones to topic {} for expired/deleted "
-                                + "offsets and/or metadata for group {}",
-                            tombstones.size(),
-                            offsetConfig.offsetsTopicName() + '-' + partitionFor(group.groupId()),
-                            group.groupId(), cause);
-                        // ignore and continue
-                        return 0;
-                    });
+                int partition = partitionFor(groupId);
+                storeOffsetMessageAsync(partition, groupKey, records.buffer(), timestamp).whenComplete((msgId, e) -> {
+                    if (e == null) {
+                        future.complete(removedOffsets.size());
+                    } else {
+                        log.warn("Failed to append {} tombstones to topic {} for expired/deleted "
+                                        + "offsets and/or metadata for group {}: {}",
+                                tombstones.size(), getTopicPartitionName(partition), groupId, e.getMessage());
+                        future.complete(0);
+                    }
+                });
             } else {
-                return CompletableFuture.completedFuture(0);
+                future.complete(0);
             }
+            return future;
         }).collect(Collectors.toList());
         return FutureUtils.collect(cleanFutures)
             .thenApplyAsync(removedList -> removedList.stream().mapToInt(Integer::intValue).sum(), scheduler);

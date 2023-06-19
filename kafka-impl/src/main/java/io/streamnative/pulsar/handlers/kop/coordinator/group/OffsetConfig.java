@@ -33,6 +33,7 @@ public class OffsetConfig {
     public static final long DefaultOffsetsRetentionCheckIntervalMs = 600000L;
     public static final String DefaultOffsetsTopicName = "public/__kafka/__consumer_offsets";
     public static final int DefaultOffsetsNumPartitions = KafkaServiceConfiguration.DefaultOffsetsTopicNumPartitions;
+    public static final int DefaultOffsetCommitTimeoutMs = 5000;
 
     @Default
     private String offsetsTopicName = DefaultOffsetsTopicName;
@@ -46,4 +47,6 @@ public class OffsetConfig {
     private long offsetsRetentionCheckIntervalMs = DefaultOffsetsRetentionCheckIntervalMs;
     @Default
     private int offsetsTopicNumPartitions = DefaultOffsetsNumPartitions;
+    @Default
+    private int offsetCommitTimeoutMs = DefaultOffsetCommitTimeoutMs;
 }
