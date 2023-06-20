@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.Test;
 
@@ -30,7 +29,12 @@ import org.testng.annotations.Test;
  * Unit test for {@link PulsarTopicProducerStateManagerSnapshotBuffer}.
  */
 @Slf4j
-public class PulsarTopicProducerStateManagerSnapshotBufferTest extends ProducerStateManagerSnapshotBufferBase {
+public class PulsarTopicProducerStateManagerSnapshotBufferTest extends ProducerStateManagerSnapshotBufferTestBase {
+
+    @Override
+    protected int getProducerStateManagerSnapshotBufferTopicNumPartitions() {
+        return 1;
+    }
 
     @Override
     protected ProducerStateManagerSnapshotBuffer createProducerStateManagerSnapshotBuffer(String topic) {
@@ -61,41 +65,6 @@ public class PulsarTopicProducerStateManagerSnapshotBufferTest extends ProducerS
 
             assertEquals(deserialized, snapshot);
         }
-    }
-
-    @Test(timeOut = 30000)
-    public void testShutdownRecovery() throws ExecutionException, InterruptedException {
-        String topic = "test-topic";
-        ProducerStateManagerSnapshotBuffer buffer = createProducerStateManagerSnapshotBuffer(topic);
-
-        Map<Long, ProducerStateEntry> producers = Maps.newHashMap();
-        producers.put(0L, new ProducerStateEntry(0L, (short) 0, 0, 0L, Optional.of(0L)));
-        producers.put(1L, new ProducerStateEntry(1L, (short) 0, 0, 0L, Optional.of(1L)));
-
-        TreeMap<Long, TxnMetadata> ongoingTxns = new TreeMap<>();
-        ongoingTxns.put(0L, new TxnMetadata(0, 0L));
-        ongoingTxns.put(1L, new TxnMetadata(1, 1L));
-
-        List<AbortedTxn> abortedIndexList =
-                Lists.newArrayList(new AbortedTxn(0L, 1L, 2L, 3L));
-
-        ProducerStateManagerSnapshot snapshotToWrite = new ProducerStateManagerSnapshot(
-                topic,
-                0,
-                producers,
-                ongoingTxns,
-                abortedIndexList);
-        buffer.write(snapshotToWrite).get();
-
-        ProducerStateManagerSnapshot snapshot = buffer.readLatestSnapshot(topic).get();
-
-        assertEquals(snapshot, snapshotToWrite);
-
-        buffer.shutdown();
-
-        buffer = createProducerStateManagerSnapshotBuffer(topic);
-        snapshot = buffer.readLatestSnapshot(topic).get();
-        assertEquals(snapshot, snapshotToWrite);
     }
 
 }

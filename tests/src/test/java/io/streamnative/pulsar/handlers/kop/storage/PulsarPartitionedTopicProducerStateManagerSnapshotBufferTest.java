@@ -13,13 +13,19 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-/**
- * Unit test for {@link MemoryProducerStateManagerSnapshotBuffer}.
- */
-public class MemoryProducerStateManagerSnapshotBufferTest extends ProducerStateManagerSnapshotBufferBase {
+public class PulsarPartitionedTopicProducerStateManagerSnapshotBufferTest
+        extends ProducerStateManagerSnapshotBufferTestBase {
+
+    public static final int NUM_PARTITIONS = 3;
+
+    @Override
+    protected int getProducerStateManagerSnapshotBufferTopicNumPartitions() {
+        return NUM_PARTITIONS;
+    }
 
     @Override
     protected ProducerStateManagerSnapshotBuffer createProducerStateManagerSnapshotBuffer(String topic) {
-        return new MemoryProducerStateManagerSnapshotBuffer();
+        return new PulsarPartitionedTopicProducerStateManagerSnapshotBuffer(topic, systemTopicClient, NUM_PARTITIONS);
     }
+
 }
