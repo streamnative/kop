@@ -105,7 +105,7 @@ public class OffsetTopicWriteTimeoutTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 60000)
-    public void testSyncGroup() throws Exception {
+    public void testSyncGroup() {
         final var errorsCount = computeErrorsCount(this::syncGroupTimeoutError);
         for (int i = 0; i < 10; i++) {
             final var error = syncGroupTimeoutError();
@@ -144,7 +144,7 @@ public class OffsetTopicWriteTimeoutTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 30000)
-    public void testOffsetCommit() throws Exception {
+    public void testOffsetCommit() {
         final var errorsCount = computeErrorsCount(this::offsetCommitTimeoutError);
         // There is a little chance that timeout does not happen
         Assert.assertTrue(errorsCount.containsKey(Errors.REQUEST_TIMED_OUT));
