@@ -568,8 +568,12 @@ public class TransactionStateManager {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
             if (loadingPartitions.contains(partitionId)) {
+                log.info("TX Coordinator {} partition {} for transactionalId {} is still loading",
+                    transactionConfig.getTransactionMetadataTopicName(), partitionId, transactionalId);
                 return Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS);
             } else if (leavingPartitions.contains(partitionId)) {
+                log.info("TX Coordinator {} partition {} for transactionalId {} is unloading",
+                    transactionConfig.getTransactionMetadataTopicName(), partitionId, transactionalId);
                 return Either.left(Errors.NOT_COORDINATOR);
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
