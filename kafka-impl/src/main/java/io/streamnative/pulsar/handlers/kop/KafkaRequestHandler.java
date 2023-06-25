@@ -2151,6 +2151,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             .setErrorCode(resp.getError().code())
                             .setProducerId(resp.getProducerId())
                             .setProducerEpoch(resp.getProducerEpoch());
+                    if (resp.getError() == Errors.COORDINATOR_LOAD_IN_PROGRESS
+                        || resp.getError() == Errors.CONCURRENT_TRANSACTIONS) {
+                        responseData.setThrottleTimeMs(1000);
+                    }
                     response.complete(new InitProducerIdResponse(responseData));
                 });
     }
