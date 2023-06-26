@@ -103,6 +103,10 @@ jobs:
     - name: Build with Maven skipTests
       run: mvn clean install -ntp -B -DskipTests
 
+    - name: Start and init the oauth server
+      run: ./ci/init_hydra_oauth_server.sh
+      timeout-minutes: 5
+
     - name: tests module
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
       timeout-minutes: 60

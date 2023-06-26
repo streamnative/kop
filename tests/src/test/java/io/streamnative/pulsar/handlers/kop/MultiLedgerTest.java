@@ -190,7 +190,7 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         assertEquals(i, totalMsgs);
     }
 
-    @Test
+    @Test(timeOut = 30000)
     public void testListOffsetForEmptyRolloverLedger() throws Exception {
         final String topic = "test-list-offset-for-empty-rollover-ledger";
         final String partitionName = TopicName.get(topic).getPartition(0).toString();
