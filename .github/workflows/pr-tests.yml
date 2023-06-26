@@ -15,10 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-
+  check-style:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v1
     - name: Set up JDK 17
@@ -41,14 +39,50 @@ jobs:
     - name: Spotbugs check
       run: mvn -ntp -B spotbugs:check
 
+  kafka-impl-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK 17
+      uses: actions/setup-java@v1
+      with:
+        java-version: 17
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
+
     - name: kafka-impl test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-impl
+
+  schema-registry-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK 17
+      uses: actions/setup-java@v1
+      with:
+        java-version: 17
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: schema registry test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl schema-registry
 
     - name: kafka-payload-processor test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl kafka-payload-processor-shaded-tests
+
+  oauth-client-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK 17
+      uses: actions/setup-java@v1
+      with:
+        java-version: 17
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: Start and init the oauth server
       run: ./ci/init_hydra_oauth_server.sh
@@ -57,9 +91,33 @@ jobs:
     - name: oauth-client test after build
       run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
 
+  module-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK 17
+      uses: actions/setup-java@v1
+      with:
+        java-version: 17
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
+
     - name: tests module
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
       timeout-minutes: 60
+
+  code-coverge-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK 17
+      uses: actions/setup-java@v1
+      with:
+        java-version: 17
+
+    - name: Build with Maven skipTests
+      run: mvn clean install -ntp -B -DskipTests
 
     - name: Upload to Codecov
       uses: codecov/codecov-action@v3
