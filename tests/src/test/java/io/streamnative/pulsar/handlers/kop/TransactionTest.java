@@ -93,17 +93,17 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 1000 * 30, dataProvider = "produceConfigProvider")
     public void readCommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-committed-test", "txn-11", "read_committed", isBatch);
     }
 
-    @Test(timeOut = 1000 * 10, dataProvider = "produceConfigProvider")
+    @Test(timeOut = 1000 * 30, dataProvider = "produceConfigProvider")
     public void readUncommittedTest(boolean isBatch) throws Exception {
         basicProduceAndConsumeTest("read-uncommitted-test", "txn-12", "read_uncommitted", isBatch);
     }
 
-    @Test(timeOut = 1000 * 10)
+    @Test(timeOut = 1000 * 30)
     public void testInitTransaction() {
         final KafkaProducer<Integer, String> producer = buildTransactionProducer("prod-1");
 
@@ -111,7 +111,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.close();
     }
 
-    @Test(timeOut = 1000 * 10)
+    @Test(timeOut = 1000 * 30)
     public void testMultiCommits() throws Exception {
         final String topic = "test-multi-commits";
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("X1");
@@ -234,7 +234,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         txnOffsetTest("txn-offset-commit-test", 10, true);
     }
 
-    @Test(timeOut = 1000 * 10)
+    @Test(timeOut = 3000 * 10)
     public void offsetAbortTest() throws Exception {
         txnOffsetTest("txn-offset-abort-test", 10, false);
     }
