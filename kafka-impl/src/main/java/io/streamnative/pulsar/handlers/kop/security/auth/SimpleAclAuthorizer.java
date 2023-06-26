@@ -156,11 +156,11 @@ public class SimpleAclAuthorizer implements Authorizer {
                 topicName, principal.getName(), principal.getAuthenticationData(), "");
     }
 
-    private void checkResourceType(Resource resource, ResourceType expectedResourceType) {
-        if (resource.getResourceType() != expectedResourceType) {
+    private void checkResourceType(Resource actual, ResourceType expected) {
+        if (actual.getResourceType() != expected) {
             throw new IllegalArgumentException(
                     String.format("Expected resource type is [%s], but have [%s]",
-                            expectedResourceType, resource.getResourceType()));
+                            expected, actual.getResourceType()));
         }
     }
 
