@@ -13,9 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
-
-import static com.google.common.base.Preconditions.checkArgument;
-
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
