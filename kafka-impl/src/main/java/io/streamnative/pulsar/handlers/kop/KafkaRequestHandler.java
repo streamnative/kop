@@ -2195,9 +2195,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             responseData.results().add(topicResult);
                                             topicPartitionErrorsMap.forEach((TopicPartition tp, Errors error) -> {
                                                 if (tp.topic().equals(topicName)) {
-                                                    if (log.isDebugEnabled() && error != Errors.NONE) {
-                                                        log.info("Error {} for {}", error, tp);
-                                                    }
                                                     topicResult.results()
                                                         .add(new AddPartitionsToTxnResponseData
                                                                 .AddPartitionsToTxnPartitionResult()
