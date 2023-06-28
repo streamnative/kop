@@ -148,6 +148,7 @@ public class KafkaTopicManager {
                 log.debug("[{}] Return null for getTopic({}) since channel is closing",
                         requestHandler.ctx.channel(), topicName);
             }
+            return CompletableFuture.completedFuture(Optional.empty());
         }
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
                 kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());

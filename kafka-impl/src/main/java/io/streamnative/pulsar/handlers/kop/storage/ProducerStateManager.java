@@ -145,29 +145,7 @@ public class ProducerStateManager {
         }
         lastSnapshotTime = now;
 
-
-        // take the snapshot in this thread, that is the same thread
-        // that executes mutations
-        ProducerStateManagerSnapshot snapshot = getProducerStateManagerSnapshot();
-
-        // write to Pulsar in another thread, and also ignore errors
-        executor.execute(new SafeRunnable() {
-            @Override
-            public void safeRun() {
-                producerStateManagerSnapshotBuffer
-                        .write(snapshot)
-                        .whenComplete((res, error) -> {
-                            if (error == null) {
-                                log.info("Snapshot for {} taken at offset {} written",
-                                        topicPartition, snapshot.getOffset());
-                            } else {
-                                log.info("Error writing snapshot for {} taken at offset {}",
-                                        topicPartition, snapshot.getOffset(), error);
-                            }
-                        });
-            }
-        });
-
+        takeSnapshot(executor);
     }
 
     private ProducerStateManagerSnapshot getProducerStateManagerSnapshot() {

@@ -711,7 +711,6 @@ public class PartitionLog {
                 log.debug("Partition {} read entry completed in {} ns",
                         topicPartition, MathUtils.nowInNano() - startDecodingEntriesNanos);
             }
-            log.info("Partition {} read entry completed. {} ", topicPartition, abortedTransactions);
             future.complete(ReadRecordsResult
                     .get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition, this));
         }, context.getDecodeExecutor()).exceptionally(ex -> {
