@@ -57,6 +57,10 @@ public class PendingRequest {
         return requestHeader.correlationId();
     }
 
+    public AbstractResponse createErrorResponse(Throwable error) {
+        return request.getErrorResponse(error);
+    }
+
     public void complete(final ResponseContext responseContext) {
         responseConsumerHandler.accept(responseContext);
         sendFuture.complete(responseContext.getResponse());
