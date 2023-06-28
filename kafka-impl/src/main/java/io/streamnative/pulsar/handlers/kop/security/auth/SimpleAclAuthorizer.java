@@ -13,9 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -35,9 +37,12 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     private final AuthorizationService authorizationService;
 
-    public SimpleAclAuthorizer(PulsarService pulsarService) {
+    private final boolean forceCheckGroupId;
+
+    public SimpleAclAuthorizer(PulsarService pulsarService, KafkaServiceConfiguration config) {
         this.pulsarService = pulsarService;
         this.authorizationService = pulsarService.getBrokerService().getAuthorizationService();
+        this.forceCheckGroupId = config.isKafkaEnableAuthorizationForceGroupIdCheck();
     }
 
     protected PulsarService getPulsarService() {
@@ -152,8 +157,11 @@ public class SimpleAclAuthorizer implements Authorizer {
     public CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource) {
         checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
+        if (forceCheckGroupId && StringUtils.isBlank(principal.getGroupId())) {
+            return CompletableFuture.completedFuture(false);
+        }
         return authorizationService.canConsumeAsync(
-                topicName, principal.getName(), principal.getAuthenticationData(), "");
+                topicName, principal.getName(), principal.getAuthenticationData(), principal.getGroupId());
     }
 
     private void checkResourceType(Resource actual, ResourceType expected) {

@@ -14,8 +14,10 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
+import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.GROUP_ID_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
 
+import io.streamnative.pulsar.handlers.kop.security.auth.OAuthBearerClientInitialResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -29,7 +31,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse;
 
 @Slf4j
 public class KopOAuthBearerSaslServer implements SaslServer {
@@ -115,6 +116,13 @@ public class KopOAuthBearerSaslServer implements SaslServer {
                 return tokenForNegotiatedProperty.tenant();
             }
             return defaultKafkaMetadataTenant;
+        }
+        if (GROUP_ID_PROP.equals(propName)) {
+            log.info("getNegotiatedProperty: {}", tokenForNegotiatedProperty.groupId());
+            if (tokenForNegotiatedProperty.groupId() == null) {
+                return "";
+            }
+            return tokenForNegotiatedProperty.groupId();
         }
         return NEGOTIATED_PROPERTY_KEY_TOKEN.equals(propName) ? tokenForNegotiatedProperty : null;
     }

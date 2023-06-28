@@ -13,31 +13,38 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import java.io.IOException;
 import lombok.NonNull;
 import org.apache.commons.lang3.tuple.Pair;
 
+
 public class OAuthTokenDecoder {
 
-    protected static final String DELIMITER = "__with_tenant_";
+    protected static final String EXTENSION_DATA_DELIMITER = "__with_extension_data_";
 
     /**
      * Decode the raw token to token and tenant.
      *
-     * @param rawToken Raw token, it contains token and tenant. Format: Tenant + "__with_tenant_" + Token.
+     * @param rawToken Raw token, it contains token and tenant.
+     *                 Format: Token + "__with_extension_data_" + base64(json()).
      * @return Token and tenant pair. Left is token, right is tenant.
      */
-    public static Pair<String, String> decode(@NonNull String rawToken) {
+    public static Pair<String, ExtensionTokenData> decode(@NonNull String rawToken) throws IOException {
         final String token;
-        final String tenant;
+        final String extensionData;
         // Extract real token.
-        int idx = rawToken.indexOf(DELIMITER);
+        int idx = rawToken.indexOf(EXTENSION_DATA_DELIMITER);
         if (idx != -1) {
-            token = rawToken.substring(idx + DELIMITER.length());
-            tenant = rawToken.substring(0, idx);
+            extensionData = rawToken.substring(idx + EXTENSION_DATA_DELIMITER.length());
+            token = rawToken.substring(0, idx);
         } else {
             token = rawToken;
-            tenant = null;
+            extensionData = null;
         }
-        return Pair.of(token, tenant);
+
+        if (extensionData == null || extensionData.isEmpty()) {
+            return Pair.of(token, null);
+        }
+        return Pair.of(token, ExtensionTokenData.decode(extensionData));
     }
 }

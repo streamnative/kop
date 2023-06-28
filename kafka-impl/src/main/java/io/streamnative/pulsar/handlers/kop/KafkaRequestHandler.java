@@ -340,7 +340,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         final boolean authorizationEnabled = pulsarService.getBrokerService().isAuthorizationEnabled();
         this.authorizer = authorizationEnabled && authenticationEnabled
-                ? new SimpleAclAuthorizer(pulsarService)
+                ? new SimpleAclAuthorizer(pulsarService, kafkaConfig)
                 : null;
         this.adminManager = adminManager;
         this.producePurgatory = producePurgatory;

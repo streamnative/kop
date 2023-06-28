@@ -17,9 +17,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import io.fusionauth.jwks.domain.JSONWebKey;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import io.streamnative.pulsar.handlers.kop.security.oauth.ClientCredentialsFlow;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -41,6 +43,10 @@ public class HydraOAuthUtils {
     private static final String AUDIENCE = "http://example.com/api/v2/";
 
     private static final AdminApi hydraAdmin = new AdminApi();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private static final ObjectWriter CLIENT_INFO_WRITER =
+            OBJECT_MAPPER.writerFor(ClientCredentialsFlow.ClientInfo.class);
 
     private static String publicKey;
 
@@ -87,6 +93,11 @@ public class HydraOAuthUtils {
     }
 
     public static String createOAuthClient(String clientId, String clientSecret, String tenant)
+            throws IOException, ApiException {
+        return createOAuthClient(clientId, clientSecret, tenant, null);
+    }
+
+    public static String createOAuthClient(String clientId, String clientSecret, String tenant, String groupId)
             throws ApiException, IOException {
         final OAuth2Client oAuth2Client = new OAuth2Client()
                 .audience(Collections.singletonList(AUDIENCE))
@@ -102,18 +113,17 @@ public class HydraOAuthUtils {
                 throw e;
             }
         }
-        return writeCredentialsFile(clientId, clientSecret, tenant, clientId + ".json");
+        return writeCredentialsFile(clientId, clientSecret, tenant, groupId, clientId + ".json");
     }
 
     public static String writeCredentialsFile(String clientId,
-                                               String clientSecret,
-                                               String tenant,
-                                               String basename) throws IOException {
-        final String content = "{\n"
-                + "    \"client_id\": \"" + clientId + "\",\n"
-                + "    \"client_secret\": \"" + clientSecret + (tenant != null ? "\",\n" : "\"\n")
-                + (tenant != null ? "    \"tenant\": \"" + tenant + "\"\n" : "")
-                + "}\n";
+                                              String clientSecret,
+                                              String tenant,
+                                              String groupId,
+                                              String basename) throws IOException {
+        ClientCredentialsFlow.ClientInfo clientInfo =
+                new ClientCredentialsFlow.ClientInfo(clientId, clientSecret, tenant, groupId);
+        final String content = CLIENT_INFO_WRITER.writeValueAsString(clientInfo);
 
         File file = File.createTempFile("oauth-credentials-", basename);
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {

@@ -107,7 +107,7 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
         // empty
     }
 
-    private void handleCallback(KopOAuthBearerValidatorCallback callback) {
+    private void handleCallback(KopOAuthBearerValidatorCallback callback) throws OAuthBearerIllegalTokenException {
         String tokenValue = callback.tokenValue();
         if (tokenValue == null) {
             throw new IllegalArgumentException("Callback missing required token value");
@@ -117,24 +117,31 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
         List<String> requiredScope = requiredScope();
         int allowableClockSkewMs = allowableClockSkewMs();
         // Extract real token.
-        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenValue);
-        final String token = tokenAndTenant.getLeft();
-        final String tenant = tokenAndTenant.getRight();
-        KopOAuthBearerUnsecuredJws unsecuredJwt = new KopOAuthBearerUnsecuredJws(token, tenant, principalClaimName,
-                scopeClaimName);
-        long now = time.milliseconds();
-        OAuthBearerValidationUtils
-                .validateClaimForExistenceAndType(unsecuredJwt, true, principalClaimName, String.class)
-                .throwExceptionIfFailed();
-        OAuthBearerValidationUtils.validateIssuedAt(unsecuredJwt, false, now, allowableClockSkewMs)
-                .throwExceptionIfFailed();
-        OAuthBearerValidationUtils.validateExpirationTime(unsecuredJwt, now, allowableClockSkewMs)
-                .throwExceptionIfFailed();
-        OAuthBearerValidationUtils.validateTimeConsistency(unsecuredJwt).throwExceptionIfFailed();
-        OAuthBearerValidationUtils.validateScope(unsecuredJwt, requiredScope).throwExceptionIfFailed();
-        log.info("Successfully validated token with principal {}: {}", unsecuredJwt.principalName(),
-                unsecuredJwt.claims().toString());
-        callback.token(unsecuredJwt);
+        try {
+            Pair<String, ExtensionTokenData> tokenAndTenant = OAuthTokenDecoder.decode(tokenValue);
+            final String token = tokenAndTenant.getLeft();
+            final ExtensionTokenData extensionTokenData = tokenAndTenant.getRight();
+            final String tenant = extensionTokenData != null ? extensionTokenData.getTenant() : null;
+            final String groupId = extensionTokenData != null ? extensionTokenData.getGroupId() : null;
+            KopOAuthBearerUnsecuredJws unsecuredJwt = new KopOAuthBearerUnsecuredJws(token, tenant, groupId,
+                    principalClaimName, scopeClaimName);
+            long now = time.milliseconds();
+            OAuthBearerValidationUtils
+                    .validateClaimForExistenceAndType(unsecuredJwt, true, principalClaimName, String.class)
+                    .throwExceptionIfFailed();
+            OAuthBearerValidationUtils.validateIssuedAt(unsecuredJwt, false, now, allowableClockSkewMs)
+                    .throwExceptionIfFailed();
+            OAuthBearerValidationUtils.validateExpirationTime(unsecuredJwt, now, allowableClockSkewMs)
+                    .throwExceptionIfFailed();
+            OAuthBearerValidationUtils.validateTimeConsistency(unsecuredJwt).throwExceptionIfFailed();
+            OAuthBearerValidationUtils.validateScope(unsecuredJwt, requiredScope).throwExceptionIfFailed();
+            log.info("Successfully validated token with principal {}: {}", unsecuredJwt.principalName(),
+                    unsecuredJwt.claims().toString());
+            callback.token(unsecuredJwt);
+        } catch (IOException e) {
+            throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
+        }
+
     }
 
     private String principalClaimName() {

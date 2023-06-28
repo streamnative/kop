@@ -46,8 +46,6 @@ import org.apache.pulsar.common.api.AuthData;
 @Slf4j
 public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandler {
 
-    private static final String DELIMITER = "__with_tenant_";
-
     private ServerConfig config = null;
     private AuthenticationService authenticationService;
     private int requestTimeoutMs;
@@ -126,12 +124,14 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
         final String tokenWithTenant = callback.tokenValue();
 
-        // Extract real token.
-        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenWithTenant);
-        final String token = tokenAndTenant.getLeft();
-        final String tenant = tokenAndTenant.getRight();
+
 
         try {
+            // Extract real token.
+            Pair<String, ExtensionTokenData> tokenAndTenant = OAuthTokenDecoder.decode(tokenWithTenant);
+            final String token = tokenAndTenant.getLeft();
+            ExtensionTokenData extensionTokenData = tokenAndTenant.getRight();
+            log.info("ExtensionTokenData: {}", extensionTokenData);
             AuthData authData = AuthData.of(token.getBytes(StandardCharsets.UTF_8));
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     authData, null, null);
@@ -167,7 +167,12 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
                 @Override
                 public String tenant() {
-                    return tenant;
+                    return extensionTokenData != null ? extensionTokenData.getTenant() : null;
+                }
+
+                @Override
+                public String groupId() {
+                    return extensionTokenData != null ? extensionTokenData.getGroupId() : null;
                 }
 
                 @Override
@@ -176,7 +181,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                     return Long.MAX_VALUE;
                 }
             });
-        } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException e) {
+        } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException
+                 | IOException e) {
             log.error("OAuth validator callback handler new auth state failed: ", e);
             throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
         }

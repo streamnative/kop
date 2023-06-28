@@ -14,7 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.google.common.annotations.VisibleForTesting;
@@ -32,7 +34,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.DefaultAsyncHttpClient;
 import org.asynchttpclient.DefaultAsyncHttpClientConfig;
@@ -88,6 +93,11 @@ public class ClientCredentialsFlow implements Closeable {
                     if (tenant != null) {
                         token.setTenant(tenant);
                     }
+                    String groupId = clientInfo.getGroupId();
+                    if (groupId != null) {
+                        token.setGroupId(groupId);
+                    }
+                    token.setExtensionTokenData();
                     return token;
                 case 400: // Bad request
                 case 401: // Unauthorized
@@ -97,7 +107,8 @@ public class ClientCredentialsFlow implements Closeable {
                     throw new IOException("Failed to perform HTTP request:  "
                             + response.getStatusCode() + " " + response.getStatusText());
             }
-        } catch (UnsupportedEncodingException | InterruptedException | ExecutionException e) {
+        } catch (UnsupportedEncodingException | InterruptedException
+                 | ExecutionException | JsonProcessingException e) {
             throw new IOException(e);
         }
     }
@@ -157,7 +168,11 @@ public class ClientCredentialsFlow implements Closeable {
     }
 
     @Getter
+    @ToString
+    @NoArgsConstructor
+    @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ClientInfo {
 
         @JsonProperty("client_id")
@@ -168,6 +183,9 @@ public class ClientCredentialsFlow implements Closeable {
 
         @JsonProperty("tenant")
         private String tenant;
+
+        @JsonProperty("group_id")
+        private String groupId;
     }
 
     @Getter

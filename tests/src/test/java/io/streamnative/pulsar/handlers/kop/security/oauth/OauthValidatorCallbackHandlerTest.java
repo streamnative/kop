@@ -51,12 +51,15 @@ public class OauthValidatorCallbackHandlerTest {
         doReturn(CompletableFuture.completedFuture(null)).when(state).authenticateAsync(any());
 
         KopOAuthBearerValidatorCallback callbackWithTenant =
-                new KopOAuthBearerValidatorCallback("my-tenant" + OAuthTokenDecoder.DELIMITER + "my-token");
+                new KopOAuthBearerValidatorCallback("my-token"
+                        + OAuthTokenDecoder.EXTENSION_DATA_DELIMITER
+                        + "eyJ0ZW5hbnQiOiJteS10ZW5hbnQiLCJncm91cElkIjoibXktZ3JvdXAtaWQifQ==");
 
         handler.handleCallback(callbackWithTenant);
 
         KopOAuthBearerToken token = callbackWithTenant.token();
         assertEquals(token.tenant(), "my-tenant");
+        assertEquals(token.groupId(), "my-group-id");
         assertEquals(token.value(), "my-token");
 
         KopOAuthBearerValidatorCallback callbackWithoutTenant =

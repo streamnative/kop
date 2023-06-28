@@ -72,7 +72,7 @@ public class SchemaRegistryManager {
         this.kafkaConfig = kafkaConfig;
         this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {});
         this.pulsar = pulsar;
-        Authorizer authorizer = new SimpleAclAuthorizer(pulsar);
+        Authorizer authorizer = new SimpleAclAuthorizer(pulsar, kafkaConfig);
         this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator(this.kafkaConfig,
                 authenticationService, authorizer);
     }
@@ -136,7 +136,8 @@ public class SchemaRegistryManager {
         private void performAuthorizationValidation(String username, String role, String tenant)
                 throws SchemaStorageException {
             if (kafkaConfig.isAuthorizationEnabled() && kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
-                KafkaPrincipal kafkaPrincipal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username, null);
+                KafkaPrincipal kafkaPrincipal =
+                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username, null, null);
                 String topicName = MetadataUtils.constructSchemaRegistryTopicName(tenant, kafkaConfig);
                 try {
                     Boolean tenantExists =

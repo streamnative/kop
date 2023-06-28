@@ -44,5 +44,7 @@ public class KafkaPrincipal implements Principal {
      */
     private final String tenantSpec;
 
+    private final String groupId;
+
     private final AuthenticationDataSource authenticationData;
 }

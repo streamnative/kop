@@ -14,27 +14,20 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNull;
 
 import java.io.IOException;
-import org.apache.commons.lang3.tuple.Pair;
+import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.Test;
 
-
-/**
- * Test {@link OAuthTokenDecoder}.
- */
-public class OAuthTokenDecoderTest {
+@Slf4j
+public class ExtensionTokenDataTest {
 
     @Test
-    public void testDecode() throws IOException {
-        Pair<String, ExtensionTokenData> result = OAuthTokenDecoder.decode("my-token");
-        assertEquals(result.getLeft(), "my-token");
-        assertNull(result.getRight());
-        result = OAuthTokenDecoder.decode("my-token"
-                + OAuthTokenDecoder.EXTENSION_DATA_DELIMITER
-                + "eyJ0ZW5hbnQiOiJteS10ZW5hbnQiLCJncm91cElkIjoibXktZ3JvdXAtaWQifQ==");
-        assertEquals(result.getLeft(), "my-token");
-        assertEquals(result.getRight(), new ExtensionTokenData("my-tenant", "my-group-id"));
+    public void testEncodeAndDecode() throws IOException {
+        ExtensionTokenData raw = new ExtensionTokenData("my-tenant", "my-group-id");
+        String encode = raw.encode();
+        log.info("The encode string: {}", encode);
+        ExtensionTokenData decode = ExtensionTokenData.decode(encode);
+        assertEquals(decode, raw);
     }
 }
