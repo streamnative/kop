@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 import javax.security.sasl.SaslException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
+import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.message.SaslAuthenticateRequestData;
 import org.apache.kafka.common.message.SaslHandshakeRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -112,8 +113,15 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     public void channelInactive(ChannelHandlerContext channelHandlerContext) throws Exception {
         log.info("[TransactionMarkerChannelHandler] channelInactive, failing {} pending requests",
                 pendingRequestMap.size());
-        pendingRequestMap.forEach((__, pendingRequest) ->
-            log.warn("Pending request ({}) was not sent when the txn marker channel is inactive", pendingRequest));
+        pendingRequestMap.forEach((correlationId, pendingRequest) -> {
+                log.warn("Pending request ({}) was not sent when the txn marker channel is inactive", pendingRequest);
+                pendingRequest.complete(responseContext.set(
+                    channelHandlerContext.channel().remoteAddress(),
+                    pendingRequest.getApiVersion(),
+                    (int) correlationId,
+                    pendingRequest.createErrorResponse(new NetworkException())
+            ));
+        });
         pendingRequestMap.clear();
         transactionMarkerChannelManager.channelFailed((InetSocketAddress) channelHandlerContext
                 .channel()
@@ -151,9 +159,15 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
     @Override
     public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
         log.error("Transaction marker channel handler caught exception.", throwable);
-        pendingRequestMap.forEach((__, pendingRequest) ->
+        pendingRequestMap.forEach((correlationId, pendingRequest) -> {
                 log.warn("Pending request ({}) failed because the txn marker channel caught exception",
-                        pendingRequest, throwable));
+                        pendingRequest, throwable);
+                    pendingRequest.complete(responseContext.set(
+                            channelHandlerContext.channel().remoteAddress(),
+                            pendingRequest.getApiVersion(),
+                            (int) correlationId,
+                            pendingRequest.createErrorResponse(new NetworkException(throwable))));
+        });
         pendingRequestMap.clear();
         channelHandlerContext.close();
     }

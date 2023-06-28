@@ -775,6 +775,10 @@ public class TransactionStateManager {
     public void removeTransactionsForTxnTopicPartition(int partition) {
         TopicPartition topicPartition =
                 new TopicPartition(transactionConfig.getTransactionMetadataTopicName(), partition);
+        if (scheduler.isShutdown()) {
+            log.info("Skip unloading transaction metadata from {} as broker is stopping", topicPartition);
+            return;
+        }
         log.info("Scheduling unloading transaction metadata from {}", topicPartition);
 
         CoreUtils.inWriteLock(stateLock, () -> {
