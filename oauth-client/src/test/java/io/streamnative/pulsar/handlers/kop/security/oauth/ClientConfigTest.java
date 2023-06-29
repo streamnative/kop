@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -27,14 +28,34 @@ public class ClientConfigTest {
 
     @Test
     public void testValidConfig() {
+        String credentialsUrl = Objects.requireNonNull(
+                getClass().getClassLoader().getResource("private_key.json")).toString();
         final ClientConfig clientConfig = ClientConfigHelper.create(
                 "https://issuer-url.com",
-                "file:///etc/config/credentials.json",
+                credentialsUrl,
                 "audience"
         );
         Assert.assertEquals(clientConfig.getIssuerUrl().toString(), "https://issuer-url.com");
-        Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), "file:/etc/config/credentials.json");
+        Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), credentialsUrl);
         Assert.assertEquals(clientConfig.getAudience(), "audience");
+        Assert.assertEquals(clientConfig.getClientInfo(),
+                new ClientConfig.ClientInfo("my-id", "my-secret", "my-tenant", null));
+    }
+
+    @Test
+    public void testValidConfigWithGroupId() {
+        String credentialsUrl = Objects.requireNonNull(
+                getClass().getClassLoader().getResource("private_key_with_group_id.json")).toString();
+        final ClientConfig clientConfig = ClientConfigHelper.create(
+                "https://issuer-url.com",
+                credentialsUrl,
+                "audience"
+        );
+        Assert.assertEquals(clientConfig.getIssuerUrl().toString(), "https://issuer-url.com");
+        Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), credentialsUrl);
+        Assert.assertEquals(clientConfig.getAudience(), "audience");
+        Assert.assertEquals(clientConfig.getClientInfo(),
+                new ClientConfig.ClientInfo("my-id", "my-secret", "my-tenant", "my-group-id"));
     }
 
     @Test
