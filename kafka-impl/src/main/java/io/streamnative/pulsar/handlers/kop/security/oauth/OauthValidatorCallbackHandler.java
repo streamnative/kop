@@ -31,6 +31,7 @@ import javax.security.auth.login.AppConfigurationEntry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerExtensionsValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
@@ -102,10 +103,18 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                     validatorCallback.error(failureScope != null ? "insufficient_scope" : "invalid_token",
                             failureScope, failureReason.failureOpenIdConfig());
                 }
+            } else if (callback instanceof OAuthBearerExtensionsValidatorCallback) {
+                handleExtensionsValidatorCallback((OAuthBearerExtensionsValidatorCallback) callback);
             } else {
                 throw new UnsupportedCallbackException(callback);
             }
         }
+    }
+
+    private void handleExtensionsValidatorCallback(
+            OAuthBearerExtensionsValidatorCallback extensionsValidatorCallback) {
+        extensionsValidatorCallback.inputExtensions().map()
+                .forEach((extensionName, v) -> extensionsValidatorCallback.valid(extensionName));
     }
 
     @VisibleForTesting
@@ -124,14 +133,12 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
         final String tokenWithTenant = callback.tokenValue();
 
-
+        // Extract real token.
+        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenWithTenant);
+        final String token = tokenAndTenant.getLeft();
+        final String tenant = tokenAndTenant.getRight();
 
         try {
-            // Extract real token.
-            Pair<String, ExtensionTokenData> tokenAndTenant = OAuthTokenDecoder.decode(tokenWithTenant);
-            final String token = tokenAndTenant.getLeft();
-            ExtensionTokenData extensionTokenData = tokenAndTenant.getRight();
-            log.info("ExtensionTokenData: {}", extensionTokenData);
             AuthData authData = AuthData.of(token.getBytes(StandardCharsets.UTF_8));
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     authData, null, null);
@@ -167,12 +174,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
 
                 @Override
                 public String tenant() {
-                    return extensionTokenData != null ? extensionTokenData.getTenant() : null;
-                }
-
-                @Override
-                public String groupId() {
-                    return extensionTokenData != null ? extensionTokenData.getGroupId() : null;
+                    return tenant;
                 }
 
                 @Override
@@ -181,8 +183,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                     return Long.MAX_VALUE;
                 }
             });
-        } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException
-                 | IOException e) {
+        } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException e) {
             log.error("OAuth validator callback handler new auth state failed: ", e);
             throw new OAuthBearerIllegalTokenException(OAuthBearerValidationResult.newFailure(e.getMessage()));
         }

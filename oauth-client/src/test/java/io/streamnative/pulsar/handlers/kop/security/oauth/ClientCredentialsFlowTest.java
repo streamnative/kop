@@ -19,11 +19,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import java.io.IOException;
-import java.net.URL;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
-import org.apache.commons.lang3.StringUtils;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.BoundRequestBuilder;
 import org.asynchttpclient.ListenableFuture;
@@ -58,38 +56,38 @@ public class ClientCredentialsFlowTest {
 
     @Test
     public void testLoadPrivateKey() throws Exception {
-        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
+        ClientConfig clientConfig = ClientConfigHelper.create(
                 "http://localhost:4444",
                 Objects.requireNonNull(
                         getClass().getClassLoader().getResource("private_key.json")).toString()
-        ));
-        final ClientCredentialsFlow.ClientInfo clientInfo = flow.loadPrivateKey();
+        );
+        ClientConfig.ClientInfo clientInfo = clientConfig.getClientInfo();
         Assert.assertEquals(clientInfo.getId(), "my-id");
         Assert.assertEquals(clientInfo.getSecret(), "my-secret");
     }
 
     @Test
     public void testLoadPrivateKeyWithExtensionData() throws Exception {
-        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
+        ClientConfig clientConfig = ClientConfigHelper.create(
                 "http://localhost:4444",
                 Objects.requireNonNull(
-                        getClass().getClassLoader().getResource("private_key_with_tenant_and_groupId.json"))
+                                getClass().getClassLoader().getResource("private_key_with_tenant_and_groupId.json"))
                         .toString()
-        ));
-        final ClientCredentialsFlow.ClientInfo clientInfo = flow.loadPrivateKey();
+        );
+        ClientConfig.ClientInfo clientInfo = clientConfig.getClientInfo();
         Assert.assertEquals(clientInfo.getId(), "my-id");
         Assert.assertEquals(clientInfo.getSecret(), "my-secret");
         Assert.assertEquals(clientInfo.getTenant(), "my-tenant");
         Assert.assertEquals(clientInfo.getGroupId(), "my-group-id");
     }
 
-    @Test(dataProvider = "extensionDataProvider")
-    public void testTenantToken(URL credentialsUrl, String expectedExtensionData)
-            throws ExecutionException, InterruptedException, IOException {
+    @Test
+    public void testTenantToken() throws ExecutionException, InterruptedException, IOException {
         AsyncHttpClient mockHttpClient = mock(AsyncHttpClient.class);
         final ClientCredentialsFlow flow = spy(new ClientCredentialsFlow(ClientConfigHelper.create(
                 "http://localhost:4444",
-                Objects.requireNonNull(credentialsUrl).toString()
+                Objects.requireNonNull(
+                        getClass().getClassLoader().getResource("private_key.json")).toString()
         ), mockHttpClient));
 
         ClientCredentialsFlow.Metadata mockMetadata = mock(ClientCredentialsFlow.Metadata.class);
@@ -114,11 +112,7 @@ public class ClientCredentialsFlowTest {
         doReturn(mockBuilder).when(mockBuilder).setBody(anyString());
 
         OAuthBearerTokenImpl token = flow.authenticate();
-        String expactedToken = "my-token";
-        if (StringUtils.isNotBlank(expectedExtensionData)) {
-            expactedToken = expactedToken + OAuthBearerTokenImpl.EXTENSION_DATA_DELIMITER + expectedExtensionData;
-        }
-        Assert.assertEquals(token.value(), expactedToken);
+        Assert.assertEquals(token.value(), "my-tenant" + OAuthBearerTokenImpl.DELIMITER + "my-token");
         Assert.assertEquals(token.scope(), Collections.singleton("test"));
     }
 }

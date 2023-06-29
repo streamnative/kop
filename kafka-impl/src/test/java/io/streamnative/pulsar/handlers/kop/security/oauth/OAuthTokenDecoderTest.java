@@ -16,10 +16,8 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
 
-import java.io.IOException;
 import org.apache.commons.lang3.tuple.Pair;
 import org.testng.annotations.Test;
-
 
 /**
  * Test {@link OAuthTokenDecoder}.
@@ -27,14 +25,12 @@ import org.testng.annotations.Test;
 public class OAuthTokenDecoderTest {
 
     @Test
-    public void testDecode() throws IOException {
-        Pair<String, ExtensionTokenData> result = OAuthTokenDecoder.decode("my-token");
-        assertEquals(result.getLeft(), "my-token");
-        assertNull(result.getRight());
-        result = OAuthTokenDecoder.decode("my-token"
-                + OAuthTokenDecoder.EXTENSION_DATA_DELIMITER
-                + "eyJ0ZW5hbnQiOiJteS10ZW5hbnQiLCJncm91cElkIjoibXktZ3JvdXAtaWQifQ==");
-        assertEquals(result.getLeft(), "my-token");
-        assertEquals(result.getRight(), new ExtensionTokenData("my-tenant", "my-group-id"));
+    public void testDecode() {
+        Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode("my-token");
+        assertEquals(tokenAndTenant.getLeft(), "my-token");
+        assertNull(tokenAndTenant.getRight());
+        tokenAndTenant = OAuthTokenDecoder.decode("my-tenant" + OAuthTokenDecoder.DELIMITER + "my-token");
+        assertEquals(tokenAndTenant.getLeft(), "my-token");
+        assertEquals(tokenAndTenant.getRight(), "my-tenant");
     }
 }

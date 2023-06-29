@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,10 +33,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.DefaultAsyncHttpClient;
 import org.asynchttpclient.DefaultAsyncHttpClientConfig;
@@ -50,7 +46,6 @@ public class ClientCredentialsFlow implements Closeable {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final ObjectReader METADATA_READER = OBJECT_MAPPER.readerFor(Metadata.class);
-    private static final ObjectReader CLIENT_INFO_READER = OBJECT_MAPPER.readerFor(ClientInfo.class);
     private static final ObjectReader TOKEN_RESULT_READER = OBJECT_MAPPER.readerFor(OAuthBearerTokenImpl.class);
     private static final ObjectReader TOKEN_ERROR_READER = OBJECT_MAPPER.readerFor(TokenError.class);
 
@@ -76,7 +71,7 @@ public class ClientCredentialsFlow implements Closeable {
 
     public OAuthBearerTokenImpl authenticate() throws IOException {
         final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
-        final ClientInfo clientInfo = loadPrivateKey();
+        final ClientConfig.ClientInfo clientInfo = clientConfig.getClientInfo();
         try {
             final String body = buildClientCredentialsBody(clientInfo);
             final Response response = httpClient.preparePost(tokenEndPoint)
@@ -93,11 +88,6 @@ public class ClientCredentialsFlow implements Closeable {
                     if (tenant != null) {
                         token.setTenant(tenant);
                     }
-                    String groupId = clientInfo.getGroupId();
-                    if (groupId != null) {
-                        token.setGroupId(groupId);
-                    }
-                    token.setExtensionTokenData();
                     return token;
                 case 400: // Bad request
                 case 401: // Unauthorized
@@ -133,19 +123,12 @@ public class ClientCredentialsFlow implements Closeable {
         }
     }
 
-    @VisibleForTesting
-    ClientInfo loadPrivateKey() throws IOException {
-        final URLConnection connection = clientConfig.getCredentialsUrl().openConnection();
-        try (InputStream inputStream = connection.getInputStream()) {
-            return CLIENT_INFO_READER.readValue(inputStream);
-        }
-    }
 
     private static String encode(String s) throws UnsupportedEncodingException {
         return URLEncoder.encode(s, StandardCharsets.UTF_8.name());
     }
 
-    private String buildClientCredentialsBody(ClientInfo clientInfo) throws UnsupportedEncodingException {
+    private String buildClientCredentialsBody(ClientConfig.ClientInfo clientInfo) throws UnsupportedEncodingException {
         final Map<String, String> bodyMap = new HashMap<>();
         bodyMap.put("grant_type", "client_credentials");
         bodyMap.put("client_id", encode(clientInfo.getId()));
@@ -165,27 +148,6 @@ public class ClientCredentialsFlow implements Closeable {
 
         @JsonProperty("token_endpoint")
         private String tokenEndPoint;
-    }
-
-    @Getter
-    @ToString
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class ClientInfo {
-
-        @JsonProperty("client_id")
-        private String id;
-
-        @JsonProperty("client_secret")
-        private String secret;
-
-        @JsonProperty("tenant")
-        private String tenant;
-
-        @JsonProperty("group_id")
-        private String groupId;
     }
 
     @Getter

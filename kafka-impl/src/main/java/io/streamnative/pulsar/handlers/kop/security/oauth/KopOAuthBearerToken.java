@@ -32,10 +32,5 @@ public interface KopOAuthBearerToken extends OAuthBearerToken {
      * Pass the tenant to oauth server if credentials set.
      */
     String tenant();
-
-    /**
-     * Pass the groupId to oauth server if credentials set.
-     */
-    String groupId();
 }
 

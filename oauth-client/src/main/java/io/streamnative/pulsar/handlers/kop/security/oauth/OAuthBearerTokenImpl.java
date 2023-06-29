@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
@@ -25,9 +24,7 @@ import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OAuthBearerTokenImpl implements OAuthBearerToken {
 
-    protected static final String EXTENSION_DATA_DELIMITER = "__with_extension_data_";
-
-    protected ExtensionTokenData extensionTokenData = new ExtensionTokenData();
+    protected static final String DELIMITER = "__with_tenant_";
 
     @JsonProperty("access_token")
     private String accessToken;
@@ -46,17 +43,7 @@ public class OAuthBearerTokenImpl implements OAuthBearerToken {
     }
 
     public void setTenant(String tenant) {
-        this.extensionTokenData.setTenant(tenant);
-    }
-
-    public void setGroupId(String groupId) {
-        this.extensionTokenData.setGroupId(groupId);
-    }
-
-    public void setExtensionTokenData() throws JsonProcessingException {
-        if (extensionTokenData.hasExtensionData()){
-            this.accessToken = this.accessToken + EXTENSION_DATA_DELIMITER + this.extensionTokenData.encode();
-        }
+        this.accessToken = tenant + DELIMITER + accessToken;
     }
 
     @Override

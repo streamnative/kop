@@ -31,7 +31,6 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
 
     private final String tenant;
 
-    private final String groupId;
     /**
      * Constructor with the given principal and scope claim names.
      *
@@ -47,14 +46,12 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
      */
     public KopOAuthBearerUnsecuredJws(String compactSerialization,
                                       String tenant,
-                                      String groupId,
                                       String principalClaimName,
                                       String scopeClaimName)
             throws OAuthBearerIllegalTokenException {
         super(compactSerialization, principalClaimName, scopeClaimName);
         this.authData = new AuthenticationDataCommand(compactSerialization);
         this.tenant = tenant;
-        this.groupId = groupId;
     }
 
     @Override
@@ -67,8 +64,4 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
         return tenant;
     }
 
-    @Override
-    public String groupId() {
-        return groupId;
-    }
 }
