@@ -1,5 +1,5 @@
 ---
-download: "https://github.com/streamnative/kop/releases/download/v{{protocol:version}}/pulsar-protocol-handler-kafka-{{protocol:version}}.nar"
+download: "https://github.com/streamnative/kop/releases/download/v2.10.4.4/pulsar-protocol-handler-kafka-2.10.4.4.nar"
 alias: KoP - Kafka on Pulsar
 ---
 
@@ -21,7 +21,7 @@ The following figure illustrates how the Kafka-on-Pulsar protocol handler is imp
 # Get Started with KoP
 
 If you have an Apache Pulsar cluster, you can enable Kafka-on-Pulsar on your existing Pulsar cluster by downloading and installing the KoP protocol handler to Pulsar brokers directly. It takes three steps:
-1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-{{protocol:version}}.nar` file, and then copy it to your Pulsar `protocols` directory.
+1. Download KoP protocol handler, or build the `./kafka-impl/target/pulsar-protocol-handler-kafka-2.10.4.4.nar` file, and then copy it to your Pulsar `protocols` directory.
 2. Set the configuration of the KoP protocol handler in Pulsar `broker.conf` or `standalone.conf` files.
 3. Restart Pulsar brokers to load KoP protocol handler.
 
@@ -63,7 +63,7 @@ To build the KoP protocol handler from the source, follow these steps:
 3. Get the `.nar` file in the following directory and copy it to your Pulsar `protocols` directory. You need to create the `protocols` folder in Pulsar if it's the first time you use protocol handlers.
 
     ```bash
-    ./kafka-impl/target/pulsar-protocol-handler-kafka-{{protocol:version}}.nar
+    ./kafka-impl/target/pulsar-protocol-handler-kafka-2.10.4.4.nar
     ```
 
 ### Step 2: Set configuration for KoP
@@ -202,12 +202,12 @@ You can configure and manage KoP based on your requirements. Check the following
 >
 > The following links are invalid when you check this document in the `master` branch from GitHub. You can go to the same chapter of the [README](../README.md) for the correct links.
 
--   [Configure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/configuration.md)
--   [Monitor KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/reference-metrics.md)
--   [Upgrade](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/upgrade.md)
--   [Secure KoP](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/security.md)
--   [Schema Registry](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/schema.md)
--   [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/branch-{{protocol:version}}/docs/implementation.md)
+-   [Configure KoP](https://github.com/streamnative/kop/blob/branch-2.10.4.4/docs/configuration.md)
+-   [Monitor KoP](https://github.com/streamnative/kop/blob/branch-2.10.4.4/docs/reference-metrics.md)
+-   [Upgrade](https://github.com/streamnative/kop/blob/branch-2.10.4.4/docs/upgrade.md)
+-   [Secure KoP](https://github.com/streamnative/kop/blob/branch-2.10.4.4/docs/security.md)
+-   [Schema Registry](https://github.com/streamnative/kop/blob/branch-2.10.4.4/docs/schema.md)
+-   [Implementation: How to converse Pulsar and Kafka](https://github.com/streamnative/kop/blob/branch-2.10.4.4/docs/implementation.md)
 
 The followings are important information when you configure and use KoP.
 

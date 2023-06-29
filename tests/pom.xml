@@ -22,7 +22,7 @@
   <parent>
     <groupId>io.streamnative.pulsar.handlers</groupId>
     <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-    <version>2.10.1.9</version>
+    <version>2.10.4.4</version>
   </parent>
 
   <groupId>io.streamnative.pulsar.handlers</groupId>
