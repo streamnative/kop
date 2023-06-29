@@ -55,7 +55,6 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
             throw new IllegalArgumentException("JAAS configuration options is null");
         }
         clientConfig = new ClientConfig(options);
-
     }
 
     @Override

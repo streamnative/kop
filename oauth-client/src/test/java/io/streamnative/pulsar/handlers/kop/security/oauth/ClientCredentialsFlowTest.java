@@ -27,22 +27,9 @@ import org.asynchttpclient.BoundRequestBuilder;
 import org.asynchttpclient.ListenableFuture;
 import org.asynchttpclient.Response;
 import org.testng.Assert;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 public class ClientCredentialsFlowTest {
-
-    @DataProvider(name = "extensionDataProvider")
-    protected static Object[][] extensionDataProvider() {
-        return new Object[][]{
-                {ClientCredentialsFlowTest.class.getClassLoader().getResource("private_key.json"), ""},
-                {ClientCredentialsFlowTest.class.getClassLoader().getResource("private_key_with_tenant.json"),
-                        "eyJ0ZW5hbnQiOiJteS10ZW5hbnQifQ=="},
-                {ClientCredentialsFlowTest.class.getClassLoader()
-                        .getResource("private_key_with_tenant_and_groupId.json"),
-                        "eyJ0ZW5hbnQiOiJteS10ZW5hbnQiLCJncm91cElkIjoibXktZ3JvdXAtaWQifQ=="},
-        };
-    }
 
     @Test
     public void testFindAuthorizationServer() throws IOException {

@@ -30,7 +30,6 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
     private final AuthenticationDataCommand authData;
 
     private final String tenant;
-
     /**
      * Constructor with the given principal and scope claim names.
      *
@@ -44,9 +43,7 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
      *                                          after decoding; or the mandatory '{@code alg}' header value is
      *                                          not "{@code none}")
      */
-    public KopOAuthBearerUnsecuredJws(String compactSerialization,
-                                      String tenant,
-                                      String principalClaimName,
+    public KopOAuthBearerUnsecuredJws(String compactSerialization, String tenant, String principalClaimName,
                                       String scopeClaimName)
             throws OAuthBearerIllegalTokenException {
         super(compactSerialization, principalClaimName, scopeClaimName);
@@ -63,5 +60,4 @@ public class KopOAuthBearerUnsecuredJws extends OAuthBearerUnsecuredJws implemen
     public String tenant() {
         return tenant;
     }
-
 }

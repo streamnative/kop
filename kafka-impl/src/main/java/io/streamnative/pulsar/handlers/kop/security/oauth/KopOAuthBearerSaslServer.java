@@ -47,6 +47,8 @@ import org.apache.kafka.common.utils.Utils;
  */
 @Slf4j
 public class KopOAuthBearerSaslServer implements SaslServer {
+
+    // Copy from OAuthBearerSaslClient.BYTE_CONTROL_A
     private static final byte BYTE_CONTROL_A = (byte) 0x01;
     private static final String NEGOTIATED_PROPERTY_KEY_TOKEN = OAuthBearerLoginModule.OAUTHBEARER_MECHANISM + ".token";
     private static final String INTERNAL_ERROR_ON_SERVER =
@@ -254,7 +256,9 @@ public class KopOAuthBearerSaslServer implements SaslServer {
 
     private void handleCallbackError(Exception e) throws SaslException {
         String msg = String.format("%s: %s", INTERNAL_ERROR_ON_SERVER, e.getMessage());
-        log.debug(msg, e);
+        if (log.isDebugEnabled()) {
+            log.debug(msg, e);
+        }
         throw new SaslException(msg);
     }
 }

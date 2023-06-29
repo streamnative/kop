@@ -120,8 +120,8 @@ public class KopOAuthBearerUnsecuredValidatorCallbackHandler implements Authenti
         Pair<String, String> tokenAndTenant = OAuthTokenDecoder.decode(tokenValue);
         final String token = tokenAndTenant.getLeft();
         final String tenant = tokenAndTenant.getRight();
-        KopOAuthBearerUnsecuredJws unsecuredJwt = new KopOAuthBearerUnsecuredJws(token, tenant,
-                principalClaimName, scopeClaimName);
+        KopOAuthBearerUnsecuredJws unsecuredJwt = new KopOAuthBearerUnsecuredJws(token, tenant, principalClaimName,
+                scopeClaimName);
         long now = time.milliseconds();
         OAuthBearerValidationUtils
                 .validateClaimForExistenceAndType(unsecuredJwt, true, principalClaimName, String.class)
