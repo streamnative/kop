@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -162,6 +163,21 @@ public class SimpleAclAuthorizer implements Authorizer {
         }
         return authorizationService.canConsumeAsync(
                 topicName, principal.getName(), principal.getAuthenticationData(), principal.getGroupId());
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canDescribeConsumerGroup(KafkaPrincipal principal, Resource resource) {
+        if (forceCheckGroupId) {
+            if (StringUtils.isBlank(principal.getGroupId())) {
+                return CompletableFuture.completedFuture(false);
+            }
+            boolean isSameGroup = Objects.equals(principal.getGroupId(), resource.getName());
+            if (log.isDebugEnabled()) {
+                log.debug("Principal [{}] for resource [{}] isSameGroup [{}]", principal, resource, isSameGroup);
+            }
+            return CompletableFuture.completedFuture(isSameGroup);
+        }
+        return CompletableFuture.completedFuture(true);
     }
 
     private void checkResourceType(Resource actual, ResourceType expected) {

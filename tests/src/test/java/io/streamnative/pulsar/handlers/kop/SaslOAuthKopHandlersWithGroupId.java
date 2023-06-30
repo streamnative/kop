@@ -19,16 +19,19 @@ import static org.testng.Assert.assertNotNull;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
+import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.errors.TopicAuthorizationException;
+import org.apache.kafka.common.errors.GroupAuthorizationException;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationFactoryOAuth2;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 import org.apache.pulsar.common.policies.data.AuthAction;
@@ -37,6 +40,7 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+import sh.ory.hydra.ApiException;
 
 @Slf4j
 public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
@@ -47,6 +51,8 @@ public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
     private static final String AUDIENCE = "http://example.com/api/v2/";
 
     private String adminCredentialPath = null;
+
+    private String tenant = "my-tenant";
 
     @BeforeClass(timeOut = 20000)
     @Override
@@ -75,6 +81,15 @@ public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
         conf.setKopOauth2ConfigFile("src/test/resources/kop-handler-oauth2.properties");
 
         super.internalSetup();
+
+        admin.tenants().createTenant(tenant,
+                TenantInfo.builder()
+                        .adminRoles(Collections.singleton(ADMIN_USER))
+                        .allowedClusters(Collections.singleton(configClusterName))
+                        .build());
+        TenantInfo tenantInfo = admin.tenants().getTenantInfo(tenant);
+        log.info("TenantInfo for {} {} in test", tenant, tenantInfo);
+        assertNotNull(tenantInfo);
     }
 
     @AfterClass
@@ -96,21 +111,12 @@ public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
     @Test(timeOut = 30000)
     public void testGrantAndRevokePermissionWithGroupId() throws Exception {
         SaslOAuthKopHandlersTest.OAuthMockAuthorizationProvider.NULL_ROLE_STACKS.clear();
-        String newTenant = "my-tenant";
-        admin.tenants().createTenant(newTenant,
-                TenantInfo.builder()
-                        .adminRoles(Collections.singleton(ADMIN_USER))
-                        .allowedClusters(Collections.singleton(configClusterName))
-                        .build());
-        TenantInfo tenantInfo = admin.tenants().getTenantInfo(newTenant);
-        log.info("TenantInfo for {} {} in test", newTenant, tenantInfo);
-        assertNotNull(tenantInfo);
 
-        final String namespace = newTenant + "/" + conf.getKafkaNamespace();
+        final String namespace = tenant + "/" + "test-grant-and-revoke-permission-with-group-id-ns";
         admin.namespaces().createNamespace(namespace);
-        final String topic = "persistent://" + namespace + "/test-grant-and-revoke-permission";
+        final String topic = "persistent://" + namespace + "/test-grant-and-revoke-permission-with-group-id";
         final String role = "normal-role-" + System.currentTimeMillis();
-        final String clientCredentialPath = HydraOAuthUtils.createOAuthClient(role, "secret", newTenant);
+        final String clientCredentialPath = HydraOAuthUtils.createOAuthClient(role, "secret", tenant);
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Collections.singleton(AuthAction.produce));
 
@@ -121,14 +127,14 @@ public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
 
         admin.namespaces().grantPermissionOnNamespace(namespace, role, Sets.newHashSet(AuthAction.consume));
         // Only have consume permission, can't consume without subscription permission.
-        Assert.assertThrows(TopicAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
+        Assert.assertThrows(GroupAuthorizationException.class, () -> consumer.poll(Duration.ofSeconds(5)));
 
         consumer.close();
 
         // Pass subscription permission, can consume now.
         final String roleWithGroupId = "role-with-groupId" + System.currentTimeMillis();
         final String clientCredentialPathWithGroupId =
-                HydraOAuthUtils.createOAuthClient(roleWithGroupId, "secret", newTenant, DEFAULT_GROUP_ID);
+                HydraOAuthUtils.createOAuthClient(roleWithGroupId, "secret", tenant, DEFAULT_GROUP_ID);
         final Properties consumerPropsWithGroupId = newKafkaConsumerProperties();
         internalConfigureOAuth2(consumerPropsWithGroupId, clientCredentialPathWithGroupId);
         final KafkaConsumer<String, String> consumer2 = new KafkaConsumer<>(consumerPropsWithGroupId);
@@ -138,6 +144,31 @@ public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
         admin.namespaces().grantPermissionOnSubscription(namespace, DEFAULT_GROUP_ID, Sets.newHashSet(roleWithGroupId));
 
         consumer2.poll(Duration.ofSeconds(5));
+
+        assertEquals(SaslOAuthKopHandlersTest.OAuthMockAuthorizationProvider.NULL_ROLE_STACKS.size(), 0);
+    }
+
+    @Test(timeOut = 30000, expectedExceptions = org.apache.kafka.common.errors.GroupAuthorizationException.class)
+    public void testDifferentGroupId() throws PulsarAdminException, IOException, ApiException {
+        SaslOAuthKopHandlersTest.OAuthMockAuthorizationProvider.NULL_ROLE_STACKS.clear();
+
+        final String namespace = tenant + "/" + "test-different-group-id-ns";
+        admin.namespaces().createNamespace(namespace);
+        final String topic = "persistent://" + namespace + "/test-grant-and-revoke-permission";
+        // Pass subscription permission, can consume now.
+        final String roleWithGroupId = "role-with-groupId" + System.currentTimeMillis();
+        final String clientCredentialPathWithGroupId =
+                HydraOAuthUtils.createOAuthClient(roleWithGroupId, "secret", tenant, DEFAULT_GROUP_ID);
+        admin.namespaces().grantPermissionOnNamespace(namespace, roleWithGroupId, Sets.newHashSet(AuthAction.consume));
+        admin.namespaces().grantPermissionOnSubscription(namespace, DEFAULT_GROUP_ID, Sets.newHashSet(roleWithGroupId));
+
+        final Properties consumerPropsWithGroupId = newKafkaConsumerProperties();
+        internalConfigureOAuth2(consumerPropsWithGroupId, clientCredentialPathWithGroupId);
+        consumerPropsWithGroupId.put(ConsumerConfig.GROUP_ID_CONFIG, "different-group-id");
+        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerPropsWithGroupId);
+        consumer.subscribe(Collections.singleton(topic));
+
+        consumer.poll(Duration.ofSeconds(5));
 
         assertEquals(SaslOAuthKopHandlersTest.OAuthMockAuthorizationProvider.NULL_ROLE_STACKS.size(), 0);
     }
