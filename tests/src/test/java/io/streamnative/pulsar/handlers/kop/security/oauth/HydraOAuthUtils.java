@@ -21,7 +21,7 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import io.fusionauth.jwks.domain.JSONWebKey;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import io.streamnative.pulsar.handlers.kop.security.oauth.ClientConfig;
+import io.streamnative.pulsar.handlers.kop.security.oauth.ClientInfo;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -46,7 +46,7 @@ public class HydraOAuthUtils {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private static final ObjectWriter CLIENT_INFO_WRITER =
-            OBJECT_MAPPER.writerFor(ClientConfig.ClientInfo.class);
+            OBJECT_MAPPER.writerFor(ClientInfo.class);
 
     private static String publicKey;
 
@@ -121,8 +121,7 @@ public class HydraOAuthUtils {
                                               String tenant,
                                               String groupId,
                                               String basename) throws IOException {
-        ClientConfig.ClientInfo clientInfo =
-                new ClientConfig.ClientInfo(clientId, clientSecret, tenant, groupId);
+        ClientInfo clientInfo = new ClientInfo(clientId, clientSecret, tenant, groupId);
         final String content = CLIENT_INFO_WRITER.writeValueAsString(clientInfo);
 
         File file = File.createTempFile("oauth-credentials-", basename);

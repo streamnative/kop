@@ -49,7 +49,7 @@ public class ClientCredentialsFlowTest {
                 Objects.requireNonNull(
                         getClass().getClassLoader().getResource("private_key.json")).toString()
         );
-        ClientConfig.ClientInfo clientInfo = clientConfig.getClientInfo();
+        ClientInfo clientInfo = clientConfig.getClientInfo();
         Assert.assertEquals(clientInfo.getId(), "my-id");
         Assert.assertEquals(clientInfo.getSecret(), "my-secret");
     }

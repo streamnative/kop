@@ -94,7 +94,7 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
     private void handleExtensionsCallback(SaslExtensionsCallback callback) {
 
         Map<String, String> extensions = new HashMap<>();
-        ClientConfig.ClientInfo clientInfo = clientConfig.getClientInfo();
+        ClientInfo clientInfo = clientConfig.getClientInfo();
 
         if (clientInfo.getTenant() != null) {
             extensions.put("tenant", clientInfo.getTenant());

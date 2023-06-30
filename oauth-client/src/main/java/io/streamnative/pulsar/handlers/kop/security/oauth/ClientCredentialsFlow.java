@@ -71,7 +71,7 @@ public class ClientCredentialsFlow implements Closeable {
 
     public OAuthBearerTokenImpl authenticate() throws IOException {
         final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
-        final ClientConfig.ClientInfo clientInfo = clientConfig.getClientInfo();
+        final ClientInfo clientInfo = clientConfig.getClientInfo();
         try {
             final String body = buildClientCredentialsBody(clientInfo);
             final Response response = httpClient.preparePost(tokenEndPoint)
@@ -128,7 +128,7 @@ public class ClientCredentialsFlow implements Closeable {
         return URLEncoder.encode(s, StandardCharsets.UTF_8.name());
     }
 
-    private String buildClientCredentialsBody(ClientConfig.ClientInfo clientInfo) throws UnsupportedEncodingException {
+    private String buildClientCredentialsBody(ClientInfo clientInfo) throws UnsupportedEncodingException {
         final Map<String, String> bodyMap = new HashMap<>();
         bodyMap.put("grant_type", "client_credentials");
         bodyMap.put("client_id", encode(clientInfo.getId()));

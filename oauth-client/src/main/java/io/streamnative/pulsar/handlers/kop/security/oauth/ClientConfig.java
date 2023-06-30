@@ -13,23 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
-import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.Map;
-import lombok.AllArgsConstructor;
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
 
 /**
  * The client configs associated with OauthLoginCallbackHandler.
@@ -77,42 +69,15 @@ public class ClientConfig {
                     "invalid %s \"%s\": %s", OAUTH_CREDENTIALS_URL, credentialsUrlString, e.getMessage()));
         }
         try {
-            this.clientInfo = loadPrivateKey();
+            final URLConnection connection = getCredentialsUrl().openConnection();
+            try (InputStream inputStream = connection.getInputStream()) {
+                this.clientInfo = CLIENT_INFO_READER.readValue(inputStream);
+            }
         } catch (IOException e) {
             throw new IllegalArgumentException(String.format(
                     "failed to load client credentials from %s: %s", credentialsUrlString, e.getMessage()));
         }
         this.audience = configs.getOrDefault(OAUTH_AUDIENCE, null);
         this.scope = configs.getOrDefault(OAUTH_SCOPE, null);
-    }
-
-    @VisibleForTesting
-    ClientInfo loadPrivateKey() throws IOException {
-        final URLConnection connection = getCredentialsUrl().openConnection();
-        try (InputStream inputStream = connection.getInputStream()) {
-            return CLIENT_INFO_READER.readValue(inputStream);
-        }
-    }
-
-    @Getter
-    @ToString
-    @EqualsAndHashCode
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class ClientInfo {
-
-        @JsonProperty("client_id")
-        private String id;
-
-        @JsonProperty("client_secret")
-        private String secret;
-
-        @JsonProperty("tenant")
-        private String tenant;
-
-        @JsonProperty("group_id")
-        private String groupId;
     }
 }

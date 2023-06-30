@@ -39,7 +39,7 @@ public class ClientConfigTest {
         Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), credentialsUrl);
         Assert.assertEquals(clientConfig.getAudience(), "audience");
         Assert.assertEquals(clientConfig.getClientInfo(),
-                new ClientConfig.ClientInfo("my-id", "my-secret", "my-tenant", null));
+                new ClientInfo("my-id", "my-secret", "my-tenant", null));
     }
 
     @Test
@@ -55,7 +55,7 @@ public class ClientConfigTest {
         Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), credentialsUrl);
         Assert.assertEquals(clientConfig.getAudience(), "audience");
         Assert.assertEquals(clientConfig.getClientInfo(),
-                new ClientConfig.ClientInfo("my-id", "my-secret", "my-tenant", "my-group-id"));
+                new ClientInfo("my-id", "my-secret", "my-tenant", "my-group-id"));
     }
 
     @Test
