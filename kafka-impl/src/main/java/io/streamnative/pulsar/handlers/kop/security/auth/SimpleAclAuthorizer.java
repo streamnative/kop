@@ -13,9 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
-
-import static com.google.common.base.Preconditions.checkArgument;
-
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
@@ -70,9 +67,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canAccessTenantAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TENANT,
-                String.format("Expected resource type is TENANT, but have [%s]", resource.getResourceType()));
-
+        checkResourceType(resource, ResourceType.TENANT);
         CompletableFuture<Boolean> canAccessFuture = new CompletableFuture<>();
         authorizeTenantPermission(principal, resource).whenComplete((hasPermission, ex) -> {
                 if (ex != null) {
@@ -92,9 +87,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canCreateTopicAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.allowNamespaceOperationAsync(
                 topicName.getNamespaceObject(),
@@ -105,9 +98,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canDeleteTopicAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.allowNamespaceOperationAsync(
                 topicName.getNamespaceObject(),
@@ -118,9 +109,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canAlterTopicAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.allowTopicPolicyOperationAsync(
                 topicName, PolicyName.PARTITION, PolicyOperation.WRITE,
@@ -129,9 +118,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canManageTenantAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.allowTopicOperationAsync(
                 topicName, TopicOperation.LOOKUP, principal.getName(), principal.getAuthenticationData());
@@ -139,16 +126,14 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.canLookupAsync(topicName, principal.getName(), principal.getAuthenticationData());
     }
 
     @Override
     public CompletableFuture<Boolean> canGetTopicList(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.NAMESPACE,
-                String.format("Expected resource type is NAMESPACE, but have [%s]", resource.getResourceType()));
+        checkResourceType(resource, ResourceType.NAMESPACE);
         return authorizationService.allowNamespaceOperationAsync(
                 NamespaceName.get(resource.getName()),
                 NamespaceOperation.GET_TOPICS,
@@ -158,19 +143,25 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canProduceAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.canProduceAsync(topicName, principal.getName(), principal.getAuthenticationData());
     }
 
     @Override
     public CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+        checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return authorizationService.canConsumeAsync(
                 topicName, principal.getName(), principal.getAuthenticationData(), "");
+    }
+
+    private void checkResourceType(Resource actual, ResourceType expected) {
+        if (actual.getResourceType() != expected) {
+            throw new IllegalArgumentException(
+                    String.format("Expected resource type is [%s], but have [%s]",
+                            expected, actual.getResourceType()));
+        }
     }
 
 }
