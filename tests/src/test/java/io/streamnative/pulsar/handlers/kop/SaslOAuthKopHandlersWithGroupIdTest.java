@@ -43,7 +43,7 @@ import org.testng.annotations.Test;
 import sh.ory.hydra.ApiException;
 
 @Slf4j
-public class SaslOAuthKopHandlersWithGroupId extends SaslOAuthBearerTestBase {
+public class SaslOAuthKopHandlersWithGroupIdTest extends SaslOAuthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
     private static final String ADMIN_SECRET = "admin_secret";
