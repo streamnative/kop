@@ -1046,7 +1046,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         @Cleanup
         final KafkaHeaderAndRequest request = buildRequest(FetchRequest.Builder.forConsumer(maxWaitMs, minBytes,
                 Collections.singletonMap(topicPartition, new FetchRequest.PartitionData(
-                        0L, -1L, 1024 * 1024
+                        0L, -1L, 1024 * 1024, Optional.empty()
                 ))));
         final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
         final long startTime = System.currentTimeMillis();

@@ -32,7 +32,7 @@
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
     <!-- dependencies -->
     <jackson.version>2.14.2</jackson.version>
-    <kafka.version>2.0.0</kafka.version>
+    <kafka.version>2.1.1</kafka.version>
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>4.11.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
