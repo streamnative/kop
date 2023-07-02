@@ -130,6 +130,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @BeforeMethod
     protected void setUp() throws PulsarClientException, PulsarAdminException {
+        conf.setOffsetsTopicNumPartitions(numOffsetsPartitions);
         producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
         readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
                 .startMessageId(MessageId.earliest);
@@ -167,6 +168,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
     @AfterMethod
     protected void tearDown() throws PulsarClientException {
+        conf.setOffsetsTopicNumPartitions(numOffsetsPartitions);
         if (consumer != null) {
             consumer.close();
         }
