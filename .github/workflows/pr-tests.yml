@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   basic-test:
+    name: Style check and basic unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
@@ -118,6 +119,12 @@ jobs:
             name: "metadata test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.metadata.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "metrics test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.metrics.*Test' -pl tests"
             ]
           },
           {

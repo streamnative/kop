@@ -11,10 +11,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
+package io.streamnative.pulsar.handlers.kop.metrics;
 
 import static org.testng.AssertJUnit.fail;
 
+import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
+import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
