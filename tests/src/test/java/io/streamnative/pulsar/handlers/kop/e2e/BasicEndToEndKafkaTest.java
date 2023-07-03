@@ -62,27 +62,24 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
     @DataProvider(name = "enableBatching")
     public static Object[][] enableBatching() {
-        return new Object[][]{ { true }, { false } };
+        return new Object[][]{{true}, {false}};
     }
 
     @Test(timeOut = 20000)
     public void testNullValueMessages() throws Exception {
         final String topic = "test-produce-null-value";
 
-        @Cleanup
-        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        @Cleanup final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         sendSingleMessages(kafkaProducer, topic, Arrays.asList(null, ""));
         sendBatchedMessages(kafkaProducer, topic, Arrays.asList("test", "", null));
 
         final List<String> expectedMessages = Arrays.asList(null, "", "test", "", null);
 
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        @Cleanup final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectedMessages.size());
         assertEquals(kafkaReceives, expectedMessages);
 
-        @Cleanup
-        final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
+        @Cleanup final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
         List<String> pulsarReceives = receiveMessages(pulsarConsumer, expectedMessages.size());
         assertEquals(pulsarReceives, expectedMessages);
     }
@@ -145,22 +142,28 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         String msgStrPrefix = "Message_kop_KafkaProduceAndConsume_" + partitionNumber + "_";
         @Cleanup
-        KopProtocolHandlerTestBase.KProducer kProducer = new KopProtocolHandlerTestBase.KProducer(kafkaTopic, false, getKafkaBrokerPort(), true);
+        KopProtocolHandlerTestBase.KProducer kProducer =
+                new KopProtocolHandlerTestBase.KProducer(kafkaTopic, false, getKafkaBrokerPort(), true);
         kafkaPublishMessage(kProducer, totalMsg, msgStrPrefix);
 
         @Cleanup
-        KopProtocolHandlerTestBase.KConsumer kConsumer1 = new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-1");
+        KopProtocolHandlerTestBase.KConsumer kConsumer1 =
+                new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-1");
         @Cleanup
-        KopProtocolHandlerTestBase.KConsumer kConsumer2 = new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-2");
+        KopProtocolHandlerTestBase.KConsumer kConsumer2 =
+                new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-2");
         @Cleanup
-        KopProtocolHandlerTestBase.KConsumer kConsumer3 = new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-3");
+        KopProtocolHandlerTestBase.KConsumer kConsumer3 =
+                new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-3");
         @Cleanup
-        KopProtocolHandlerTestBase.KConsumer kConsumer4 = new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-4");
+        KopProtocolHandlerTestBase.KConsumer kConsumer4 =
+                new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-4");
         @Cleanup
-        KopProtocolHandlerTestBase.KConsumer kConsumer5 = new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-5");
+        KopProtocolHandlerTestBase.KConsumer kConsumer5 =
+                new KopProtocolHandlerTestBase.KConsumer(kafkaTopic, getKafkaBrokerPort(), "consumer-group-5");
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(kafkaTopic, i)).collect(Collectors.toList());
+                .mapToObj(i -> new TopicPartition(kafkaTopic, i)).collect(Collectors.toList());
 
         kafkaConsumeCommitMessage(kConsumer1, totalMsg, msgStrPrefix, topicPartitions);
         kafkaConsumeCommitMessage(kConsumer2, totalMsg, msgStrPrefix, topicPartitions);
@@ -242,8 +245,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         sendCompleteLatch.await();
         pulsarProducer.close();
 
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        @Cleanup final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         final List<ConsumerRecord<String, String>> receivedRecords = receiveRecords(kafkaConsumer, numMessages);
 
         assertEquals(getValuesFromRecords(receivedRecords), values);
@@ -273,14 +275,14 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
             final Header header = headers.get(i);
 
             if (i % 2 == 0) {
-               final MessageId id = pulsarProducer.newMessage()
+                final MessageId id = pulsarProducer.newMessage()
                         .value(value.getBytes(StandardCharsets.UTF_8))
                         .key(key)
                         .property(header.getKey(), header.getValue())
                         .send();
-               if (log.isDebugEnabled()) {
-                   log.debug("PulsarProducer send {} to {}", i, id);
-               }
+                if (log.isDebugEnabled()) {
+                    log.debug("PulsarProducer send {} to {}", i, id);
+                }
             } else {
                 final RecordMetadata metadata = kafkaProducer.send(new ProducerRecord<>(topic, 0, key, value,
                         Header.toHeaders(Collections.singletonList(header), RecordHeader::new))).get();
@@ -293,8 +295,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaProducer.close();
         pulsarProducer.close();
 
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
+        @Cleanup final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic);
         final List<ConsumerRecord<String, String>> receivedRecords = receiveRecords(kafkaConsumer, numMessages);
 
         assertEquals(getValuesFromRecords(receivedRecords), values);
@@ -323,8 +324,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         sendFuture.get();
         producer.close();
 
-        @Cleanup
-        final Consumer<byte[]> consumer = newPulsarConsumer(
+        @Cleanup final Consumer<byte[]> consumer = newPulsarConsumer(
                 topic, "my-sub-" + enableBatching, new KafkaPayloadProcessor());
         final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
         assertEquals(messages.size(), numMessages);
@@ -355,8 +355,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         sendFuture.get();
         producer.close();
 
-        @Cleanup
-        final Consumer<byte[]> consumer = newPulsarConsumer(
+        @Cleanup final Consumer<byte[]> consumer = newPulsarConsumer(
                 topic, "my-sub-" + enableBatching, new KafkaPayloadProcessor());
         final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
         assertEquals(messages.size(), numMessages);
@@ -392,8 +391,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         kafkaProducer.close();
         pulsarProducer.close();
 
-        @Cleanup
-        final Consumer<byte[]> consumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
+        @Cleanup final Consumer<byte[]> consumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
         final List<Message<byte[]>> messages = receivePulsarMessages(consumer, numMessages);
         assertEquals(messages.size(), numMessages);
 
@@ -463,14 +461,12 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
 
-        @Cleanup
-        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        @Cleanup final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
 
         List<String> expectValues = Arrays.asList("a", "b", "c");
 
-        @Cleanup
-        final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic, "test-group", true);
+        @Cleanup final KafkaConsumer<String, String> kafkaConsumer = newKafkaConsumer(topic, "test-group", true);
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectValues.size());
         assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues);
     }
