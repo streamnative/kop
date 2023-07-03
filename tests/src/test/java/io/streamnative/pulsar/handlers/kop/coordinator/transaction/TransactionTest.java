@@ -800,6 +800,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         PartitionLog partitionLog = protocolHandler
                 .getReplicaManager()
                 .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
 
         // verify that we have 2 aborted TX in memory
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
