@@ -79,7 +79,8 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         List<String> kafkaReceives = receiveMessages(kafkaConsumer, expectedMessages.size());
         assertEquals(kafkaReceives, expectedMessages);
 
-        @Cleanup final Consumer<byte[]> pulsarConsumer = newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
+        @Cleanup final Consumer<byte[]> pulsarConsumer =
+                newPulsarConsumer(topic, SUBSCRIPTION, new KafkaPayloadProcessor());
         List<String> pulsarReceives = receiveMessages(pulsarConsumer, expectedMessages.size());
         assertEquals(pulsarReceives, expectedMessages);
     }
