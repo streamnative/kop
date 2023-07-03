@@ -66,6 +66,8 @@ public class MetadataUtilsTest {
                 .constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
         final KopTopic txnTopic = new KopTopic(MetadataUtils
                 .constructTxnLogTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
+        final KopTopic txnProducerStateTopic = new KopTopic(MetadataUtils
+                .constructTxProducerStateTopicBaseName(conf.getKafkaMetadataTenant(), conf), namespacePrefix);
 
         List<String> emptyList = Lists.newArrayList();
 
@@ -83,6 +85,8 @@ public class MetadataUtilsTest {
         Topics mockTopics = mock(Topics.class);
         doReturn(offsetTopicMetadata).when(mockTopics).getPartitionedTopicMetadata(eq(offsetsTopic.getFullName()));
         doReturn(offsetTopicMetadata).when(mockTopics).getPartitionedTopicMetadata(eq(txnTopic.getFullName()));
+        doReturn(offsetTopicMetadata).when(mockTopics)
+                .getPartitionedTopicMetadata(eq(txnProducerStateTopic.getFullName()));
 
         PulsarAdmin mockPulsarAdmin = mock(PulsarAdmin.class);
 
@@ -125,6 +129,8 @@ public class MetadataUtilsTest {
                 eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
         verify(mockTopics, times(1)).createPartitionedTopic(
                 eq(txnTopic.getFullName()), eq(conf.getKafkaTxnLogTopicNumPartitions()));
+        verify(mockTopics, times(1)).createPartitionedTopic(
+                eq(txnProducerStateTopic.getFullName()), eq(conf.getKafkaTxnProducerStateTopicNumPartitions()));
         // check user topics namespace doesn't set the policy
         verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaTenant() + "/"
                 + conf.getKafkaNamespace()), any(Set.class));
@@ -172,11 +178,16 @@ public class MetadataUtilsTest {
         for (int i = 0; i < conf.getKafkaTxnLogTopicNumPartitions() - 2; i++) {
             incompletePartitionList.add(txnTopic.getPartitionName(i));
         }
+        for (int i = 0; i < conf.getKafkaTxnProducerStateTopicNumPartitions() - 2; i++) {
+            incompletePartitionList.add(txnProducerStateTopic.getPartitionName(i));
+        }
 
         doReturn(new PartitionedTopicMetadata(8)).when(mockTopics)
                 .getPartitionedTopicMetadata(eq(offsetsTopic.getFullName()));
         doReturn(new PartitionedTopicMetadata(8)).when(mockTopics)
                 .getPartitionedTopicMetadata(eq(txnTopic.getFullName()));
+        doReturn(new PartitionedTopicMetadata(8)).when(mockTopics)
+                .getPartitionedTopicMetadata(eq(txnProducerStateTopic.getFullName()));
         doReturn(incompletePartitionList).when(mockTopics).getList(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()));
 
@@ -184,10 +195,11 @@ public class MetadataUtilsTest {
         MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), mockPulsarAdmin, clusterData, conf);
 
         verify(mockTenants, times(1)).updateTenant(eq(conf.getKafkaMetadataTenant()), any(TenantInfo.class));
-        verify(mockNamespaces, times(2)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
+        verify(mockNamespaces, times(3)).setNamespaceReplicationClusters(eq(conf.getKafkaMetadataTenant()
             + "/" + conf.getKafkaMetadataNamespace()), any(Set.class));
         verify(mockTopics, times(1)).createMissedPartitions(contains(offsetsTopic.getOriginalName()));
         verify(mockTopics, times(1)).createMissedPartitions(contains(txnTopic.getOriginalName()));
+        verify(mockTopics, times(1)).createMissedPartitions(contains(txnProducerStateTopic.getOriginalName()));
     }
 
     @Test(timeOut = 30000)

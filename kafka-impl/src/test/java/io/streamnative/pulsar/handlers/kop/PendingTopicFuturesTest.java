@@ -13,10 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.Mockito.mock;
+
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
@@ -25,9 +27,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+
 
 /**
  * Test for PendingTopicFutures.
@@ -61,7 +63,7 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testNormalComplete() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture = new CompletableFuture<>();
+        final CompletableFuture<PartitionLog> topicFuture = new CompletableFuture<>();
         final List<Integer> completedIndexes = new ArrayList<>();
         final List<Integer> changesOfPendingCount = new ArrayList<>();
         int randomNum = ThreadLocalRandom.current().nextInt(0, 9);
@@ -72,7 +74,7 @@ public class PendingTopicFuturesTest {
                     topicFuture, ignored -> completedIndexes.add(index), (ignore) -> {});
             changesOfPendingCount.add(pendingTopicFutures.size());
             if (randomNum == i) {
-                topicFuture.complete(Optional.empty());
+                topicFuture.complete(mock(PartitionLog.class));
             }
         }
 
@@ -94,7 +96,7 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testExceptionalComplete() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture = new CompletableFuture<>();
+        final CompletableFuture<PartitionLog> topicFuture = new CompletableFuture<>();
         final List<String> exceptionMessages = new ArrayList<>();
         final List<Integer> changesOfPendingCount = new ArrayList<>();
 
@@ -128,7 +130,7 @@ public class PendingTopicFuturesTest {
     @Test(timeOut = 10000)
     void testParallelAccess() throws ExecutionException, InterruptedException {
         final PendingTopicFutures pendingTopicFutures = new PendingTopicFutures(null);
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture = new CompletableFuture<>();
+        final CompletableFuture<PartitionLog> topicFuture = new CompletableFuture<>();
         final List<Integer> completedIndexes = new CopyOnWriteArrayList<>();
         int randomNum = ThreadLocalRandom.current().nextInt(0, 9);
 
@@ -142,7 +144,7 @@ public class PendingTopicFuturesTest {
                             topicFuture, ignored -> completedIndexes.add(index), (ignore) -> {
                             });
                     if (randomNum == index) {
-                        topicFuture.complete(Optional.empty());
+                        topicFuture.complete(mock(PartitionLog.class));
                     }
                 }));
             }

@@ -13,10 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static org.mockito.Mockito.mock;
+
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.record.CompressionType;
@@ -46,7 +50,9 @@ public class PartitionLogTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            mock(KafkaTopicLookupService.class),
+            new MemoryProducerStateManagerSnapshotBuffer(),
+            mock(OrderedExecutor.class));
 
     @DataProvider(name = "compressionTypes")
     Object[] allCompressionTypes() {
