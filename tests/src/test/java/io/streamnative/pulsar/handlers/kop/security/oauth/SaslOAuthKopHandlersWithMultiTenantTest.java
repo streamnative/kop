@@ -13,7 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import static org.testng.Assert.*;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import java.net.URL;

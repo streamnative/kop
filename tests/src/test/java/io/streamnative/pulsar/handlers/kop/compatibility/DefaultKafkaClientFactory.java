@@ -14,7 +14,15 @@
 package io.streamnative.pulsar.handlers.kop.compatibility;
 
 import com.google.common.collect.Maps;
-import io.streamnative.kafka.client.api.*;
+import io.streamnative.kafka.client.api.Consumer;
+import io.streamnative.kafka.client.api.ConsumerConfiguration;
+import io.streamnative.kafka.client.api.ConsumerRecord;
+import io.streamnative.kafka.client.api.KafkaClientFactory;
+import io.streamnative.kafka.client.api.ProduceContext;
+import io.streamnative.kafka.client.api.Producer;
+import io.streamnative.kafka.client.api.ProducerConfiguration;
+import io.streamnative.kafka.client.api.RecordMetadata;
+import io.streamnative.kafka.client.api.TopicOffsetAndMetadata;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;

@@ -17,7 +17,11 @@ import static org.testng.AssertJUnit.assertEquals;
 
 import com.google.common.collect.Lists;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.client.api.Message;

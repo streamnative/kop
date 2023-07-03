@@ -26,7 +26,11 @@ import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.requests.*;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.KopResponseUtils;
+import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 
 public class KafkaCommonTestUtils {
 
