@@ -11,16 +11,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
-
-import io.streamnative.pulsar.handlers.kop.producer.MessagePublishThrottlingTest;
+package io.streamnative.pulsar.handlers.kop.security.auth;
 
 /**
- * Test KoP precisely messages publish throttling.
+ * Unit test for Authorization with `entryFormat=pulsar`.
  */
-public class PreciselyMessagePublishThrottlingTest extends MessagePublishThrottlingTest {
-
-    public PreciselyMessagePublishThrottlingTest() {
-        super(true);
+public class KafkaAuthorizationPulsarTest extends KafkaAuthorizationTestBase {
+    public KafkaAuthorizationPulsarTest() {
+        super("pulsar");
     }
 }

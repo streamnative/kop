@@ -11,16 +11,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
-
-import io.streamnative.pulsar.handlers.kop.producer.MessagePublishThrottlingTest;
+package io.streamnative.pulsar.handlers.kop.security;
 
 /**
- * Test KoP precisely messages publish throttling.
+ * Testing the SASL-PLAIN features on KoP with `entry.format=pulsar`.
  */
-public class PreciselyMessagePublishThrottlingTest extends MessagePublishThrottlingTest {
+public class SaslPlainPulsarTest extends SaslPlainTestBase {
 
-    public PreciselyMessagePublishThrottlingTest() {
-        super(true);
+    public SaslPlainPulsarTest() {
+        super("pulsar");
     }
 }

@@ -11,16 +11,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
-
-import io.streamnative.pulsar.handlers.kop.producer.MessagePublishThrottlingTest;
+package io.streamnative.pulsar.handlers.kop.producer;
 
 /**
- * Test KoP precisely messages publish throttling.
+ * {@link MessagePublishBufferThrottleTestBase} with `entryFormat=kafka`.
  */
-public class PreciselyMessagePublishThrottlingTest extends MessagePublishThrottlingTest {
+public class MessagePublishBufferThrottleKafkaTest extends MessagePublishBufferThrottleTestBase {
 
-    public PreciselyMessagePublishThrottlingTest() {
-        super(true);
+    public MessagePublishBufferThrottleKafkaTest() {
+        super("kafka");
     }
 }
