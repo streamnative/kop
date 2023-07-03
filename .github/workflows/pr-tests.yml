@@ -90,7 +90,7 @@ jobs:
           {
             name: "compatibility test",
             script: [
-              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility.*Test' -pl tests"
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility.*Test' -pl tests",
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility..*.*Test' -pl tests"
             ]
           },
