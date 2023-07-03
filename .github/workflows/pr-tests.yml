@@ -74,6 +74,7 @@ jobs:
           path: artifacts.zip
 
   kop-module-tests:
+    name: Unit Test (${{ matrix.test.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
