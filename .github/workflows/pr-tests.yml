@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  basic-test:
+  basic-validation:
     name: Style check and basic unit tests
     runs-on: ubuntu-latest
     steps:
@@ -74,12 +74,12 @@ jobs:
           name: surefire-artifacts
           path: artifacts.zip
 
-  kop-module-tests:
+  kop-unit-tests:
     name: Unit Test (${{ matrix.test.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
-      # other jobs should run even if one integration test fails
+      # other jobs should run even if one test fails
       fail-fast: false
       matrix:
         test: [
@@ -204,3 +204,11 @@ jobs:
             bash -c "${script}"
           done
           unset IFS  # revert the internal field separator back to default
+
+  unit-test-check:
+    name: Unit Test Check
+    runs-on: ubuntu-latest
+    needs: kop-unit-tests # This job will only run if all 'kop-unit-tests' jobs have completed successfully
+    steps:
+      - name: Check
+        run: echo "All tests have passed!"
