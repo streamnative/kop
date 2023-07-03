@@ -13,13 +13,17 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import static org.mockito.Mockito.mock;
+
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
-import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.Random;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -28,7 +32,6 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.Time;
-
 
 /**
  * The performance test for {@link EntryFormatter#encode(EncodeRequest)}.
@@ -48,7 +51,9 @@ public class EncodePerformanceTest {
             new TopicPartition("test", 1),
             "test",
             null,
-            new ProducerStateManager("test"));
+            mock(KafkaTopicLookupService.class),
+            new MemoryProducerStateManagerSnapshotBuffer(),
+            mock(OrderedExecutor.class));
 
     public static void main(String[] args) {
         pulsarServiceConfiguration.setEntryFormat("pulsar");
