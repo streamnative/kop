@@ -1298,7 +1298,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        ListOffsetRequestV0 request = byteBufToListOffsetRequestV0(listOffset.getBuffer());
+        ListOffsetRequestV0 request = (ListOffsetRequestV0) listOffset.getRequest();
 
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
@@ -1359,7 +1359,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest
+                || listOffset.getRequest() instanceof ListOffsetRequestV0);
         // the only difference between v0 and v1 is the `max_num_offsets => INT32`
         // v0 is required because it is used by librdkafka
         if (listOffset.getHeader().apiVersion() == 0) {

@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
+import static org.apache.kafka.common.protocol.ApiKeys.LIST_OFFSETS;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -145,6 +146,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
+            if (apiKey.equals(LIST_OFFSETS) && apiVersion == 0) {
+                ListOffsetRequestV0 body = ListOffsetRequestV0.parse(nio, apiVersion);
+                return new KafkaHeaderAndRequest(header, body, msg, remoteAddress);
+            }
             Struct struct = apiKey.parseRequest(apiVersion, nio);
             AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
             return new KafkaHeaderAndRequest(header, body, msg, remoteAddress);
