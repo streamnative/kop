@@ -67,6 +67,13 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+
+        this.conf.setDefaultNumberOfNamespaceBundles(4);
+        this.conf.setOffsetsTopicNumPartitions(50);
+        this.conf.setKafkaTxnLogTopicNumPartitions(50);
+        this.conf.setKafkaTransactionCoordinatorEnabled(true);
+        this.conf.setBrokerDeduplicationEnabled(true);
+
         super.internalSetup();
         log.info("success internal setup");
 

@@ -107,10 +107,12 @@ public class DelayedFetch extends DelayedOperation {
             return true;
         }
         for (Map.Entry<TopicPartition, PartitionLog.ReadRecordsResult> entry : readRecordsResult.entrySet()) {
-            TopicPartition tp = entry.getKey();
             PartitionLog.ReadRecordsResult result = entry.getValue();
-            PartitionLog partitionLog = replicaManager.getPartitionLog(tp, context.getNamespacePrefix());
-            PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition(context.getTopicManager());
+            PartitionLog partitionLog = result.partitionLog();
+            if (partitionLog == null) {
+                return true;
+            }
+            PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition();
             if (currLastPosition.compareTo(PositionImpl.EARLIEST) == 0) {
                 HAS_ERROR_UPDATER.set(this, true);
                 return forceComplete();

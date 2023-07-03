@@ -16,7 +16,10 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import io.netty.channel.EventLoopGroup;
@@ -37,6 +40,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import lombok.Getter;
@@ -66,17 +71,20 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.awaitility.Awaitility;
 import org.testng.Assert;
 
 /**
@@ -825,5 +833,57 @@ public abstract class KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 });
+    }
+
+
+    /**
+     * Execute the task that trims consumed ledgers.
+     * @throws Exception
+     */
+    public void trimConsumedLedgers(String topic) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        log.info("trimConsumedLedgers {}", topic);
+        log.info("Stats {}",
+                mapper.writeValueAsString(admin
+                        .topics()
+                        .getInternalStats(topic)));
+        TopicName topicName = TopicName.get(topic);
+        String namespace = topicName.getNamespace();
+
+        RetentionPolicies oldRetentionPolicies = admin.namespaces().getRetention(namespace);
+        Boolean deduplicationStatus = admin.namespaces().getDeduplicationStatus(namespace);
+        try {
+            admin.namespaces().setRetention(namespace, new RetentionPolicies(0, 0));
+            admin.namespaces().setDeduplicationStatus(namespace, false);
+
+
+            KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
+            PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
+
+            Awaitility.await().untilAsserted(() -> {
+                log.debug("Subscriptions {}", topicHandle.getSubscriptions());
+                assertTrue(topicHandle.getSubscriptions().isEmpty());
+            });
+
+            log.info("Stats {}",
+                    mapper.writeValueAsString(admin
+                            .topics()
+                            .getInternalStats(topic)));
+
+            CompletableFuture<?> future = new CompletableFuture<>();
+            topicHandle.getManagedLedger()
+                    .getConfig().setRetentionTime(1, TimeUnit.SECONDS);
+            Thread.sleep(2000);
+            topicHandle.getManagedLedger().trimConsumedLedgersInBackground(future);
+            future.get(10, TimeUnit.SECONDS);
+        } finally {
+            admin.namespaces().setRetention(namespace, oldRetentionPolicies);
+            if (deduplicationStatus != null) {
+                admin.namespaces().setDeduplicationStatus(namespace, deduplicationStatus);
+            } else {
+                admin.namespaces().removeDeduplicationStatus(namespace);
+            }
+        }
     }
 }

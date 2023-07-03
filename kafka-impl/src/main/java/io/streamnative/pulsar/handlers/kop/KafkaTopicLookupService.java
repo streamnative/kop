@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.netty.channel.Channel;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import lombok.NonNull;
@@ -37,7 +36,7 @@ public class KafkaTopicLookupService {
      }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
-    public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName, Channel channel) {
+    public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName, Object requestor) {
         CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture = new CompletableFuture<>();
         brokerService.getTopicIfExists(topicName).whenComplete((t2, throwable) -> {
             TopicName topicNameObject = TopicName.get(topicName);
@@ -47,7 +46,7 @@ public class KafkaTopicLookupService {
                 if (topicNameObject.getPartitionIndex() == 0) {
                     log.warn("Get partition-0 error [{}].", throwable.getMessage());
                 } else {
-                    handleGetTopicException(topicName, topicCompletableFuture, throwable, channel);
+                    handleGetTopicException(topicName, topicCompletableFuture, throwable, requestor);
                     return;
                 }
             }
@@ -60,11 +59,11 @@ public class KafkaTopicLookupService {
                 String nonPartitionedTopicName = topicNameObject.getPartitionedTopicName();
                 if (log.isDebugEnabled()) {
                     log.debug("[{}]Try to get non-partitioned topic for name {}",
-                            channel, nonPartitionedTopicName);
+                            requestor, nonPartitionedTopicName);
                 }
                 brokerService.getTopicIfExists(nonPartitionedTopicName).whenComplete((nonPartitionedTopic, ex) -> {
                     if (ex != null) {
-                        handleGetTopicException(nonPartitionedTopicName, topicCompletableFuture, ex, channel);
+                        handleGetTopicException(nonPartitionedTopicName, topicCompletableFuture, ex, requestor);
                         // Failed to getTopic from current broker, remove non-partitioned topic cache,
                         // which added in getTopicBroker.
                         KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
@@ -75,14 +74,14 @@ public class KafkaTopicLookupService {
                         topicCompletableFuture.complete(Optional.of(persistentTopic));
                     } else {
                         log.error("[{}]Get empty non-partitioned topic for name {}",
-                                channel, nonPartitionedTopicName);
+                                requestor, nonPartitionedTopicName);
                         KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
                         topicCompletableFuture.complete(Optional.empty());
                     }
                 });
                 return;
             }
-            log.error("[{}]Get empty topic for name {}", channel, topicName);
+            log.error("[{}]Get empty topic for name {}", requestor, topicName);
             KopBrokerLookupManager.removeTopicManagerCache(topicName);
             topicCompletableFuture.complete(Optional.empty());
         });
@@ -93,15 +92,15 @@ public class KafkaTopicLookupService {
                                          @NonNull
                                          final CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture,
                                          @NonNull final Throwable ex,
-                                         @NonNull final Channel channel) {
+                                         @NonNull final Object requestor) {
         // The ServiceUnitNotReadyException is retryable, so we should print a warning log instead of error log
         if (ex instanceof BrokerServiceException.ServiceUnitNotReadyException) {
             log.warn("[{}] Failed to getTopic {}: {}",
-                    channel, topicName, ex.getMessage());
+                    requestor, topicName, ex.getMessage());
             topicCompletableFuture.complete(Optional.empty());
         } else {
             log.error("[{}] Failed to getTopic {}. exception:",
-                    channel, topicName, ex);
+                    requestor, topicName, ex);
             topicCompletableFuture.completeExceptionally(ex);
         }
     }
