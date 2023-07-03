@@ -15,6 +15,9 @@ package io.streamnative.pulsar.handlers.kop.security;
 
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.io.Closeable;
+import java.util.Properties;
+import javax.net.ssl.HostnameVerifier;
 import lombok.Cleanup;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -27,11 +30,6 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
-
-import javax.net.ssl.HostnameVerifier;
-import java.io.Closeable;
-import java.util.Properties;
-
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**

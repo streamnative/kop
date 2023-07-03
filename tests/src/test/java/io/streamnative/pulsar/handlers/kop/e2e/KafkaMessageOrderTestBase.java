@@ -16,6 +16,10 @@ package io.streamnative.pulsar.handlers.kop.e2e;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -35,12 +39,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-
 import static org.testng.Assert.*;
 
 /**

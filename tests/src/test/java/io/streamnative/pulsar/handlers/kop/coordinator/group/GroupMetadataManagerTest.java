@@ -27,6 +27,15 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.nio.ByteBuffer;
+import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -42,17 +51,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.*;
 import org.testng.annotations.*;
-
-import java.nio.ByteBuffer;
-import java.util.Optional;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
-
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.*;
 import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.*;
 import static org.mockito.ArgumentMatchers.any;

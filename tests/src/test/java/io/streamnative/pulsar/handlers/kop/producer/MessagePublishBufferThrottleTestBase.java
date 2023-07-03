@@ -15,6 +15,10 @@ package io.streamnative.pulsar.handlers.kop.producer;
 
 import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.util.Properties;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -25,12 +29,6 @@ import org.awaitility.Awaitility;
 import org.mockito.MockedStatic;
 import org.testng.Assert;
 import org.testng.annotations.Test;
-
-import java.util.Properties;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mockStatic;

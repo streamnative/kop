@@ -15,6 +15,17 @@ package io.streamnative.pulsar.handlers.kop.e2e;
 
 import io.streamnative.kafka.client.api.Header;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -31,19 +42,6 @@ import org.apache.pulsar.client.api.*;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-
 import static org.testng.Assert.*;
 
 /**

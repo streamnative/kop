@@ -14,6 +14,10 @@
 package io.streamnative.pulsar.handlers.kop.compatibility;
 
 import io.streamnative.kafka.client.api.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.pulsar.client.api.Message;
@@ -24,11 +28,6 @@ import org.apache.pulsar.client.impl.JavaStringHash;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import org.testng.collections.Maps;
-
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Basic end-to-end test for different versions of Kafka clients with `entryFormat=kafka`.

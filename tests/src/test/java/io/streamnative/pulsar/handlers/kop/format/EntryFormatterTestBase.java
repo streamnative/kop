@@ -14,6 +14,8 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.time.Duration;
+import java.util.Collections;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -21,9 +23,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-
-import java.time.Duration;
-import java.util.Collections;
 
 public class EntryFormatterTestBase extends KopProtocolHandlerTestBase {
 

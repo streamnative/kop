@@ -20,11 +20,6 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import io.fusionauth.jwks.domain.JSONWebKey;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import sh.ory.hydra.ApiException;
-import sh.ory.hydra.api.AdminApi;
-import sh.ory.hydra.model.JSONWebKeySet;
-import sh.ory.hydra.model.OAuth2Client;
-
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -33,6 +28,10 @@ import java.security.KeyPair;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
+import sh.ory.hydra.ApiException;
+import sh.ory.hydra.api.AdminApi;
+import sh.ory.hydra.model.JSONWebKeySet;
+import sh.ory.hydra.model.OAuth2Client;
 
 /**
  * The Hydra OAuth utils.

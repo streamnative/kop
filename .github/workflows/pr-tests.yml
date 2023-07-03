@@ -95,6 +95,27 @@ jobs:
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility..*.*Test' -pl tests"
             ]
           },
+          {
+            name: "coordinator test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.coordinator.*Test' -pl tests",
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.coordinator..*.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "end to end test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.e2e.*Test' -pl tests",
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.e2e..*.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "end to end test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.e2e.*Test' -pl tests",
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.e2e..*.*Test' -pl tests"
+            ]
+          },
         ]
     steps:
       - uses: actions/checkout@v3

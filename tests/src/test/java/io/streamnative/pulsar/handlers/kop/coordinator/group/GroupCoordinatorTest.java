@@ -24,6 +24,12 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.Memb
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTimer;
+import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
@@ -36,14 +42,6 @@ import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.*;
-
-import java.util.Optional;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
-
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.*;
 

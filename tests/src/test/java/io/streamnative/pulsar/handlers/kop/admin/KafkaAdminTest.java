@@ -17,6 +17,12 @@ import com.google.common.collect.Sets;
 import io.jsonwebtoken.lang.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaLogConfig;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
@@ -42,14 +48,6 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-
 import static org.testng.Assert.*;
 
 

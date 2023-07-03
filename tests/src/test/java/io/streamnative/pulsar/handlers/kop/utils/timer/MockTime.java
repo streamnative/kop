@@ -13,13 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils.timer;
 
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.utils.Time;
-
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.utils.Time;
 
 /**
  * A clock that you can manually advance by calling sleep.

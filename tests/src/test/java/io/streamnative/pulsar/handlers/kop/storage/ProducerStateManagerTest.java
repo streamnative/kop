@@ -15,6 +15,8 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.Collections;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
@@ -24,10 +26,6 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.RecordBatch;
 import org.mockito.Mockito;
 import org.testng.annotations.*;
-
-import java.util.Collections;
-import java.util.Optional;
-
 import static org.testng.Assert.*;
 
 /**

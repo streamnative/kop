@@ -21,6 +21,10 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
@@ -52,12 +56,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.*;
 import static org.testng.AssertJUnit.fail;

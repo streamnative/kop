@@ -14,12 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.utils.timer;
 
 import com.google.common.collect.Lists;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.utils.Time;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.Test;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,7 +22,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.utils.Time;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 import static org.testng.Assert.fail;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertTrue;

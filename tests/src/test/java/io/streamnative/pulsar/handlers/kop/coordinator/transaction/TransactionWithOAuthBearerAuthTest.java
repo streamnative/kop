@@ -18,6 +18,8 @@ import io.streamnative.pulsar.handlers.kop.security.oauth.HydraOAuthUtils;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.SaslOAuthKopHandlersTest;
+import java.net.URL;
+import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -26,9 +28,6 @@ import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.net.URL;
-import java.util.Properties;
 
 @Slf4j
 public class TransactionWithOAuthBearerAuthTest extends TransactionTest {

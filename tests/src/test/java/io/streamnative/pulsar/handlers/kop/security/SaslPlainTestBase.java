@@ -17,6 +17,12 @@ import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -40,14 +46,6 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.*;
 

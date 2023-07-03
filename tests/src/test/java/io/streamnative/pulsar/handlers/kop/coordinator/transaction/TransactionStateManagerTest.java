@@ -19,6 +19,10 @@ import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.nio.ByteBuffer;
+import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -32,12 +36,6 @@ import org.mockito.ArgumentCaptor;
 import org.testng.Assert;
 import org.testng.annotations.*;
 import org.testng.collections.Maps;
-
-import java.nio.ByteBuffer;
-import java.util.Optional;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertNotNull;

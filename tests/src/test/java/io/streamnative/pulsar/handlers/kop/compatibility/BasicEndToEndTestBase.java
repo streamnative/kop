@@ -15,16 +15,15 @@ package io.streamnative.pulsar.handlers.kop.compatibility;
 
 import io.streamnative.kafka.client.api.*;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.io.IOException;
+import java.time.Duration;
+import java.util.*;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.collections.Maps;
-
-import java.io.IOException;
-import java.time.Duration;
-import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Basic end-to-end test for different versions of Kafka clients.

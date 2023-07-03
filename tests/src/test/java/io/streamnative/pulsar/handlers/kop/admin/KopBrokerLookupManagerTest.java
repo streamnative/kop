@@ -16,14 +16,12 @@ package io.streamnative.pulsar.handlers.kop.admin;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.LookupClient;
+import java.util.Collections;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.util.Collections;
-
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 

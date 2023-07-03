@@ -14,16 +14,14 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.fail;
 

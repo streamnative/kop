@@ -15,6 +15,10 @@ package io.streamnative.pulsar.handlers.kop.metadata;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.time.Duration;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
@@ -24,12 +28,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.*;
-
-import java.time.Duration;
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 

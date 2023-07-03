@@ -14,6 +14,11 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.google.common.collect.Sets;
+import java.net.URL;
+import java.time.Duration;
+import java.util.Collections;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -31,13 +36,6 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.net.URL;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-
 import static org.testng.Assert.*;
 
 @Slf4j

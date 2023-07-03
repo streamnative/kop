@@ -19,6 +19,15 @@ import io.streamnative.kafka.client.api.*;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.compatibility.DefaultKafkaClientFactory;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+import javax.crypto.SecretKey;
+import javax.security.auth.login.Configuration;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.PartitionInfo;
@@ -33,17 +42,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
-import javax.security.auth.login.Configuration;
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
-
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.*;
 

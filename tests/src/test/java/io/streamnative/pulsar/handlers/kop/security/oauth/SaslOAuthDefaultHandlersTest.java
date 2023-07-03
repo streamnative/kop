@@ -15,6 +15,9 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
+import java.util.Optional;
+import java.util.Properties;
+import javax.crypto.SecretKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
@@ -24,11 +27,6 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
-import java.util.Optional;
-import java.util.Properties;
-
 import static org.mockito.Mockito.spy;
 
 /**

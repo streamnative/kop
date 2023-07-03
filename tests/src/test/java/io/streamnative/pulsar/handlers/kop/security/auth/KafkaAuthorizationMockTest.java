@@ -16,6 +16,9 @@ package io.streamnative.pulsar.handlers.kop.security.auth;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.time.Duration;
+import java.util.*;
+import javax.crypto.SecretKey;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -28,11 +31,6 @@ import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
-import java.time.Duration;
-import java.util.*;
-
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;

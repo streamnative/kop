@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import java.time.Duration;
+import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -28,11 +31,6 @@ import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
-
-import java.time.Duration;
-import java.util.Collections;
-import java.util.concurrent.CompletableFuture;
-
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 

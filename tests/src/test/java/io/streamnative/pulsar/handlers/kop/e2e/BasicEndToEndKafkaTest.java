@@ -16,6 +16,15 @@ package io.streamnative.pulsar.handlers.kop.e2e;
 import io.streamnative.kafka.client.api.Header;
 import io.streamnative.pulsar.handlers.kop.KafkaPayloadProcessor;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -31,17 +40,6 @@ import org.apache.pulsar.client.api.*;
 import org.awaitility.Awaitility;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
 import static org.testng.Assert.*;
 
 /**

@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
@@ -21,9 +23,6 @@ import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.*;
 import org.testng.Assert;
-
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 
 
 @Slf4j

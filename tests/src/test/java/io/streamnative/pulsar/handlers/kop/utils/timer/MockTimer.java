@@ -14,11 +14,10 @@
 package io.streamnative.pulsar.handlers.kop.utils.timer;
 
 import io.streamnative.pulsar.handlers.kop.utils.timer.TimerTaskList.TimerTaskEntry;
-import lombok.Getter;
-import lombok.experimental.Accessors;
-
 import java.util.Comparator;
 import java.util.PriorityQueue;
+import lombok.Getter;
+import lombok.experimental.Accessors;
 
 /**
  * A mock implementation of {@link Timer}.

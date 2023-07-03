@@ -18,11 +18,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.SubjectResource;
-import lombok.Cleanup;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -32,7 +27,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-
+import lombok.Cleanup;
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 /**

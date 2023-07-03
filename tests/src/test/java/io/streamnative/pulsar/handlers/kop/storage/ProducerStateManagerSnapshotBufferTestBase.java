@@ -17,15 +17,13 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import java.util.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.TopicName;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-
-import java.util.*;
-
 import static org.testng.Assert.assertEquals;
 
 @Slf4j

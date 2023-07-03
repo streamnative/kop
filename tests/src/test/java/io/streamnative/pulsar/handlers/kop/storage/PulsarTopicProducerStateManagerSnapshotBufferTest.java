@@ -15,15 +15,13 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import lombok.extern.slf4j.Slf4j;
-import org.testng.annotations.Test;
-
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-
+import lombok.extern.slf4j.Slf4j;
+import org.testng.annotations.Test;
 import static org.testng.Assert.assertEquals;
 
 /**

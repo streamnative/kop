@@ -14,6 +14,12 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.buffer.ByteBuf;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
@@ -21,13 +27,6 @@ import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.*;
-
-import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 public class KafkaCommonTestUtils {
 

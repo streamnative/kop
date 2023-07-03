@@ -18,6 +18,11 @@ import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
+import java.util.Collections;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import javax.crypto.SecretKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
@@ -31,13 +36,6 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
-import java.util.Collections;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;

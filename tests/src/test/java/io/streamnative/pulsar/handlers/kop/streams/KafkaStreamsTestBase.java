@@ -15,6 +15,8 @@ package io.streamnative.pulsar.handlers.kop.streams;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.NonNull;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -25,9 +27,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
-
-import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Base test class for tests related to Kafka Streams.

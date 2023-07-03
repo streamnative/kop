@@ -13,15 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import java.util.HashMap;
+import java.util.concurrent.CompletableFuture;
+import javax.naming.AuthenticationException;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.testng.annotations.Test;
-
-import javax.naming.AuthenticationException;
-import java.util.HashMap;
-import java.util.concurrent.CompletableFuture;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;

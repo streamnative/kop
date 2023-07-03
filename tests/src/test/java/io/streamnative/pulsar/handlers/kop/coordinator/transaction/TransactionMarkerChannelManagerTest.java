@@ -19,6 +19,9 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.RecordBatch;
@@ -27,11 +30,6 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.testng.Assert.assertEquals;

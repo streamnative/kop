@@ -18,15 +18,13 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChe
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-
 import static org.testng.Assert.assertEquals;
 
 @Slf4j

@@ -17,6 +17,12 @@ import io.streamnative.pulsar.handlers.kop.AbstractPulsarClient;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.LongRunningProcessStatus;
@@ -28,13 +34,6 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.nio.ByteBuffer;
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
 
 @Slf4j
 public class CompactedPartitionedTopicTest extends KopProtocolHandlerTestBase {
