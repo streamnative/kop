@@ -120,6 +120,7 @@ jobs:
 
       - name: ${{ matrix.test.name }}
         run: |
+          echo ${{ matrix.test.scripts }}
           scripts=$(echo '${{ toJson(matrix.test.scripts) }}' | jq -r '.[]')
           IFS=$'\n'   # change the internal field separator to newline
           echo $scripts
