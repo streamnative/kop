@@ -84,13 +84,13 @@ jobs:
         test: [
           {
             name: "admin test",
-            script: [
+            scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.admin.*Test' -pl tests"
             ]
           },
           {
             name: "compatibility test",
-            script: [
+            scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility.*Test' -pl tests",
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility..*.*Test' -pl tests"
             ]
@@ -120,7 +120,7 @@ jobs:
 
       - name: ${{ matrix.test.name }}
         run: |
-          echo ${{ matrix.test.scripts }}
+          echo '${{ matrix.test.scripts }}'
           scripts=$(echo '${{ toJson(matrix.test.scripts) }}' | jq -r '.[]')
           IFS=$'\n'   # change the internal field separator to newline
           echo $scripts
