@@ -114,6 +114,55 @@ jobs:
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.format.*Test' -pl tests"
             ]
           },
+          {
+            name: "metadata test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.metadata.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "producer test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.producer.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "schema test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "security test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.security.*Test' -pl tests",
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.security.*.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "storage test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.storage.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "streams test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.streams.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "util test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.util.timer.*Test' -pl tests"
+            ]
+          },
+          {
+            name: "other test",
+            scripts: [
+              "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.*Test' -pl tests"
+            ]
+          },
         ]
     steps:
       - uses: actions/checkout@v3
