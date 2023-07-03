@@ -229,6 +229,11 @@ public class KafkaResponseUtils {
                                     .setMetadata(entry.getValue())
                         )
                         .collect(Collectors.toList()));
+
+        if (errors == Errors.COORDINATOR_LOAD_IN_PROGRESS) {
+            data.setThrottleTimeMs(1000);
+        }
+
         return new JoinGroupResponse(data);
     }
 

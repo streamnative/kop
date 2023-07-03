@@ -169,6 +169,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         case NOT_ENOUGH_REPLICAS:
                         case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
                         case REQUEST_TIMED_OUT:
+                        case NETWORK_EXCEPTION:
                         case UNKNOWN_SERVER_ERROR:
                         case KAFKA_STORAGE_ERROR: // these are retriable errors
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "

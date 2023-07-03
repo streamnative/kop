@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.annotations.VisibleForTesting;
-import java.util.Optional;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -22,7 +22,6 @@ import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.NonNull;
 import org.apache.bookkeeper.common.util.MathUtils;
-import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 
 /**
  * Pending futures of PersistentTopic.
@@ -56,8 +55,8 @@ public class PendingTopicFutures {
         count--;
     }
 
-    public synchronized void addListener(CompletableFuture<Optional<PersistentTopic>> topicFuture,
-                            @NonNull Consumer<Optional<PersistentTopic>> persistentTopicConsumer,
+    public synchronized void addListener(CompletableFuture<PartitionLog> topicFuture,
+                            @NonNull Consumer<PartitionLog> persistentTopicConsumer,
                             @NonNull Consumer<Throwable> exceptionConsumer) {
         if (count == 0) {
             count = 1;
@@ -109,19 +108,19 @@ public class PendingTopicFutures {
 
 class TopicThrowablePair {
     @Getter
-    private final Optional<PersistentTopic> persistentTopicOpt;
+    private final PartitionLog persistentTopicOpt;
     @Getter
     private final Throwable throwable;
 
-    public static TopicThrowablePair withTopic(final Optional<PersistentTopic> persistentTopicOpt) {
+    public static TopicThrowablePair withTopic(final PartitionLog persistentTopicOpt) {
         return new TopicThrowablePair(persistentTopicOpt, null);
     }
 
     public static TopicThrowablePair withThrowable(final Throwable throwable) {
-        return new TopicThrowablePair(Optional.empty(), throwable);
+        return new TopicThrowablePair(null, throwable);
     }
 
-    private TopicThrowablePair(final Optional<PersistentTopic> persistentTopicOpt, final Throwable throwable) {
+    private TopicThrowablePair(final PartitionLog persistentTopicOpt, final Throwable throwable) {
         this.persistentTopicOpt = persistentTopicOpt;
         this.throwable = throwable;
     }
