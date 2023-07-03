@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.metrics;
 
-import io.streamnative.pulsar.handlers.kop.metrics.MetricsProviderTest;
-
 public class MetricsProviderWithDisableGroupLevelConsumerMetricsTest extends MetricsProviderTest {
     public MetricsProviderWithDisableGroupLevelConsumerMetricsTest() {
         super(false);
