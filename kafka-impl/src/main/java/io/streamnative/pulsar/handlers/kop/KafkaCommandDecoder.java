@@ -623,6 +623,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         private final ByteBuf buffer;
         private final SocketAddress remoteAddress;
 
+        private final AtomicBoolean released = new AtomicBoolean();
+
         public KafkaHeaderAndRequest(RequestHeader header,
                               AbstractRequest request,
                               ByteBuf buffer,
@@ -634,6 +636,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public ByteBuf getBuffer() {
+            if (released.get()) {
+                throw new IllegalStateException("Already released");
+            }
             return buffer;
         }
 
@@ -669,7 +674,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
 
         public void close() {
-            ReferenceCountUtil.safeRelease(this.buffer);
+           if (!released.compareAndSet(false, true)) {
+               return;
+           }
+           ReferenceCountUtil.safeRelease(this.buffer);
         }
     }
 

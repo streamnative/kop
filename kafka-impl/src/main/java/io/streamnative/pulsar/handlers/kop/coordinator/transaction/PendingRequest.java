@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -41,7 +42,7 @@ public class PendingRequest {
         this.responseConsumerHandler = responseConsumerHandler;
     }
 
-    public ByteBuffer serialize() {
+    public ByteBuf serialize() {
         return KopResponseUtils.serializeRequest(requestHeader, request);
     }
 
