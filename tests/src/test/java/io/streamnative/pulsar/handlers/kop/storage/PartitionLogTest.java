@@ -13,27 +13,22 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import static org.mockito.Mockito.mock;
-
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
-import java.nio.ByteBuffer;
-import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.RecordTooLargeException;
-import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.record.ControlRecordType;
-import org.apache.kafka.common.record.EndTransactionMarker;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MemoryRecordsBuilder;
-import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.utils.Time;
 import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+
+import static org.mockito.Mockito.mock;
 
 /**
  * Unit test {@link PartitionLog}.

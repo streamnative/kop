@@ -13,17 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.security;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.testng.AssertJUnit.assertFalse;
-
-import java.io.Closeable;
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
-import java.util.Collections;
-import java.util.Properties;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.net.ssl.HostnameVerifier;
-
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.Cleanup;
 import lombok.Getter;
@@ -44,6 +33,17 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
+
+import javax.net.ssl.HostnameVerifier;
+import java.io.Closeable;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.Collections;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.testng.AssertJUnit.assertFalse;
 
 /**
  * Validate Kafka SSL channel config.

@@ -13,34 +13,18 @@
  */
 package io.streamnative.pulsar.handlers.kop.compatibility;
 
-import io.streamnative.kafka.client.api.Consumer;
-import io.streamnative.kafka.client.api.ConsumerConfiguration;
-import io.streamnative.kafka.client.api.ConsumerRecord;
-import io.streamnative.kafka.client.api.Header;
-import io.streamnative.kafka.client.api.KafkaClientFactory;
-import io.streamnative.kafka.client.api.KafkaClientFactoryImpl;
-import io.streamnative.kafka.client.api.KafkaVersion;
-import io.streamnative.kafka.client.api.Producer;
-import io.streamnative.kafka.client.api.ProducerConfiguration;
-import io.streamnative.kafka.client.api.RecordMetadata;
-import io.streamnative.kafka.client.api.TopicOffsetAndMetadata;
+import io.streamnative.kafka.client.api.*;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.TreeMap;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.collections.Maps;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Basic end-to-end test for different versions of Kafka clients.

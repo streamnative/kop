@@ -13,29 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.when;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotEquals;
-import static org.testng.Assert.assertTrue;
-
 import com.google.common.collect.Sets;
-
-import java.io.IOException;
-import java.net.URL;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import javax.naming.AuthenticationException;
-import javax.security.auth.callback.Callback;
-import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
 import lombok.SneakyThrows;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -63,6 +41,20 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+
+import javax.naming.AuthenticationException;
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.auth.login.LoginException;
+import java.io.IOException;
+import java.net.URL;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+
+import static org.mockito.Mockito.*;
+import static org.testng.Assert.*;
 
 /**
  * Testing the SASL-OAUTHBEARER features on KoP with KoP's own login callback handler and server callback handler.

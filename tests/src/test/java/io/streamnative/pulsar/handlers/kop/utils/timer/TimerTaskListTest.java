@@ -13,14 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils.timer;
 
-import static org.testng.Assert.assertEquals;
-
 import io.streamnative.pulsar.handlers.kop.utils.timer.TimerTaskList.TimerTaskEntry;
+import org.testng.annotations.Test;
+
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.testng.annotations.Test;
+
+import static org.testng.Assert.assertEquals;
 
 /**
  * Unit test {@link TimerTaskList}.

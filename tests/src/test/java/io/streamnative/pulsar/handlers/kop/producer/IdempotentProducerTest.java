@@ -13,13 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.producer;
 
-import static org.testng.Assert.assertEquals;
-
-import java.time.Duration;
-import java.util.Collections;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -33,6 +26,13 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+
+import static org.testng.Assert.assertEquals;
 
 /**
  * Idempotent producer test.

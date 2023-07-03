@@ -13,13 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertTrue;
-import static org.testng.AssertJUnit.fail;
-
 import com.google.common.collect.Sets;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
@@ -27,16 +20,6 @@ import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import javax.crypto.SecretKey;
-
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -44,14 +27,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.Config;
-import org.apache.kafka.clients.admin.CreateTopicsResult;
-import org.apache.kafka.clients.admin.DeleteTopicsResult;
-import org.apache.kafka.clients.admin.DescribeConfigsResult;
-import org.apache.kafka.clients.admin.ListTopicsResult;
-import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -76,6 +52,15 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+
+import javax.crypto.SecretKey;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.*;
+import static org.testng.AssertJUnit.fail;
 
 /**
  * Unit test for KoP enable authorization.

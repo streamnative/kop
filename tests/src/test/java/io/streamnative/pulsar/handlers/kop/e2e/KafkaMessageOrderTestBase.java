@@ -14,21 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.e2e;
 
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
-
 import com.google.common.collect.Sets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
-import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +35,13 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import static org.testng.Assert.*;
 
 /**
  * Unit test for Different kafka produce messages.

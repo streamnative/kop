@@ -14,14 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.e2e;
 
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
-
-import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.Cleanup;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -32,6 +24,14 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 /**
  * Test unit for non-partitioned topic.

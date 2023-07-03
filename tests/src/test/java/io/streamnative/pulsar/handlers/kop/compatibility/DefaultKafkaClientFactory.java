@@ -14,21 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.compatibility;
 
 import com.google.common.collect.Maps;
-import io.streamnative.kafka.client.api.Consumer;
-import io.streamnative.kafka.client.api.ConsumerConfiguration;
-import io.streamnative.kafka.client.api.ConsumerRecord;
-import io.streamnative.kafka.client.api.KafkaClientFactory;
-import io.streamnative.kafka.client.api.ProduceContext;
-import io.streamnative.kafka.client.api.Producer;
-import io.streamnative.kafka.client.api.ProducerConfiguration;
-import io.streamnative.kafka.client.api.RecordMetadata;
-import io.streamnative.kafka.client.api.TopicOffsetAndMetadata;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Future;
+import io.streamnative.kafka.client.api.*;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -36,6 +22,13 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.internals.RecordHeader;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Future;
 
 /**
  * Kafka client factory for the default version of Kafka client.

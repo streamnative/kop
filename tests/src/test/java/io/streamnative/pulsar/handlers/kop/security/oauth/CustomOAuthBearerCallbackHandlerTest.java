@@ -13,26 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
-
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
-import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerToken;
-import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerValidatorCallback;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.crypto.SecretKey;
-import javax.security.auth.callback.Callback;
-import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.auth.login.AppConfigurationEntry;
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -48,6 +31,17 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+
+import javax.crypto.SecretKey;
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.auth.login.AppConfigurationEntry;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 /**
  * Test custom AuthenticateCallbackHandler for OAUTHBEARER.

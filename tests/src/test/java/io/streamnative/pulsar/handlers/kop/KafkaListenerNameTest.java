@@ -13,24 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-import static org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -45,6 +29,17 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import static io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import static org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 
 
 /**

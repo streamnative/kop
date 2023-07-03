@@ -13,15 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
-import static org.testng.AssertJUnit.assertEquals;
-
 import com.google.common.collect.Lists;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.pulsar.client.api.Message;
@@ -32,6 +24,11 @@ import org.mockito.internal.util.collections.Sets;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import org.testng.collections.Maps;
+
+import java.nio.ByteBuffer;
+import java.util.*;
+
+import static org.testng.AssertJUnit.assertEquals;
 
 
 /**

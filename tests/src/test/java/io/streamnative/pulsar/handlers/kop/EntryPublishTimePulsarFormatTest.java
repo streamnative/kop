@@ -13,9 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static org.testng.Assert.assertTrue;
-
-import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -25,6 +22,10 @@ import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
+
+import java.util.concurrent.TimeUnit;
+
+import static org.testng.Assert.assertTrue;
 
 /**
  * Test for publish time when entry format is pulsar.

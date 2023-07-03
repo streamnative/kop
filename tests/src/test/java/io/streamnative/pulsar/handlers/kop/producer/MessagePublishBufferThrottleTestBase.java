@@ -13,15 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.producer;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.mockStatic;
-
-import java.util.Properties;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import io.streamnative.pulsar.handlers.kop.KafkaRequestHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +25,15 @@ import org.awaitility.Awaitility;
 import org.mockito.MockedStatic;
 import org.testng.Assert;
 import org.testng.annotations.Test;
+
+import java.util.Properties;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * Test class for message publish buffer throttle from kop side.
