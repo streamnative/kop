@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.producer;
 
+import static org.testng.Assert.assertEquals;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
 import java.util.Collections;
@@ -30,7 +32,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
 
 /**
  * Idempotent producer test.

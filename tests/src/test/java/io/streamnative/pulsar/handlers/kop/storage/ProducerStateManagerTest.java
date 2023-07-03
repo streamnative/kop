@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static org.testng.Assert.*;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
 import java.util.Collections;
@@ -26,7 +28,6 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.RecordBatch;
 import org.mockito.Mockito;
 import org.testng.annotations.*;
-import static org.testng.Assert.*;
 
 /**
  * Producer state manager test.

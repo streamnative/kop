@@ -13,6 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.internal.verification.VerificationModeFactory.atLeastOnce;
+import static org.testng.Assert.assertNotEquals;
+import static org.testng.AssertJUnit.*;
+
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
@@ -43,11 +49,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-import static org.mockito.internal.verification.VerificationModeFactory.atLeastOnce;
-import static org.testng.Assert.assertNotEquals;
-import static org.testng.AssertJUnit.*;
 
 /**
  * Unit test {@link TransactionCoordinator}.

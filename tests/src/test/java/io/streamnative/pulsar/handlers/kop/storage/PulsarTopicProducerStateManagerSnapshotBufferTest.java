@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static org.testng.Assert.assertEquals;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import java.nio.ByteBuffer;
@@ -22,7 +24,6 @@ import java.util.Optional;
 import java.util.TreeMap;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
 
 /**
  * Unit test for {@link PulsarTopicProducerStateManagerSnapshotBuffer}.

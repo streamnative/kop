@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import static org.mockito.Mockito.spy;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import java.util.Optional;
@@ -27,7 +29,6 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.mockito.Mockito.spy;
 
 /**
  * Testing the SASL-OAUTHBEARER features on KoP with default login and validate callback handlers.

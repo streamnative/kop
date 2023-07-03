@@ -13,6 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
+import static org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import java.util.*;
@@ -34,10 +39,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.testng.Assert;
 import org.testng.annotations.Test;
-import static io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
-import static org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 
 
 /**

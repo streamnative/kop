@@ -14,6 +14,8 @@
 package io.streamnative.pulsar.handlers.kop.producer;
 
 
+import static org.testng.Assert.*;
+
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.util.ArrayList;
@@ -41,7 +43,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 /**
  * Test KoP message publish throttling.

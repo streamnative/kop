@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
@@ -31,8 +34,6 @@ import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Test for publish time when entry format is kafka.

@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.streams;
 
+import static org.testng.Assert.assertEquals;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,7 +32,6 @@ import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.apache.kafka.streams.state.Stores;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
 
 
 /**

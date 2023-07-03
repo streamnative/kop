@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static org.testng.Assert.assertEquals;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -24,7 +26,6 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
 
 @Slf4j
 public abstract class ProducerStateManagerSnapshotBufferTestBase extends KopProtocolHandlerTestBase {

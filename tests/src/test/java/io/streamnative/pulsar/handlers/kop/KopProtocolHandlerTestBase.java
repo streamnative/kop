@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.mockito.Mockito.*;
+import static org.testng.Assert.assertTrue;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.collect.Sets;
@@ -75,8 +78,6 @@ import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
-import static org.mockito.Mockito.*;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Unit test to test KoP handler.

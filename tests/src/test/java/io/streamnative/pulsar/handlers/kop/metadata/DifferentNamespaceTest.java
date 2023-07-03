@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.metadata;
 
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
@@ -28,8 +31,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.*;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 /**
  * test topics in different namespaces.

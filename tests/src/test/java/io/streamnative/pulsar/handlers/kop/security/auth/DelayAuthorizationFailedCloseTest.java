@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.kafka.client.api.KafkaVersion;
@@ -46,9 +50,6 @@ import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 /**
  * Test delay close handler when authorization failed.

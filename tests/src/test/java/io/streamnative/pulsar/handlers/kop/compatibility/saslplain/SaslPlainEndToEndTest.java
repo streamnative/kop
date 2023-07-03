@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.compatibility.saslplain;
 
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.*;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.kafka.client.api.*;
@@ -42,8 +45,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.*;
 
 @Slf4j
 public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {

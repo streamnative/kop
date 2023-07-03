@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.e2e;
 
+import static org.testng.Assert.*;
+
 import io.streamnative.kafka.client.api.Header;
 import io.streamnative.pulsar.handlers.kop.KafkaPayloadProcessor;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -40,7 +42,6 @@ import org.apache.pulsar.client.api.*;
 import org.awaitility.Awaitility;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 /**
  * Basic end-to-end test with `entryFormat=kafka`.

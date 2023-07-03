@@ -13,6 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.AssertJUnit.*;
+
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -36,10 +41,6 @@ import org.mockito.ArgumentCaptor;
 import org.testng.Assert;
 import org.testng.annotations.*;
 import org.testng.collections.Maps;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.AssertJUnit.*;
 
 /**
  * Unit test {@link TransactionStateManager}.

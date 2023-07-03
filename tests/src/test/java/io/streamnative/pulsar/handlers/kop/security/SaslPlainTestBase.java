@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.security;
 
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.*;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -46,8 +49,6 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.*;
 
 /**
  * Testing the SASL-PLAIN features on KoP.

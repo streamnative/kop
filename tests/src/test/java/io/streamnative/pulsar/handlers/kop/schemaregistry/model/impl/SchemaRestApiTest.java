@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import static org.testng.Assert.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -31,7 +33,6 @@ import lombok.Cleanup;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 /**
  * Test the Schema related REST APIs.

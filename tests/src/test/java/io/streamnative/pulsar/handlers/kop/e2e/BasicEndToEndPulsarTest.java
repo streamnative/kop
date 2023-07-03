@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.e2e;
 
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.time.Duration;
@@ -31,8 +34,6 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.common.api.proto.MarkersMessageIdData;
 import org.apache.pulsar.common.protocol.Markers;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Basic end-to-end test with `entryFormat=pulsar`.

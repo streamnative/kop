@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.admin;
 
+import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager.BaseKey;
@@ -52,9 +56,6 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Tests for handling out-of-range cases.

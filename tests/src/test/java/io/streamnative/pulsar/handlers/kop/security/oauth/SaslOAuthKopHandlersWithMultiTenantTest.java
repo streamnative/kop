@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import static org.testng.Assert.*;
+
 import com.google.common.collect.Sets;
 import java.net.URL;
 import java.time.Duration;
@@ -36,7 +38,6 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 @Slf4j
 public class SaslOAuthKopHandlersWithMultiTenantTest extends SaslOAuthBearerTestBase {

@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.e2e;
 
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
 import java.util.Base64;
@@ -35,8 +38,6 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNull;
 
 /**
  * Unit test for custom topic configuration.

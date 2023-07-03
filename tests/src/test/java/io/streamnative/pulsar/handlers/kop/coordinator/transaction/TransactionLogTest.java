@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.testng.AssertJUnit.assertEquals;
+
 import com.google.common.collect.Lists;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -26,7 +28,6 @@ import org.mockito.internal.util.collections.Sets;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 import org.testng.collections.Maps;
-import static org.testng.AssertJUnit.assertEquals;
 
 
 /**

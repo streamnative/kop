@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.buildRequest;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import java.net.InetSocketAddress;
@@ -34,9 +38,6 @@ import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static io.streamnative.pulsar.handlers.kop.KafkaCommonTestUtils.buildRequest;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 
 @Slf4j
 public class OffsetTopicWriteTimeoutTest extends KopProtocolHandlerTestBase {

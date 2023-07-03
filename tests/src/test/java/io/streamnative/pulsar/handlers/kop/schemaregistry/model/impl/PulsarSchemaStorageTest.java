@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import static org.testng.Assert.assertEquals;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
@@ -25,7 +27,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
 
 @Slf4j
 public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {

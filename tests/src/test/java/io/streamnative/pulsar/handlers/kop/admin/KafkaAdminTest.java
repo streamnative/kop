@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.admin;
 
+import static org.testng.Assert.*;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.lang.Maps;
 import io.streamnative.pulsar.handlers.kop.KafkaLogConfig;
@@ -48,7 +50,6 @@ import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 
 /**

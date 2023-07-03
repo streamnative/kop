@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.e2e;
 
+import static org.testng.Assert.*;
+
 import io.streamnative.kafka.client.api.Header;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.nio.charset.StandardCharsets;
@@ -42,7 +44,6 @@ import org.apache.pulsar.client.api.*;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import static org.testng.Assert.*;
 
 /**
  * Basic end-to-end test.

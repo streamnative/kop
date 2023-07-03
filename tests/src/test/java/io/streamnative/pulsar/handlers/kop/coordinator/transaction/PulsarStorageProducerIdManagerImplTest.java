@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.testng.Assert.assertTrue;
+import static org.testng.AssertJUnit.assertEquals;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.util.HashSet;
 import java.util.List;
@@ -29,8 +32,6 @@ import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertTrue;
-import static org.testng.AssertJUnit.assertEquals;
 
 /**
  * Producer id manager test.

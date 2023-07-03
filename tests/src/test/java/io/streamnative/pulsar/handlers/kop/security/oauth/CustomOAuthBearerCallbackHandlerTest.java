@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
@@ -37,9 +41,6 @@ import org.apache.pulsar.common.policies.data.AuthAction;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Test custom AuthenticateCallbackHandler for OAUTHBEARER.

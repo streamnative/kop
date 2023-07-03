@@ -13,6 +13,9 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.*;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -42,8 +45,6 @@ import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.testng.annotations.*;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.*;
 
 /**
  * Unit test {@link GroupCoordinator}.

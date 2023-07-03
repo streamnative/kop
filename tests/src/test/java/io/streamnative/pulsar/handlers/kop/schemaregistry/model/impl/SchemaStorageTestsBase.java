@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import static org.testng.Assert.*;
+
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
@@ -22,7 +24,6 @@ import java.util.concurrent.ExecutionException;
 import lombok.AllArgsConstructor;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 @AllArgsConstructor
 public class SchemaStorageTestsBase {

@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.fail;
+import static org.testng.AssertJUnit.assertEquals;
+import static org.testng.AssertJUnit.assertTrue;
+
 import io.streamnative.kafka.client.api.KafkaVersion;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import java.io.IOException;
@@ -29,9 +33,6 @@ import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.fail;
-import static org.testng.AssertJUnit.assertEquals;
-import static org.testng.AssertJUnit.assertTrue;
 
 /**
  * Unit test for KoP Idle connection close.

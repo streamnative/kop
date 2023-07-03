@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import static org.testng.Assert.*;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -29,7 +31,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.TimeoutException;
-import static org.testng.Assert.*;
 
 /**
  * Base class for SASL-OAUTHBEARER tests.

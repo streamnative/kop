@@ -14,6 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.e2e;
 
 
+import static org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo;
+import static org.testng.Assert.*;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.lang.reflect.Field;
 import java.time.Duration;
@@ -43,8 +46,6 @@ import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo;
-import static org.testng.Assert.*;
 
 /**
  * Unit test for Different kafka produce messages.

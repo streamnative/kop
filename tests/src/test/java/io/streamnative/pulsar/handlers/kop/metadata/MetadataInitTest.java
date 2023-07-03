@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.metadata;
 
+import static org.testng.Assert.*;
+
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.PortManager;
@@ -31,7 +33,6 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 @Slf4j
 public class MetadataInitTest extends KopProtocolHandlerTestBase {

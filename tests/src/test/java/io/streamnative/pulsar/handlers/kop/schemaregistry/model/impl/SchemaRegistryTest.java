@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import static org.testng.Assert.*;
+
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDe;
@@ -44,7 +46,6 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-import static org.testng.Assert.*;
 
 /**
  * Test for KoP with Confluent Schema Registry.

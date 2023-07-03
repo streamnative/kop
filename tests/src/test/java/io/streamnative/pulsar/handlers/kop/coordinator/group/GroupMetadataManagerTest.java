@@ -13,6 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
+import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.*;
+import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
+import static org.testng.Assert.*;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -51,13 +59,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.*;
 import org.testng.annotations.*;
-import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataConstants.*;
-import static io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
-import static org.testng.Assert.*;
 
 /**
  * Unit test {@link GroupMetadataManager}.

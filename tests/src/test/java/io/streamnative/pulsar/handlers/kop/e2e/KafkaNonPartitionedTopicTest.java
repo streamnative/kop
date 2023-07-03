@@ -14,6 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.e2e;
 
 
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.time.Duration;
 import java.util.Collections;
@@ -28,8 +31,6 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 /**
  * Test unit for non-partitioned topic.
