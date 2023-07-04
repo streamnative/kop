@@ -39,11 +39,7 @@ import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientI
 import org.apache.kafka.common.utils.Utils;
 
 /**
- * {@code SaslServer} implementation for SASL/OAUTHBEARER in Kafka. An instance
- * of {@link OAuthBearerToken} is available upon successful authentication via
- * the negotiated property "{@code OAUTHBEARER.token}"; the token could be used
- * in a custom authorizer (to authorize based on JWT claims rather than ACLs,
- * for example).
+ * Migrate from {@link org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer}.
  */
 @Slf4j
 public class KopOAuthBearerSaslServer implements SaslServer {
