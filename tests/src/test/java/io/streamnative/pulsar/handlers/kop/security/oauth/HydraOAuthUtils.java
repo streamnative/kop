@@ -21,7 +21,6 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import io.fusionauth.jwks.domain.JSONWebKey;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import io.streamnative.pulsar.handlers.kop.security.oauth.ClientInfo;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
