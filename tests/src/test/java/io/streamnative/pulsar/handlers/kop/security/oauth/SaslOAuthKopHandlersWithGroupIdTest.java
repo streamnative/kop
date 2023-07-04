@@ -11,14 +11,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop;
+package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
-import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
