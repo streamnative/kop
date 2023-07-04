@@ -52,6 +52,7 @@ public class ClientCredentialsFlowTest {
         ClientInfo clientInfo = clientConfig.getClientInfo();
         Assert.assertEquals(clientInfo.getId(), "my-id");
         Assert.assertEquals(clientInfo.getSecret(), "my-secret");
+        Assert.assertEquals(clientInfo.getTenant(), "my-tenant");
     }
 
     @Test

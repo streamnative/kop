@@ -167,17 +167,18 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canDescribeConsumerGroup(KafkaPrincipal principal, Resource resource) {
-        if (forceCheckGroupId) {
-            if (StringUtils.isBlank(principal.getGroupId())) {
-                return CompletableFuture.completedFuture(false);
-            }
-            boolean isSameGroup = Objects.equals(principal.getGroupId(), resource.getName());
-            if (log.isDebugEnabled()) {
-                log.debug("Principal [{}] for resource [{}] isSameGroup [{}]", principal, resource, isSameGroup);
-            }
-            return CompletableFuture.completedFuture(isSameGroup);
+        if (!forceCheckGroupId) {
+            return CompletableFuture.completedFuture(true);
         }
-        return CompletableFuture.completedFuture(true);
+        if (StringUtils.isBlank(principal.getGroupId())) {
+            return CompletableFuture.completedFuture(false);
+        }
+        boolean isSameGroup = Objects.equals(principal.getGroupId(), resource.getName());
+        if (log.isDebugEnabled()) {
+            log.debug("Principal [{}] for resource [{}] isSameGroup [{}]", principal, resource, isSameGroup);
+        }
+        return CompletableFuture.completedFuture(isSameGroup);
+
     }
 
     private void checkResourceType(Resource actual, ResourceType expected) {
