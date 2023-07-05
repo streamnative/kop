@@ -112,7 +112,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, CONSUMER_USER,
                 Sets.newHashSet(AuthAction.consume));
 
-        simpleAclAuthorizer = new SimpleAclAuthorizer(pulsar);
+        simpleAclAuthorizer = new SimpleAclAuthorizer(pulsar, conf);
     }
 
     @Override
@@ -131,37 +131,37 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testAuthorizeProduce() throws ExecutionException, InterruptedException {
         Boolean isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null, null,
                         new AuthenticationDataCommand(SIMPLE_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, PRODUCE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, PRODUCE_USER, null, null,
                         new AuthenticationDataCommand(PRODUCE_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, CONSUMER_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, CONSUMER_USER, null, null,
                     new AuthenticationDataCommand(CONSUMER_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER, null, null,
                         new AuthenticationDataCommand(ANOTHER_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null, null,
                         new AuthenticationDataCommand(SIMPLE_USER)),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER, null, null,
                         new AuthenticationDataCommand(ADMIN_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
@@ -170,31 +170,31 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testAuthorizeConsume() throws ExecutionException, InterruptedException {
         Boolean isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null, null,
                         new AuthenticationDataCommand(SIMPLE_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, PRODUCE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, PRODUCE_USER, null, null,
                         new AuthenticationDataCommand(PRODUCE_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, CONSUMER_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, CONSUMER_USER, null, null,
                         new AuthenticationDataCommand(CONSUMER_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER, null, null,
                         new AuthenticationDataCommand(ANOTHER_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null, null,
                         new AuthenticationDataCommand(SIMPLE_USER)),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
@@ -203,31 +203,31 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
     @Test
     public void testAuthorizeLookup() throws ExecutionException, InterruptedException {
         Boolean isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null, null,
                         new AuthenticationDataCommand(SIMPLE_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, PRODUCE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, PRODUCE_USER, null, null,
                         new AuthenticationDataCommand(PRODUCE_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, CONSUMER_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, CONSUMER_USER, null, null,
                         new AuthenticationDataCommand(CONSUMER_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ANOTHER_USER, null, null,
                         new AuthenticationDataCommand(ANOTHER_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, SIMPLE_USER, null, null,
                         new AuthenticationDataCommand(SIMPLE_USER)),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
@@ -239,28 +239,28 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         // TENANT_ADMIN_USER can't produce don't exist tenant's topic,
         // because tenant admin depend on exist tenant.
         Boolean isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null, null,
                         new AuthenticationDataCommand(TENANT_ADMIN_USER)),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertFalse(isAuthorized);
 
         // ADMIN_USER can produce don't exist tenant's topic, because is superuser.
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, ADMIN_USER, null, null,
                         new AuthenticationDataCommand(ADMIN_USER)),
                 Resource.of(ResourceType.TOPIC, NOT_EXISTS_TENANT_TOPIC)).get();
         assertTrue(isAuthorized);
 
         // TENANT_ADMIN_USER can produce.
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null, null,
                         new AuthenticationDataCommand(TENANT_ADMIN_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);
 
         // TENANT_ADMIN_USER can create or delete Topic
         isAuthorized = simpleAclAuthorizer.canManageTenantAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null, null,
                         new AuthenticationDataCommand(TENANT_ADMIN_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertTrue(isAuthorized);
@@ -273,25 +273,25 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         admin.topics().grantPermission(topic, TOPIC_LEVEL_PERMISSIONS_USER, Sets.newHashSet(AuthAction.produce));
 
         Boolean isAuthorized = simpleAclAuthorizer.canLookupAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null, null,
                         new AuthenticationDataCommand(TOPIC_LEVEL_PERMISSIONS_USER)),
                 Resource.of(ResourceType.TOPIC, topic)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null, null,
                         new AuthenticationDataCommand(TOPIC_LEVEL_PERMISSIONS_USER)),
                 Resource.of(ResourceType.TOPIC, topic)).get();
         assertTrue(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canConsumeAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null, null,
                         new AuthenticationDataCommand(TOPIC_LEVEL_PERMISSIONS_USER)),
                 Resource.of(ResourceType.TOPIC, topic)).get();
         assertFalse(isAuthorized);
 
         isAuthorized = simpleAclAuthorizer.canProduceAsync(
-                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null,
+                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TOPIC_LEVEL_PERMISSIONS_USER, null, null,
                         new AuthenticationDataCommand(TOPIC_LEVEL_PERMISSIONS_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
         assertFalse(isAuthorized);

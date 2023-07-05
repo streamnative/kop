@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
+import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.GROUP_ID_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
 
 import io.streamnative.pulsar.handlers.kop.SaslAuth;
@@ -149,6 +150,9 @@ public class PlainSaslServer implements SaslServer {
         }
         if (USER_NAME_PROP.equals(propName)) {
             return username;
+        }
+        if (GROUP_ID_PROP.equals(propName)) {
+            return "";
         }
         if (AUTH_DATA_SOURCE_PROP.equals(propName)) {
             return authDataSource;

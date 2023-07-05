@@ -28,6 +28,7 @@ import javax.security.auth.login.AppConfigurationEntry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerExtensionsValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
@@ -42,8 +43,6 @@ import org.apache.pulsar.common.api.AuthData;
  */
 @Slf4j
 public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandler {
-
-    private static final String DELIMITER = "__with_tenant_";
 
     private ServerConfig config = null;
     private AuthenticationService authenticationService;
@@ -98,10 +97,18 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                     validatorCallback.error(failureScope != null ? "insufficient_scope" : "invalid_token",
                             failureScope, failureReason.failureOpenIdConfig());
                 }
+            } else if (callback instanceof OAuthBearerExtensionsValidatorCallback) {
+                handleExtensionsValidatorCallback((OAuthBearerExtensionsValidatorCallback) callback);
             } else {
                 throw new UnsupportedCallbackException(callback);
             }
         }
+    }
+
+    private void handleExtensionsValidatorCallback(
+            OAuthBearerExtensionsValidatorCallback extensionsValidatorCallback) {
+        extensionsValidatorCallback.inputExtensions().map()
+                .forEach((extensionName, v) -> extensionsValidatorCallback.valid(extensionName));
     }
 
     @VisibleForTesting

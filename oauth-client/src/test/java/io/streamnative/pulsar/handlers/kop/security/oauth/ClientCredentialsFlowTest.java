@@ -35,20 +35,21 @@ public class ClientCredentialsFlowTest {
     public void testFindAuthorizationServer() throws IOException {
         final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
                 "http://localhost:4444", // a local OAuth2 server started by init_hydra_oauth_server.sh
-                "file:///tmp/not_exist.json"
+                Objects.requireNonNull(
+                        getClass().getClassLoader().getResource("private_key.json")).toString()
         ));
         final ClientCredentialsFlow.Metadata metadata = flow.findAuthorizationServer();
         Assert.assertEquals(metadata.getTokenEndPoint(), "http://127.0.0.1:4444/oauth2/token");
     }
 
     @Test
-    public void testLoadPrivateKey() throws Exception {
-        final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
+    public void testLoadPrivateKey() {
+        ClientConfig clientConfig = ClientConfigHelper.create(
                 "http://localhost:4444",
                 Objects.requireNonNull(
                         getClass().getClassLoader().getResource("private_key.json")).toString()
-        ));
-        final ClientCredentialsFlow.ClientInfo clientInfo = flow.loadPrivateKey();
+        );
+        ClientInfo clientInfo = clientConfig.getClientInfo();
         Assert.assertEquals(clientInfo.getId(), "my-id");
         Assert.assertEquals(clientInfo.getSecret(), "my-secret");
         Assert.assertEquals(clientInfo.getTenant(), "my-tenant");

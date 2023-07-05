@@ -313,7 +313,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         final boolean authorizationEnabled = pulsarService.getBrokerService().isAuthorizationEnabled();
         this.authorizer = authorizationEnabled && authenticationEnabled
-                ? new SimpleAclAuthorizer(pulsarService)
+                ? new SimpleAclAuthorizer(pulsarService, kafkaConfig)
                 : null;
         this.adminManager = adminManager;
         this.producePurgatory = producePurgatory;
@@ -2625,6 +2625,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 } else if (resource.getResourceType() == ResourceType.NAMESPACE) {
                     isAuthorizedFuture = authorizer.canGetTopicList(session.getPrincipal(), resource);
+                } else if (resource.getResourceType() == ResourceType.GROUP) {
+                    isAuthorizedFuture = authorizer.canDescribeConsumerGroup(session.getPrincipal(), resource);
                 }
                 break;
             case CREATE:

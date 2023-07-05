@@ -116,6 +116,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     @FieldContext(
         category = CATEGORY_KOP,
         required = true,
+        doc = "Use to enable/disable Kafka authorization force groupId check."
+    )
+    private boolean kafkaEnableAuthorizationForceGroupIdCheck = false;
+
+    @FieldContext(
+        category = CATEGORY_KOP,
+        required = true,
         doc = "The namespace used for storing Kafka metadata topics"
     )
     private String kafkaMetadataNamespace = "__kafka";
