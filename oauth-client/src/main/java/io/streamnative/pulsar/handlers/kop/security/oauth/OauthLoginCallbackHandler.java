@@ -14,16 +14,22 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
+import javax.security.sasl.SaslException;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.auth.SaslExtensions;
+import org.apache.kafka.common.security.auth.SaslExtensionsCallback;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerTokenCallback;
+import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse;
 
 /**
  * OAuth 2.0 login callback handler.
@@ -68,6 +74,8 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
                 } catch (KafkaException e) {
                     throw new IOException(e.getMessage(), e);
                 }
+            } else if (callback instanceof SaslExtensionsCallback) {
+                handleExtensionsCallback((SaslExtensionsCallback) callback);
             } else {
                 throw new UnsupportedCallbackException(callback);
             }
@@ -81,5 +89,27 @@ public class OauthLoginCallbackHandler implements AuthenticateCallbackHandler {
         try (final ClientCredentialsFlow flow = new ClientCredentialsFlow(clientConfig)) {
             callback.token(flow.authenticate());
         }
+    }
+
+    private void handleExtensionsCallback(SaslExtensionsCallback callback) {
+
+        Map<String, String> extensions = new HashMap<>();
+        ClientInfo clientInfo = clientConfig.getClientInfo();
+
+        if (clientInfo.getTenant() != null) {
+            extensions.put("tenant", clientInfo.getTenant());
+        }
+        if (clientInfo.getGroupId() != null) {
+            extensions.put("groupId", clientInfo.getGroupId());
+        }
+        SaslExtensions saslExtensions = new SaslExtensions(extensions);
+
+        try {
+            OAuthBearerClientInitialResponse.validateExtensions(saslExtensions);
+        } catch (SaslException e) {
+            throw new ConfigException(e.getMessage());
+        }
+
+        callback.extensions(saslExtensions);
     }
 }

@@ -340,7 +340,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         final boolean authorizationEnabled = pulsarService.getBrokerService().isAuthorizationEnabled();
         this.authorizer = authorizationEnabled && authenticationEnabled
-                ? new SimpleAclAuthorizer(pulsarService)
+                ? new SimpleAclAuthorizer(pulsarService, kafkaConfig)
                 : null;
         this.adminManager = adminManager;
         this.producePurgatory = producePurgatory;
@@ -960,58 +960,86 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
-        String pulsarTopicName;
-        int partition;
-        CompletableFuture<Void> storeGroupIdFuture;
         if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION.id()) {
             TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-            partition = transactionCoordinator.partitionFor(request.data().key());
-            pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
-            storeGroupIdFuture = CompletableFuture.completedFuture(null);
+            int partition = transactionCoordinator.partitionFor(request.data().key());
+            String pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
+            findBroker(TopicName.get(pulsarTopicName))
+                    .whenComplete((KafkaResponseUtils.BrokerLookupResult result, Throwable throwable) -> {
+                        if (result.error != Errors.NONE || throwable != null) {
+                            log.error("[{}] Request {}: Error while find coordinator.",
+                                    ctx.channel(), findCoordinator.getHeader(), throwable);
+
+                            resultFuture.complete(KafkaResponseUtils
+                                    .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                            return;
+                        }
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                    ctx.channel(), result.node, request.data().key(), partition);
+                        }
+                        resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
+                    });
         } else if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.GROUP.id()) {
-            partition = getGroupCoordinator().partitionFor(request.data().key());
-            pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
-            if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
-                String groupId = request.data().key();
-                String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
-                        findCoordinator.getHeader().clientId());
-                currentConnectedClientId.add(findCoordinator.getHeader().clientId());
+            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.GROUP, request.data().key()))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("Describe group authorize failed, group - {}. {}",
+                                    request.data().key(), ex.getMessage());
+                            resultFuture.complete(KafkaResponseUtils
+                                    .newFindCoordinator(Errors.GROUP_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            resultFuture.complete(
+                                    KafkaResponseUtils
+                                            .newFindCoordinator(Errors.GROUP_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        CompletableFuture<Void> storeGroupIdFuture;
+                        int partition = getGroupCoordinator().partitionFor(request.data().key());
+                        String pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
+                        if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
+                            String groupId = request.data().key();
+                            String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
+                                    findCoordinator.getHeader().clientId());
+                            currentConnectedClientId.add(findCoordinator.getHeader().clientId());
 
-                // Store group name to metadata store for current client, use to collect consumer metrics.
-                storeGroupIdFuture = storeGroupId(groupId, groupIdPath);
-            } else {
-                storeGroupIdFuture = CompletableFuture.completedFuture(null);
-            }
+                            // Store group name to metadata store for current client, use to collect consumer metrics.
+                            storeGroupIdFuture = storeGroupId(groupId, groupIdPath);
+                        } else {
+                            storeGroupIdFuture = CompletableFuture.completedFuture(null);
+                        }
+                        // Store group name to metadata store for current client, use to collect consumer metrics.
+                        storeGroupIdFuture.whenComplete((__, e) -> {
+                            if (e != null) {
+                                log.warn("Store groupId failed, the groupId might already stored.", e);
+                            }
+                            findBroker(TopicName.get(pulsarTopicName))
+                                    .whenComplete((KafkaResponseUtils.BrokerLookupResult result,
+                                                   Throwable throwable) -> {
+                                        if (result.error != Errors.NONE || throwable != null) {
+                                            log.error("[{}] Request {}: Error while find coordinator.",
+                                                    ctx.channel(), findCoordinator.getHeader(), throwable);
 
+                                            resultFuture.complete(KafkaResponseUtils
+                                                    .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                                            return;
+                                        }
+
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
+                                                    ctx.channel(), result.node, request.data().key(), partition);
+                                        }
+                                        resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
+                                    });
+                                });
+                    });
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support unknown type "
                 + request.data().keyType());
         }
-
-        // Store group name to metadata store for current client, use to collect consumer metrics.
-        storeGroupIdFuture
-                .whenComplete((__, ex) -> {
-                    if (ex != null) {
-                        log.warn("Store groupId failed, the groupId might already stored.", ex);
-                    }
-                    findBroker(TopicName.get(pulsarTopicName))
-                            .whenComplete((KafkaResponseUtils.BrokerLookupResult result, Throwable throwable) -> {
-                                if (result.error != Errors.NONE || throwable != null) {
-                                    log.error("[{}] Request {}: Error while find coordinator.",
-                                            ctx.channel(), findCoordinator.getHeader(), throwable);
-
-                                    resultFuture.complete(KafkaResponseUtils
-                                            .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
-                                    return;
-                                }
-
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
-                                            ctx.channel(), result.node, request.data().key(), partition);
-                                }
-                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
-                            });
-                });
     }
 
     @VisibleForTesting
@@ -2783,6 +2811,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 } else if (resource.getResourceType() == ResourceType.NAMESPACE) {
                     isAuthorizedFuture = authorizer.canGetTopicList(session.getPrincipal(), resource);
+                } else if (resource.getResourceType() == ResourceType.GROUP) {
+                    isAuthorizedFuture = authorizer.canDescribeConsumerGroup(session.getPrincipal(), resource);
                 }
                 break;
             case CREATE:

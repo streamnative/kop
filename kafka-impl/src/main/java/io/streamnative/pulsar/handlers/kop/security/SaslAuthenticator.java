@@ -70,6 +70,7 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 public class SaslAuthenticator {
 
     public static final String USER_NAME_PROP = "username";
+    public static final String GROUP_ID_PROP = "groupId";
     public static final String AUTH_DATA_SOURCE_PROP = "authDataSource";
     public static final String AUTHENTICATION_SERVER_OBJ = "authenticationServerObj";
     public static final String REQUEST_TIMEOUT_MS = "requestTimeoutMs";
@@ -443,6 +444,7 @@ public class SaslAuthenticator {
                         newSession = new Session(
                                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
                                         safeGetProperty(saslServer, USER_NAME_PROP),
+                                        safeGetProperty(saslServer, GROUP_ID_PROP),
                                         safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
                                 "old-clientId");
                         if (!tenantAccessValidationFunction.apply(newSession)) {
@@ -502,6 +504,7 @@ public class SaslAuthenticator {
                     this.session = new Session(
                             new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
                                     safeGetProperty(saslServer, USER_NAME_PROP),
+                                    safeGetProperty(saslServer, GROUP_ID_PROP),
                                     safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
                             header.clientId());
                     if (log.isDebugEnabled()) {

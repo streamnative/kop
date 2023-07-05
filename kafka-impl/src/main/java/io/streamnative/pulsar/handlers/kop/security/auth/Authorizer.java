@@ -114,4 +114,5 @@ public interface Authorizer {
      */
     CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource);
 
+    CompletableFuture<Boolean> canDescribeConsumerGroup(KafkaPrincipal principal, Resource resource);
 }

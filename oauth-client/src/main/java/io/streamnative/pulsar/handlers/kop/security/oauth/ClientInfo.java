@@ -11,40 +11,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.security;
+package io.streamnative.pulsar.handlers.kop.security.oauth;
 
-
-import java.security.Principal;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 
-
-/**
- * Store client login info.
- */
 @Getter
 @ToString
+@EqualsAndHashCode
+@NoArgsConstructor
 @AllArgsConstructor
-public class KafkaPrincipal implements Principal {
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ClientInfo {
 
-    public static final String USER_TYPE = "User";
+    @JsonProperty("client_id")
+    private String id;
 
-    private final String principalType;
+    @JsonProperty("client_secret")
+    private String secret;
 
-    /**
-     * Pulsar role.
-     */
-    private final String name;
+    @JsonProperty("tenant")
+    private String tenant;
 
-    /**
-     * Pulsar Tenant Specs.
-     * It can be "tenant" or "tenant/namespace"
-     */
-    private final String tenantSpec;
-
-    private final String groupId;
-
-    private final AuthenticationDataSource authenticationData;
+    @JsonProperty("group_id")
+    private String groupId;
 }
