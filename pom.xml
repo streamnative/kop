@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!--
 
     Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,25 +14,19 @@
     limitations under the License.
 
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
     <groupId>org.apache</groupId>
     <artifactId>apache</artifactId>
     <version>18</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-
   <packaging>pom</packaging>
-
   <groupId>io.streamnative.pulsar.handlers</groupId>
   <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-  <version>2.11.0-SNAPSHOT</version>
+  <version>2.11.1.3</version>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
-
   <properties>
     <javac.target>17</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
@@ -52,7 +46,7 @@
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>4.11.0</mockito.version>
     <pulsar.group.id>io.streamnative</pulsar.group.id>
-    <pulsar.version>2.11.0.0-rc5</pulsar.version>
+    <pulsar.version>2.11.1.3</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.12</spotbugs-annotations.version>
     <apicurio.version>2.1.1.Final</apicurio.version>
@@ -64,7 +58,6 @@
     <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
     <snakeyaml.version>1.31</snakeyaml.version>
     <zstd-jni.version>1.5.2-4</zstd-jni.version>
-
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>
@@ -81,7 +74,6 @@
     <kotlin.version>1.8.10</kotlin.version>
     <org-json.version>20230227</org-json.version>
   </properties>
-
   <licenses>
     <license>
       <name>Apache License, Version 2.0</name>
@@ -89,7 +81,6 @@
       <distribution>repo</distribution>
     </license>
   </licenses>
-
   <modules>
     <module>kafka-0-9</module>
     <module>kafka-0-10</module>
@@ -107,7 +98,6 @@
     <module>kafka-payload-processor-shaded-tests</module>
     <module>test-listener</module>
   </modules>
-
   <!-- dependency definitions -->
   <dependencyManagement>
     <dependencies>
@@ -116,7 +106,6 @@
         <artifactId>kafka-clients</artifactId>
         <version>${kafka.version}</version>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-broker</artifactId>
@@ -140,14 +129,12 @@
           </exclusion>
         </exclusions>
       </dependency>
-
       <dependency>
         <groupId>io.grpc</groupId>
         <artifactId>grpc-all</artifactId>
         <version>${grpc.version}</version>
         <scope>provided</scope>
       </dependency>
-
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-bom</artifactId>
@@ -155,143 +142,119 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-
-
       <dependency>
         <groupId>junit</groupId>
         <artifactId>junit</artifactId>
         <version>${junit.version}</version>
         <scope>provided</scope>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-broker</artifactId>
         <version>${pulsar.version}</version>
         <type>test-jar</type>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-original</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-common</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-admin-original</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>managed-ledger</artifactId>
         <type>test-jar</type>
         <version>${pulsar.version}</version>
       </dependency>
-
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>testmocks</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.projectlombok</groupId>
         <artifactId>lombok</artifactId>
         <version>${lombok.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-core</artifactId>
         <version>${jackson.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-annotations</artifactId>
         <version>${jackson.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
         <version>${jackson-databind.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.fasterxml.jackson.dataformat</groupId>
         <artifactId>jackson-dataformat-yaml</artifactId>
         <version>${jackson.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.github.spotbugs</groupId>
         <artifactId>spotbugs-annotations</artifactId>
         <version>${spotbugs-annotations.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.testng</groupId>
         <artifactId>testng</artifactId>
         <version>${testng.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
         <version>${mockito.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-inline</artifactId>
         <version>${mockito.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.awaitility</groupId>
         <artifactId>awaitility</artifactId>
         <version>${awaitility.version}</version>
       </dependency>
-
       <dependency>
         <groupId>io.fusionauth</groupId>
         <artifactId>fusionauth-jwt</artifactId>
         <version>${fusionauth-jwt.version}</version>
       </dependency>
-
       <dependency>
         <groupId>io.streamnative.pulsar.handlers</groupId>
         <artifactId>test-listener</artifactId>
         <version>${project.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.yaml</groupId>
         <artifactId>snakeyaml</artifactId>
         <version>${snakeyaml.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.github.luben</groupId>
         <artifactId>zstd-jni</artifactId>
         <version>${zstd-jni.version}</version>
       </dependency>
-
       <dependency>
         <groupId>com.charleskorn.kaml</groupId>
         <artifactId>kaml</artifactId>
         <version>${kaml.version}</version>
       </dependency>
-
       <dependency>
         <groupId>org.jetbrains.kotlinx</groupId>
         <artifactId>kotlinx-serialization-bom</artifactId>
@@ -299,7 +262,6 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-
       <dependency>
         <groupId>org.jetbrains.kotlinx</groupId>
         <artifactId>kotlinx-coroutines-bom</artifactId>
@@ -307,7 +269,6 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-bom</artifactId>
@@ -315,7 +276,6 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-
       <dependency>
         <groupId>org.json</groupId>
         <artifactId>json</artifactId>
@@ -323,7 +283,6 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
-
   <build>
     <pluginManagement>
       <plugins>
@@ -369,7 +328,6 @@
           <doclint>none</doclint>
         </configuration>
       </plugin>
-
       <plugin>
         <groupId>com.github.spotbugs</groupId>
         <artifactId>spotbugs-maven-plugin</artifactId>
@@ -378,7 +336,6 @@
           <excludeFilterFile>resources/findbugsExclude.xml</excludeFilterFile>
         </configuration>
       </plugin>
-
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>${maven-compiler-plugin.version}</version>
@@ -396,7 +353,6 @@
           </compilerArgs>
         </configuration>
       </plugin>
-
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${maven-surefire-plugin.version}</version>
@@ -414,7 +370,8 @@
           <properties>
             <property>
               <name>usedefaultlisteners</name>
-              <value>false</value> <!-- disabling default listeners is optional -->
+              <value>false</value>
+              <!-- disabling default listeners is optional -->
             </property>
             <property>
               <name>listener</name>
@@ -423,14 +380,12 @@
           </properties>
         </configuration>
       </plugin>
-
       <plugin>
         <groupId>com.mycila</groupId>
         <artifactId>license-maven-plugin</artifactId>
         <version>${license-maven-plugin.version}</version>
         <configuration>
           <header>resources/license.template</header>
-
           <excludes>
             <exclude>LICENSE</exclude>
             <exclude>NOTICE</exclude>
@@ -461,7 +416,6 @@
           </mapping>
         </configuration>
       </plugin>
-
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>templating-maven-plugin</artifactId>
@@ -475,7 +429,6 @@
           </execution>
         </executions>
       </plugin>
-
       <plugin>
         <groupId>pl.project13.maven</groupId>
         <artifactId>git-commit-id-plugin</artifactId>
@@ -503,7 +456,6 @@
           <useNativeGit>true</useNativeGit>
         </configuration>
       </plugin>
-
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
@@ -531,7 +483,6 @@
       </plugin>
     </plugins>
   </build>
-
   <repositories>
     <repository>
       <id>central</id>
@@ -542,19 +493,25 @@
       <id>ossrh01</id>
       <url>https://s01.oss.sonatype.org/service/local/repositories/iostreamnative-2022/content</url>
     </repository>
+    <repository>
+      <id>ossrh</id>
+      <url>https://s01.oss.sonatype.org/service/local/repositories/iostreamnative-2351/content</url>
+    </repository>
+    <repository>
+      <id>nexus-snapshot</id>
+      <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+    </repository>
   </repositories>
-
   <distributionManagement>
     <snapshotRepository>
-        <id>ossrh</id>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+      <id>ossrh</id>
+      <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
     </snapshotRepository>
     <repository>
-        <id>ossrh</id>
-        <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+      <id>ossrh</id>
+      <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
     </repository>
   </distributionManagement>
-
   <profiles>
     <profile>
       <id>release</id>
@@ -621,5 +578,4 @@
       </build>
     </profile>
   </profiles>
-
 </project>
