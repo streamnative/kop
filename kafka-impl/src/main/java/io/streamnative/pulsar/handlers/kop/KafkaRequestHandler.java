@@ -92,7 +92,6 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -143,6 +142,7 @@ import org.apache.kafka.common.requests.JoinGroupResponse;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
@@ -1285,7 +1285,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     completeOne.run();
                                     return;
                                 }
-                                responseData.put(topic, fetchOffset(fullPartitionName, times));
+                                responseData.put(topic, fetchOffset(fullPartitionName, times.timestamp));
                                 completeOne.run();
                             }
                     );
@@ -1298,7 +1298,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     // https://cfchou.github.io/blog/2015/04/23/a-closer-look-at-kafka-offsetrequest/ through web.archive.org
     private void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
+        ListOffsetRequestV0 request = (ListOffsetRequestV0) listOffset.getRequest();
 
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
@@ -1359,7 +1359,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest
+                || listOffset.getRequest() instanceof ListOffsetRequestV0);
         // the only difference between v0 and v1 is the `max_num_offsets => INT32`
         // v0 is required because it is used by librdkafka
         if (listOffset.getHeader().apiVersion() == 0) {
@@ -2451,7 +2452,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
 
         final Map<String, ApiError> result = Maps.newConcurrentMap();
-        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
+        final Map<String, CreatePartitionsRequest.PartitionDetails> validTopics = Maps.newHashMap();
         final Set<String> duplicateTopics = request.duplicates();
 
         KafkaRequestUtils.forEachCreatePartitionsRequest(request, (topic, newPartition) -> {
@@ -2472,7 +2473,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
-        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
+        final Map<String, CreatePartitionsRequest.PartitionDetails> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
             if (authorizedTopics.isEmpty()) {
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
@@ -2486,7 +2487,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
+        BiConsumer<String, CreatePartitionsRequest.PartitionDetails> completeOneTopic = (topic, newPartitions) -> {
             authorizedTopics.put(topic, newPartitions);
             if (validTopicsCount.decrementAndGet() == 0) {
                 createPartitionsAsync.run();
