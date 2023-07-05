@@ -168,6 +168,12 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                      new DataOutputStream(new ByteBufOutputStream(byteBuf));) {
 
             dataOutputStream.writeUTF(snapshot.getTopicPartition());
+            if (snapshot.getTopicUUID() != null) {
+                dataOutputStream.writeUTF(snapshot.getTopicUUID());
+            } else {
+                // topics created from Pulsar don't have the UUID
+                dataOutputStream.writeUTF("");
+            }
             dataOutputStream.writeLong(snapshot.getOffset());
 
             dataOutputStream.writeInt(snapshot.getProducers().size());
@@ -226,6 +232,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         try (DataInputStream dataInputStream =
                      new DataInputStream(new ByteBufInputStream(Unpooled.wrappedBuffer(buffer)));) {
             String topicPartition = dataInputStream.readUTF();
+            String topicUUID = dataInputStream.readUTF();
+            if (topicUUID.isEmpty()) {
+                topicUUID = null;
+            }
             long offset = dataInputStream.readLong();
 
             int numProducers = dataInputStream.readInt();
@@ -276,7 +286,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                 abortedTxnList.add(new AbortedTxn(producerId, firstOffset, lastOffset, lastStableOffset));
             }
 
-            return new ProducerStateManagerSnapshot(topicPartition, offset,
+            return new ProducerStateManagerSnapshot(topicPartition, topicUUID, offset,
                     producers, ongoingTxns, abortedTxnList);
 
         } catch (Throwable err) {
@@ -291,7 +301,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             String key = msg.hasKey() ? msg.getKey() : null;
             if (Objects.equals(key, deserialize.getTopicPartition())) {
                 if (log.isDebugEnabled()) {
-                    log.info("found snapshot for {} : {}", deserialize.getTopicPartition(), deserialize);
+                    log.debug("found snapshot for {} ({}): {}",
+                            deserialize.getTopicPartition(),
+                            deserialize.getTopicUUID(),
+                            deserialize);
                 }
                 latestSnapshots.put(deserialize.getTopicPartition(), deserialize);
             }
@@ -300,7 +313,9 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     @Override
     public CompletableFuture<ProducerStateManagerSnapshot> readLatestSnapshot(String topicPartition) {
-        log.info("Reading latest snapshot for {}", topicPartition);
+        if (log.isDebugEnabled()) {
+            log.debug("Reading latest snapshot for {}", topicPartition);
+        }
         return ensureLatestData(false).thenApply(__ -> {
             ProducerStateManagerSnapshot result =  latestSnapshots.get(topicPartition);
             log.info("Latest snapshot for {} is {}", topicPartition, result);

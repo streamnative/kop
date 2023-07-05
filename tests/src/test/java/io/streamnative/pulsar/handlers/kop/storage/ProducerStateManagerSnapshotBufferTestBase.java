@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.TopicName;
@@ -105,6 +106,7 @@ public abstract class ProducerStateManagerSnapshotBufferTestBase extends KopProt
 
                 ProducerStateManagerSnapshot snapshotToWrite = new ProducerStateManagerSnapshot(
                         topicPartition,
+                        UUID.randomUUID().toString(),
                         i,
                         producers,
                         ongoingTxns,
@@ -141,6 +143,7 @@ public abstract class ProducerStateManagerSnapshotBufferTestBase extends KopProt
 
         ProducerStateManagerSnapshot snapshotToWrite = new ProducerStateManagerSnapshot(
                 topic,
+                UUID.randomUUID().toString(),
                 0,
                 producers,
                 ongoingTxns,
