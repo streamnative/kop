@@ -957,7 +957,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
                                                 CompletableFuture<AbstractResponse> resultFuture) {
-        log.info("xxxx handle find coordinator request");
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
@@ -2169,7 +2168,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                         CompletableFuture<AbstractResponse> response) {
-        log.info("xxxx handle init producerId request");
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         InitProducerIdRequestData data = request.data();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
@@ -2184,7 +2182,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         || resp.getError() == Errors.CONCURRENT_TRANSACTIONS) {
                         responseData.setThrottleTimeMs(1000);
                     }
-                    log.info("xxxx handle init producerId response {}", responseData);
                     response.complete(new InitProducerIdResponse(responseData));
                 });
     }
