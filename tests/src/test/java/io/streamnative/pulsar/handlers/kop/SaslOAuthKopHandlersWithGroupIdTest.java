@@ -49,7 +49,7 @@ public class SaslOAuthKopHandlersWithGroupIdTest extends SaslOAuthBearerTestBase
     private static final String ADMIN_SECRET = "admin_secret";
     private static final String ISSUER_URL = "http://localhost:4444";
     private static final String AUDIENCE = "http://example.com/api/v2/";
-    private static final String DEFAULT_GROUP_ID = "my-group-id";
+    private static final String DEFAULT_GROUP_ID = "my-group";
 
     private String adminCredentialPath = null;
 

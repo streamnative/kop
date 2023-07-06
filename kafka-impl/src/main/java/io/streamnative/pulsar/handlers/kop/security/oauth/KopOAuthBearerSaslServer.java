@@ -201,6 +201,8 @@ public class KopOAuthBearerSaslServer implements SaslServer {
         Map<String, String> validExtensions = processExtensions(token, extensions);
 
         tokenForNegotiatedProperty = token;
+        log.info("Successfully authenticate User={}, validExtensions={}",
+                token.principalName(), validExtensions);
         this.extensions = new SaslExtensions(validExtensions);
         complete = true;
         if (log.isDebugEnabled()) {
