@@ -46,6 +46,10 @@ public enum ResourceType {
      */
     TENANT((byte) 3),
 
+    /**
+     * A consumer group.
+     */
+    GROUP((byte) 4),
     ;
 
 

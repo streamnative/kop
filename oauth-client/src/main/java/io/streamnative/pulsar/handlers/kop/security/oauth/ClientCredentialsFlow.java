@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.google.common.annotations.VisibleForTesting;
@@ -45,7 +46,6 @@ public class ClientCredentialsFlow implements Closeable {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final ObjectReader METADATA_READER = OBJECT_MAPPER.readerFor(Metadata.class);
-    private static final ObjectReader CLIENT_INFO_READER = OBJECT_MAPPER.readerFor(ClientInfo.class);
     private static final ObjectReader TOKEN_RESULT_READER = OBJECT_MAPPER.readerFor(OAuthBearerTokenImpl.class);
     private static final ObjectReader TOKEN_ERROR_READER = OBJECT_MAPPER.readerFor(TokenError.class);
 
@@ -71,7 +71,7 @@ public class ClientCredentialsFlow implements Closeable {
 
     public OAuthBearerTokenImpl authenticate() throws IOException {
         final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
-        final ClientInfo clientInfo = loadPrivateKey();
+        final ClientInfo clientInfo = clientConfig.getClientInfo();
         try {
             final String body = buildClientCredentialsBody(clientInfo);
             final Response response = httpClient.preparePost(tokenEndPoint)
@@ -97,7 +97,8 @@ public class ClientCredentialsFlow implements Closeable {
                     throw new IOException("Failed to perform HTTP request:  "
                             + response.getStatusCode() + " " + response.getStatusText());
             }
-        } catch (UnsupportedEncodingException | InterruptedException | ExecutionException e) {
+        } catch (UnsupportedEncodingException | InterruptedException
+                 | ExecutionException | JsonProcessingException e) {
             throw new IOException(e);
         }
     }
@@ -122,13 +123,6 @@ public class ClientCredentialsFlow implements Closeable {
         }
     }
 
-    @VisibleForTesting
-    ClientInfo loadPrivateKey() throws IOException {
-        final URLConnection connection = clientConfig.getCredentialsUrl().openConnection();
-        try (InputStream inputStream = connection.getInputStream()) {
-            return CLIENT_INFO_READER.readValue(inputStream);
-        }
-    }
 
     private static String encode(String s) throws UnsupportedEncodingException {
         return URLEncoder.encode(s, StandardCharsets.UTF_8.name());
@@ -154,20 +148,6 @@ public class ClientCredentialsFlow implements Closeable {
 
         @JsonProperty("token_endpoint")
         private String tokenEndPoint;
-    }
-
-    @Getter
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class ClientInfo {
-
-        @JsonProperty("client_id")
-        private String id;
-
-        @JsonProperty("client_secret")
-        private String secret;
-
-        @JsonProperty("tenant")
-        private String tenant;
     }
 
     @Getter

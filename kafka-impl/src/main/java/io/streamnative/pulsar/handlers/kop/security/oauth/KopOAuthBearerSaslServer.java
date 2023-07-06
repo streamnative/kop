@@ -14,11 +14,13 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
+import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.GROUP_ID_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Objects;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -28,9 +30,16 @@ import javax.security.sasl.SaslServer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
+import org.apache.kafka.common.security.auth.SaslExtensions;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerExtensionsValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
 import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse;
+import org.apache.kafka.common.utils.Utils;
 
+/**
+ * Migrate from {@link org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer}.
+ */
 @Slf4j
 public class KopOAuthBearerSaslServer implements SaslServer {
 
@@ -46,6 +55,7 @@ public class KopOAuthBearerSaslServer implements SaslServer {
     private boolean complete;
     private KopOAuthBearerToken tokenForNegotiatedProperty = null;
     private String errorMessage = null;
+    private SaslExtensions extensions;
 
     public KopOAuthBearerSaslServer(CallbackHandler callbackHandler, String defaultKafkaMetadataTenant) {
         if (!(Objects.requireNonNull(callbackHandler) instanceof AuthenticateCallbackHandler)) {
@@ -72,7 +82,7 @@ public class KopOAuthBearerSaslServer implements SaslServer {
     @Override
     public byte[] evaluateResponse(byte[] response) throws SaslException, SaslAuthenticationException {
         if (response.length == 1 && response[0] == BYTE_CONTROL_A && errorMessage != null) {
-            if (log.isDebugEnabled()){
+            if (log.isDebugEnabled()) {
                 log.debug("Received %x01 response from client after it received our error");
             }
             throw new SaslAuthenticationException(errorMessage);
@@ -85,7 +95,7 @@ public class KopOAuthBearerSaslServer implements SaslServer {
             log.debug(e.getMessage());
             throw e;
         }
-        return process(clientResponse.tokenValue(), clientResponse.authorizationId());
+        return process(clientResponse.tokenValue(), clientResponse.authorizationId(), clientResponse.extensions());
     }
 
     @Override
@@ -107,6 +117,9 @@ public class KopOAuthBearerSaslServer implements SaslServer {
             throw new IllegalStateException("Authentication exchange has not completed");
         }
 
+        if (NEGOTIATED_PROPERTY_KEY_TOKEN.equals(propName)) {
+            return tokenForNegotiatedProperty;
+        }
         if (AUTH_DATA_SOURCE_PROP.equals(propName)) {
             return tokenForNegotiatedProperty.authDataSource();
         }
@@ -114,9 +127,20 @@ public class KopOAuthBearerSaslServer implements SaslServer {
             if (tokenForNegotiatedProperty.tenant() != null) {
                 return tokenForNegotiatedProperty.tenant();
             }
+            String tenant = extensions.map().get(propName);
+            if (tenant != null) {
+                return tenant;
+            }
             return defaultKafkaMetadataTenant;
         }
-        return NEGOTIATED_PROPERTY_KEY_TOKEN.equals(propName) ? tokenForNegotiatedProperty : null;
+        if (GROUP_ID_PROP.equals(propName)) {
+            String groupId = extensions.map().get(propName);
+            if (groupId != null) {
+                return groupId;
+            }
+            return "";
+        }
+        return extensions.map().get(propName);
     }
 
     @Override
@@ -125,7 +149,7 @@ public class KopOAuthBearerSaslServer implements SaslServer {
     }
 
     @Override
-    public byte[] unwrap(byte[] incoming, int offset, int len) throws SaslException {
+    public byte[] unwrap(byte[] incoming, int offset, int len) {
         if (!complete) {
             throw new IllegalStateException("Authentication exchange has not completed");
         }
@@ -133,7 +157,7 @@ public class KopOAuthBearerSaslServer implements SaslServer {
     }
 
     @Override
-    public byte[] wrap(byte[] outgoing, int offset, int len) throws SaslException {
+    public byte[] wrap(byte[] outgoing, int offset, int len) {
         if (!complete) {
             throw new IllegalStateException("Authentication exchange has not completed");
         }
@@ -141,21 +165,19 @@ public class KopOAuthBearerSaslServer implements SaslServer {
     }
 
     @Override
-    public void dispose() throws SaslException {
+    public void dispose() {
         complete = false;
         tokenForNegotiatedProperty = null;
+        extensions = null;
     }
 
-    private byte[] process(String tokenValue, String authorizationId) throws SaslException {
+    private byte[] process(String tokenValue, String authorizationId, SaslExtensions extensions)
+            throws SaslException {
         KopOAuthBearerValidatorCallback callback = new KopOAuthBearerValidatorCallback(tokenValue);
         try {
-            callbackHandler.handle(new Callback[]{callback});
+            callbackHandler.handle(new Callback[] {callback});
         } catch (IOException | UnsupportedCallbackException e) {
-            String msg = String.format("%s: %s", INTERNAL_ERROR_ON_SERVER, e.getMessage());
-            if (log.isDebugEnabled()) {
-                log.debug(msg, e);
-            }
-            throw new SaslException(msg);
+            handleCallbackError(e);
         }
         KopOAuthBearerToken token = callback.token();
         if (token == null) {
@@ -176,13 +198,41 @@ public class KopOAuthBearerSaslServer implements SaslServer {
                             + "that is different from the token's principal name (%s)",
                     authorizationId, token.principalName()));
         }
+        Map<String, String> validExtensions = processExtensions(token, extensions);
 
         tokenForNegotiatedProperty = token;
+        log.info("Successfully authenticate User={}, validExtensions={}",
+                token.principalName(), validExtensions);
+        this.extensions = new SaslExtensions(validExtensions);
         complete = true;
         if (log.isDebugEnabled()) {
             log.debug("Successfully authenticate User={}", token.principalName());
         }
         return new byte[0];
+    }
+
+    private Map<String, String> processExtensions(OAuthBearerToken token, SaslExtensions extensions)
+            throws SaslException {
+        OAuthBearerExtensionsValidatorCallback extensionsCallback =
+                new OAuthBearerExtensionsValidatorCallback(token, extensions);
+        try {
+            callbackHandler.handle(new Callback[] {extensionsCallback});
+        } catch (UnsupportedCallbackException e) {
+            // backwards compatibility - no extensions will be added
+        } catch (IOException e) {
+            handleCallbackError(e);
+        }
+        if (!extensionsCallback.invalidExtensions().isEmpty()) {
+            String errorMessage = String.format("Authentication failed: %d extensions are invalid! They are: %s",
+                    extensionsCallback.invalidExtensions().size(),
+                    Utils.mkString(extensionsCallback.invalidExtensions(), "", "", ": ", "; "));
+            if (log.isDebugEnabled()) {
+                log.debug(errorMessage);
+            }
+            throw new SaslAuthenticationException(errorMessage);
+        }
+
+        return extensionsCallback.validatedExtensions();
     }
 
     private static String jsonErrorResponse(String errorStatus, String errorScope, String errorOpenIDConfiguration) {
@@ -198,4 +248,11 @@ public class KopOAuthBearerSaslServer implements SaslServer {
         return jsonErrorResponse;
     }
 
+    private void handleCallbackError(Exception e) throws SaslException {
+        String msg = String.format("%s: %s", INTERNAL_ERROR_ON_SERVER, e.getMessage());
+        if (log.isDebugEnabled()) {
+            log.debug(msg, e);
+        }
+        throw new SaslException(msg);
+    }
 }
