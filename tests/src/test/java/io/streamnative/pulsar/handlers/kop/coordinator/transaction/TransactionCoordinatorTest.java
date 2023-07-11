@@ -44,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
@@ -91,6 +92,7 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
     private final int coordinatorEpoch = 0;
 
     private final Consumer<TransactionCoordinator.InitProducerIdResult> initProducerIdMockCallback = (ret) -> {
+        log.info("Result {}", ret);
         result = ret;
     };
 
@@ -1054,6 +1056,20 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = defaultTestTimeout)
     public void shouldAbortTransactionOnHandleInitPidWhenExistingTransactionInOngoingState() {
+        shouldAbortTransactionOnHandleInitPidWhenExistingTransactionInOngoingState(false);
+    }
+
+    @Test(timeOut = defaultTestTimeout)
+    public void shouldAbortTransactionOnHandleInitPidWhenExistingTransactionInOngoingStateWithPulsarError() {
+        shouldAbortTransactionOnHandleInitPidWhenExistingTransactionInOngoingState(true);
+    }
+
+    private void shouldAbortTransactionOnHandleInitPidWhenExistingTransactionInOngoingState(
+            boolean injectPulsarWriterError) {
+        AtomicReference<Errors> appendError = new AtomicReference<>();
+        if (injectPulsarWriterError) {
+            appendError.set(Errors.BROKER_NOT_AVAILABLE);
+        }
         TransactionMetadata txnMetadata = TransactionMetadata.builder()
                 .transactionalId(transactionalId)
                 .producerId(producerId)
@@ -1089,7 +1105,11 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 .txnLastUpdateTimestamp(time.milliseconds())
                 .build();
         doAnswer((__) -> {
-            capturedErrorsCallback.getValue().complete();
+            if (appendError.get() != null) {
+                capturedErrorsCallback.getValue().fail(appendError.get());
+            } else {
+                capturedErrorsCallback.getValue().complete();
+            }
             return null;
         }).when(transactionManager)
                 .appendTransactionToLog(
@@ -1100,11 +1120,20 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                         any(TransactionStateManager.RetryOnError.class)
                 );
         transactionCoordinator
-                .handleInitProducerId(transactionalId, txnTimeoutMs, Optional.empty(), initProducerIdMockCallback);
-        assertEquals(new TransactionCoordinator.InitProducerIdResult(
-                -1L,
-                (short) -1,
-                Errors.CONCURRENT_TRANSACTIONS), result);
+                .handleInitProducerId(transactionalId, txnTimeoutMs, Optional.empty(),
+                        initProducerIdMockCallback);
+        if (injectPulsarWriterError) {
+            assertEquals(new TransactionCoordinator.InitProducerIdResult(
+                    -1L,
+                    (short) -1,
+                    Errors.BROKER_NOT_AVAILABLE), result);
+            appendError.set(null);
+        } else {
+            assertEquals(new TransactionCoordinator.InitProducerIdResult(
+                    -1L,
+                    (short) -1,
+                    Errors.CONCURRENT_TRANSACTIONS), result);
+        }
         verify(transactionManager, atLeastOnce()).validateTransactionTimeoutMs(anyInt());
         verify(transactionManager, atLeastOnce()).appendTransactionToLog(
                 eq(transactionalId),
@@ -1112,6 +1141,19 @@ public class TransactionCoordinatorTest extends KopProtocolHandlerTestBase {
                 any(TransactionMetadata.TxnTransitMetadata.class),
                 capturedErrorsCallback.capture(),
                 any(TransactionStateManager.RetryOnError.class));
+
+        // state must be still ONGOING because markers are sent asynchronously
+        // and in this test we are not sending them
+        assertEquals(txnMetadata.getState(), TransactionState.ONGOING);
+
+        if (injectPulsarWriterError) {
+            // transaction state should not be modified
+            assertTrue(txnMetadata.getPendingState().isEmpty());
+        } else {
+            // abort will be in progress
+            assertTrue(txnMetadata.getPendingState().isPresent());
+            assertEquals(txnMetadata.getPendingState().get(), TransactionState.PREPARE_ABORT);
+        }
     }
 
     @Test(timeOut = defaultTestTimeout)
