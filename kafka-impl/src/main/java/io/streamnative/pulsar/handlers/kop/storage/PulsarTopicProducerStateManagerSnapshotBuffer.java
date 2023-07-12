@@ -31,6 +31,10 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.pulsar.client.api.Message;
@@ -76,10 +80,17 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     }
 
     private synchronized void discardReader(Reader<ByteBuffer> oldReader) {
-        if (reader.isDone()
-                && !reader.isCompletedExceptionally()
-                && reader.getNow(null) == oldReader) {
-            reader = null;
+        if (reader.isDone() && !reader.isCompletedExceptionally()) {
+            Reader<ByteBuffer> newReader = null;
+            try {
+                newReader = reader.get(0, TimeUnit.MILLISECONDS);
+                if (newReader == oldReader) {
+                    reader = null;
+                }
+            } catch (Exception exception) {
+                log.warn("Failed to get reader handle for topic {}, discard the reader.", topic, exception);
+                reader = null;
+            }
         }
     }
 
