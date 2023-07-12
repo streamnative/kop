@@ -83,18 +83,11 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         if (reader == null) {
             return;
         }
-        if (reader.isDone() && !reader.isCompletedExceptionally()) {
-            Reader<ByteBuffer> newReader = null;
-            try {
-                newReader = reader.get(0, TimeUnit.MILLISECONDS);
-                if (newReader == oldReader) {
-                    log.info("discard broken reader for {}", topic);
-                    reader = null;
-                }
-            } catch (Exception exception) {
-                log.warn("Failed to get reader handle for topic {}, discard the reader.", topic, exception);
-                reader = null;
-            }
+        if (reader.isCompletedExceptionally() || (reader.isDone()
+                && !reader.isCompletedExceptionally()
+                && reader.getNow(null) == oldReader)) {
+            log.info("discard broken reader for {}", topic);
+            reader = null;
         }
     }
 
