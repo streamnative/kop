@@ -31,10 +31,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.pulsar.client.api.Message;
