@@ -107,17 +107,15 @@ public class PartitionLogManager {
         return logMap.size();
     }
 
-    public CompletableFuture<Void> takeProducerStateSnapshots() {
-        List<CompletableFuture<Void>> handles = new ArrayList<>();
+    public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
+        List<CompletableFuture<?>> handles = new ArrayList<>();
         logMap.values().forEach(log -> {
             if (log.isInitialised()) {
-                handles.add(log
-                        .getProducerStateManager()
-                        .takeSnapshot(recoveryExecutor)
-                        .thenApply(___ -> null));
+                handles.add(log.updatePurgeAbortedTxnsOffset());
             }
         });
-        return FutureUtil.waitForAll(handles);
+        return FutureUtil
+                .waitForAll(handles);
     }
 }
 

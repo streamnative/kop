@@ -453,6 +453,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
+            doc = "Interval for purging aborted transactions from memory (requires reads from storage)"
+    )
+    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 60 * 60;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
             doc = "The interval in milliseconds at which to rollback transactions that have timed out."
     )
     private long kafkaTxnAbortTimedOutTransactionCleanupIntervalMs = DefaultAbortTimedOutTransactionsIntervalMs;

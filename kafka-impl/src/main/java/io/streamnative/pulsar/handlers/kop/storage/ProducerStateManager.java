@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,6 +23,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.SafeRunnable;
@@ -47,21 +49,27 @@ public class ProducerStateManager {
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
     private final int kafkaTxnProducerStateTopicSnapshotIntervalSeconds;
+    private final int kafkaTxnPurgeAbortedTxnIntervalSeconds;
 
     private volatile long mapEndOffset = -1;
 
     private long lastSnapshotTime;
+    private long lastPurgeAbortedTxnTime;
 
+    private volatile long abortedTxnsPurgeOffset = -1;
 
     public ProducerStateManager(String topicPartition,
                                 String kafkaTopicUUID,
                                 ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer,
-                                int kafkaTxnProducerStateTopicSnapshotIntervalSeconds) {
+                                int kafkaTxnProducerStateTopicSnapshotIntervalSeconds,
+                                int kafkaTxnPurgeAbortedTxnIntervalSeconds) {
         this.topicPartition = topicPartition;
         this.kafkaTopicUUID = kafkaTopicUUID;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
         this.kafkaTxnProducerStateTopicSnapshotIntervalSeconds = kafkaTxnProducerStateTopicSnapshotIntervalSeconds;
+        this.kafkaTxnPurgeAbortedTxnIntervalSeconds = kafkaTxnPurgeAbortedTxnIntervalSeconds;
         this.lastSnapshotTime = System.currentTimeMillis();
+        this.lastPurgeAbortedTxnTime = System.currentTimeMillis();
     }
 
     public CompletableFuture<Void> recover(PartitionLog partitionLog, Executor executor) {
@@ -157,6 +165,34 @@ public class ProducerStateManager {
         lastSnapshotTime = now;
 
         takeSnapshot(executor);
+    }
+
+    void updateAbortedTxnsPurgeOffset(long abortedTxnsPurgeOffset) {
+        if (log.isDebugEnabled()) {
+            log.debug("{} updateAbortedTxnsPurgeOffset {}", topicPartition, abortedTxnsPurgeOffset);
+        }
+        if (abortedTxnsPurgeOffset < 0) {
+            return;
+        }
+        this.abortedTxnsPurgeOffset = abortedTxnsPurgeOffset;
+    }
+
+    long maybePurgeAbortedTx() {
+        if (mapEndOffset == -1) {
+            return 0;
+        }
+        long now = System.currentTimeMillis();
+        long deltaFromLast = (now - lastPurgeAbortedTxnTime) / 1000;
+        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+            return 0;
+        }
+        lastPurgeAbortedTxnTime = now;
+        return executePurgeAbortedTx();
+    }
+
+    @VisibleForTesting
+    long executePurgeAbortedTx() {
+        return purgeAbortedTxns(abortedTxnsPurgeOffset);
     }
 
     private ProducerStateManagerSnapshot getProducerStateManagerSnapshot() {
@@ -270,15 +306,39 @@ public class ProducerStateManager {
         }
     }
 
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
-        List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
-        for (AbortedTxn abortedTxn : abortedIndexList) {
-            if (abortedTxn.lastOffset() >= fetchOffset) {
-                abortedTransactions.add(
-                        new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+    public boolean hasSomeAbortedTransactions() {
+        return !abortedIndexList.isEmpty();
+    }
+
+    public long purgeAbortedTxns(long offset) {
+        AtomicLong count = new AtomicLong();
+        synchronized (abortedIndexList) {
+            abortedIndexList.removeIf(tx -> {
+                boolean toRemove = tx.lastOffset() < offset;
+                if (toRemove) {
+                    log.info("Transaction {} can be removed (lastOffset {} < {})", tx, tx.lastOffset(), offset);
+                    count.incrementAndGet();
+                }
+                return toRemove;
+            });
+            if (!abortedIndexList.isEmpty()) {
+                log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
         }
-        return abortedTransactions;
+        return count.get();
+    }
+
+    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
+        synchronized (abortedIndexList) {
+            List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
+            for (AbortedTxn abortedTxn : abortedIndexList) {
+                if (abortedTxn.lastOffset() >= fetchOffset) {
+                    abortedTransactions.add(
+                            new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+                }
+            }
+            return abortedTransactions;
+        }
     }
 
     public void handleMissingDataBeforeRecovery(long minOffset, long snapshotOffset) {
