@@ -84,6 +84,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     protected static final String TENANT = "KafkaAuthorizationTest";
     protected static final String NAMESPACE = "ns1";
+    private static final String SCHEMA_NAMESPACE = "ns2";
     private static final String SHORT_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
     private static final SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
@@ -120,7 +121,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         conf.setKafkaMetadataNamespace("__kafka");
         conf.setKafkaTenant(TENANT);
         conf.setKafkaNamespace(NAMESPACE);
-        conf.setKopSchemaRegistryNamespace(NAMESPACE);
+        conf.setKopSchemaRegistryNamespace(SCHEMA_NAMESPACE);
 
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
@@ -712,18 +713,16 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     // this test creates the schema registry topic, and this may interfere with other tests
     @Test(timeOut = 30000, priority = 1000, dataProvider = "tokenPrefix")
     public void testAvroProduceAndConsumeWithAuth(boolean withTokenPrefix) throws Exception {
-
-        if (conf.isKafkaEnableMultiTenantMetadata()) {
-            // ensure that the KOP metadata namespace exists and that the user can write to it
-            // because we require "produce" permissions on the Schema Registry Topic
-            // while working in Multi Tenant mode
-            if (!admin.namespaces().getNamespaces(TENANT).contains(TENANT + "/" + conf.getKafkaMetadataNamespace())) {
-                admin.namespaces().createNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace());
-            }
-            admin.namespaces()
-                    .grantPermissionOnNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace(), SIMPLE_USER,
-                            Sets.newHashSet(AuthAction.produce, AuthAction.consume));
+        admin.namespaces().grantPermissionOnNamespace(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace(),
+                SIMPLE_USER, Sets.newHashSet(AuthAction.produce, AuthAction.consume));
+        final String tenant = (conf.isKafkaEnableMultiTenantMetadata() ? TENANT : conf.getKafkaMetadataTenant());
+        final var namespaces = admin.namespaces().getNamespaces(tenant);
+        final String schemaNamespace = tenant + "/" + conf.getKopSchemaRegistryNamespace();
+        if (!namespaces.contains(schemaNamespace)) {
+            admin.namespaces().createNamespace(schemaNamespace);
         }
+        admin.namespaces().grantPermissionOnNamespace(schemaNamespace, SIMPLE_USER,
+                Sets.newHashSet(AuthAction.produce));
 
         String topic = "SchemaRegistryTest-testAvroProduceAndConsumeWithAuth" + withTokenPrefix;
         IndexedRecord avroRecord = createAvroRecord();
@@ -759,7 +758,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     @Test(timeOut = 30000)
     public void testSchemaNoAuth() {
-        final KafkaProducer<Integer, Object> producer = createAvroProducer(false, false);
+        final KafkaProducer<Integer, Object> producer = createAvroProducer(false, null);
         try {
             producer.send(new ProducerRecord<>("test-avro-wrong-auth", createAvroRecord())).get();
             fail();
@@ -768,6 +767,22 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             var restException = (RestClientException) e.getCause();
             assertEquals(restException.getErrorCode(), HttpResponseStatus.UNAUTHORIZED.code());
             assertTrue(restException.getMessage().contains("Missing AUTHORIZATION header"));
+        }
+        producer.close();
+    }
+
+    @Test(timeOut = 30000)
+    public void testSchemaWrongAuth() {
+        final var wrongToken = AuthTokenUtils.createToken(secretKey, "wrong-user", Optional.empty());
+        final KafkaProducer<Integer, Object> producer = createAvroProducer(false, wrongToken);
+        try {
+            producer.send(new ProducerRecord<>("test-avro-wrong-auth", createAvroRecord())).get();
+            fail();
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RestClientException);
+            var restException = (RestClientException) e.getCause();
+            assertEquals(restException.getErrorCode(), HttpResponseStatus.FORBIDDEN.code());
+            assertTrue(restException.getMessage().contains("cannot access topic"));
         }
         producer.close();
     }
@@ -783,10 +798,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     private KafkaProducer<Integer, Object> createAvroProducer(boolean withTokenPrefix) {
-        return createAvroProducer(withTokenPrefix, true);
+        return createAvroProducer(withTokenPrefix, userToken);
     }
 
-    private KafkaProducer<Integer, Object> createAvroProducer(boolean withTokenPrefix, boolean withSchemaToken) {
+    private KafkaProducer<Integer, Object> createAvroProducer(boolean withTokenPrefix, String schemaToken) {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
@@ -803,10 +818,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         props.put("security.protocol", "SASL_PLAINTEXT");
         props.put("sasl.mechanism", "PLAIN");
 
-        if (withSchemaToken) {
+        if (schemaToken != null) {
             props.put(KafkaAvroSerializerConfig.BASIC_AUTH_CREDENTIALS_SOURCE, "USER_INFO");
             props.put(KafkaAvroSerializerConfig.USER_INFO_CONFIG,
-                    username + ":" + (withTokenPrefix ? password : userToken));
+                    username + ":" + (withTokenPrefix ? password : schemaToken));
         }
 
         return new KafkaProducer<>(props);
