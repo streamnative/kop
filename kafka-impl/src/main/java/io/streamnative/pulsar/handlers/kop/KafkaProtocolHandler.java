@@ -124,6 +124,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
 
     @Getter
+    @VisibleForTesting
     private OrderedExecutor recoveryExecutor;
 
     @Override
