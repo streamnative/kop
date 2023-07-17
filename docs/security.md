@@ -253,15 +253,27 @@ If you want to enable the authentication feature for KoP using the `OAUTHBEARER`
         </tbody>
     </table>
 
-```properties
-sasl.login.callback.handler.class=io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler
-security.protocol=SASL_PLAINTEXT  # or security.protocol=SASL_SSL if SSL connection is used
-sasl.mechanism=OAUTHBEARER
-sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule \
-   required oauth.issuer.url="https://accounts.google.com"\
-   oauth.credentials.url="file:///path/to/credentials_file.json"\
-   oauth.audience="https://broker.example.com";
-```
+   ```properties
+   sasl.login.callback.handler.class=io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler
+   security.protocol=SASL_PLAINTEXT  # or security.protocol=SASL_SSL if SSL connection is used
+   sasl.mechanism=OAUTHBEARER
+   sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule \
+        required oauth.issuer.url="https://accounts.google.com"\
+        oauth.credentials.url="file:///path/to/credentials_file.json"\
+        oauth.audience="https://broker.example.com";
+   ```
+
+   (4) Config the credentials_file.json.
+    The `client_id` and `client_secret` is required fields. And the `tenant` and `group_id` is optional fields. 
+    When use `group_id` field and set `kafkaEnableAuthorizationForceGroupIdCheck=true`, then the client will only able to use this group id to consumer.
+   ```json
+    {
+      "client_id": "my-id",
+      "client_secret": "my-secret",
+      "tenant": "my-tenant",
+      "group_id": "my-group-id"
+    }
+   ```
 
 ### Authentication for the Schema Registry
 
