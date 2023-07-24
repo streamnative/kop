@@ -13,12 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -52,7 +54,8 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     private CompletableFuture<Void> currentReadHandle;
 
-    private synchronized CompletableFuture<Reader<ByteBuffer>> ensureReaderHandle() {
+    @VisibleForTesting
+    public synchronized CompletableFuture<Reader<ByteBuffer>> ensureReaderHandle() {
         if (reader == null) {
             CompletableFuture<Reader<ByteBuffer>> newReader = pulsarClient.newReaderBuilder()
                     .topic(topic)
@@ -90,7 +93,8 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         }
     }
 
-    private synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
+    @VisibleForTesting
+    public synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
         if (producer == null) {
             CompletableFuture<Producer<ByteBuffer>> newProducer = pulsarClient.newProducerBuilder()
                     .enableBatching(false)
@@ -160,6 +164,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         // please note that the read operation is async,
         // and it is not execute inside this synchronized block
         CompletableFuture<Reader<ByteBuffer>> readerHandle = ensureReaderHandle();
+        if (readerHandle == null) {
+            return CompletableFuture.failedFuture(
+                    new KoPTopicException("Failed to create reader handle for " + topic));
+        }
         final CompletableFuture<Void> newReadHandle =
                 readerHandle.thenCompose(this::readNextMessageIfAvailable);
         currentReadHandle = newReadHandle;
@@ -188,7 +196,12 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             // cannot serialise, skip
             return CompletableFuture.completedFuture(null);
         }
-        return ensureProducerHandle().thenCompose(opProducer -> {
+        CompletableFuture<Producer<ByteBuffer>> producerFuture = ensureProducerHandle();
+        if (producerFuture == null) {
+            return CompletableFuture.failedFuture(
+                    new KoPTopicException("Failed to create producer handle for " + topic));
+        }
+        return producerFuture.thenCompose(opProducer -> {
             // nobody can write now to the topic
             // wait for local cache to be up-to-date
             return ensureLatestData(true)

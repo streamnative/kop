@@ -13,17 +13,26 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.fail;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.ReaderBuilder;
 import org.testng.annotations.Test;
 
 /**
@@ -66,6 +75,50 @@ public class PulsarTopicProducerStateManagerSnapshotBufferTest extends ProducerS
                     PulsarTopicProducerStateManagerSnapshotBuffer.deserialize(serialized);
 
             assertEquals(deserialized, snapshot);
+        }
+    }
+
+    @Test(timeOut = 5_000)
+    public void ensureReaderHandleCaughtExceptionTest() {
+        SystemTopicClient sysTopicClient = spy(new SystemTopicClient(pulsar, conf));
+        ReaderBuilder<ByteBuffer> readerBuilder = spy(sysTopicClient.newReaderBuilder());
+        when(readerBuilder.createAsync()).thenReturn(CompletableFuture.failedFuture(new RuntimeException("inject")));
+        when(sysTopicClient.newReaderBuilder()).thenReturn(readerBuilder);
+
+        PulsarTopicProducerStateManagerSnapshotBuffer snapshotBuffer =
+                new PulsarTopicProducerStateManagerSnapshotBuffer("snapshot-test-topic", sysTopicClient);
+        CompletableFuture<Reader<ByteBuffer>> readerFuture = snapshotBuffer.ensureReaderHandle();
+        if (readerFuture != null) {
+            try {
+                readerFuture.get();
+                fail("should fail");
+            } catch (Exception e) {
+                assertEquals(e.getCause().getMessage(), "inject");
+            }
+        } else {
+            log.info("This is expected behavior.");
+        }
+    }
+
+    @Test(timeOut = 5_000)
+    public void ensureProducerCaughtExceptionTest() {
+        SystemTopicClient sysTopicClient = spy(new SystemTopicClient(pulsar, conf));
+        ProducerBuilder<ByteBuffer> producerBuilder = spy(sysTopicClient.newProducerBuilder());
+        when(producerBuilder.createAsync()).thenReturn(CompletableFuture.failedFuture(new RuntimeException("inject")));
+        when(sysTopicClient.newProducerBuilder()).thenReturn(producerBuilder);
+
+        PulsarTopicProducerStateManagerSnapshotBuffer snapshotBuffer =
+                new PulsarTopicProducerStateManagerSnapshotBuffer("snapshot-test-topic", sysTopicClient);
+        CompletableFuture<Producer<ByteBuffer>> producerFuture = snapshotBuffer.ensureProducerHandle();
+        if (producerFuture != null) {
+            try {
+                producerFuture.get();
+                fail("should fail");
+            } catch (Exception e) {
+                assertEquals(e.getCause().getMessage(), "inject");
+            }
+        } else {
+            log.info("This is expected behavior.");
         }
     }
 
