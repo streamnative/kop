@@ -165,7 +165,6 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                         case UNKNOWN_TOPIC_OR_PARTITION:
                         // this error was introduced in newer kafka client version,
                         // recover this condition after bump the kafka client version
-                        //case NOT_LEADER_OR_FOLLOWER:
                         case NOT_ENOUGH_REPLICAS:
                         case NOT_ENOUGH_REPLICAS_AFTER_APPEND:
                         case REQUEST_TIMED_OUT:
@@ -178,6 +177,7 @@ public class TransactionMarkerRequestCompletionHandler implements Consumer<Respo
                             abortSendingAndRetryPartitions.retryPartitions.add(topicPartition);
                             break;
                         case LEADER_NOT_AVAILABLE:
+                        case BROKER_NOT_AVAILABLE:
                         case NOT_LEADER_OR_FOLLOWER:
                             log.info("Sending {}'s transaction marker for partition {} has failed with error {}, "
                                             + "retrying with current coordinator epoch {} and invalidating cache",
