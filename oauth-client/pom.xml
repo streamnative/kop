@@ -46,6 +46,7 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
+      <scope>compile</scope>
     </dependency>
 
     <dependency>
@@ -73,43 +74,43 @@
     </dependency>
   </dependencies>
 
-<!--  <build>-->
-<!--    <plugins>-->
-<!--      <plugin>-->
-<!--        <groupId>org.apache.maven.plugins</groupId>-->
-<!--        <artifactId>maven-shade-plugin</artifactId>-->
-<!--        <version>${maven-shade-plugin.version}</version>-->
-<!--        <executions>-->
-<!--          <execution>-->
-<!--            <phase>package</phase>-->
-<!--            <goals>-->
-<!--              <goal>shade</goal>-->
-<!--            </goals>-->
-<!--            <configuration>-->
-<!--              <createDependencyReducedPom>true</createDependencyReducedPom>-->
-<!--              <relocations>-->
-<!--                <relocation>-->
-<!--                  <pattern>com.fasterxml.jackson</pattern>-->
-<!--                  <shadedPattern>kafka.oauthclient.com.fasterxml.jackson</shadedPattern>-->
-<!--                </relocation>-->
-<!--              </relocations>-->
-<!--              <artifactSet>-->
-<!--                <includes>-->
-<!--                  <include>com.fasterxml.jackson.core:*</include>-->
-<!--                </includes>-->
-<!--              </artifactSet>-->
-<!--              <filters>-->
-<!--                <filter>-->
-<!--                  <artifact>com.fasterxml.jackson.core:*</artifact>-->
-<!--                  <excludes>-->
-<!--                    <exclude>META-INF/**</exclude>-->
-<!--                  </excludes>-->
-<!--                </filter>-->
-<!--              </filters>-->
-<!--            </configuration>-->
-<!--          </execution>-->
-<!--        </executions>-->
-<!--      </plugin>-->
-<!--    </plugins>-->
-<!--  </build>-->
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${maven-shade-plugin.version}</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>true</createDependencyReducedPom>
+              <relocations>
+                <relocation>
+                  <pattern>com.fasterxml.jackson</pattern>
+                  <shadedPattern>kafka.oauthclient.com.fasterxml.jackson</shadedPattern>
+                </relocation>
+              </relocations>
+              <artifactSet>
+                <includes>
+                  <include>com.fasterxml.jackson.core:*</include>
+                </includes>
+              </artifactSet>
+              <filters>
+                <filter>
+                  <artifact>com.fasterxml.jackson.core:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
