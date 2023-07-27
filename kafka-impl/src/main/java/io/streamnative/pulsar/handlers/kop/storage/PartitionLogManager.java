@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -70,10 +71,19 @@ public class PartitionLogManager {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
-        return logMap.computeIfAbsent(kopTopic, key -> new PartitionLog(
+        CompletableFuture<PartitionLog> future = logMap.computeIfAbsent(kopTopic, key -> new PartitionLog(
                 kafkaConfig, requestStats, time, topicPartition, key, entryFilters, kafkaTopicLookupService,
                 prodPerTenant, recoveryExecutor
         ).initialise());
+        // We need to wait here to avoid the message disorder
+        try {
+            future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            log.error("Failed to get PartitionLog for {} under {}", topicPartition, namespacePrefix, e.getCause());
+        }
+        return future;
     }
 
     CompletableFuture<PartitionLog> removeLog(String topicName) {
