@@ -13,7 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-
+import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.annotation.Nullable;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
@@ -45,8 +46,10 @@ public class KopBrokerLookupManager {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public static final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
-            LOOKUP_CACHE = new ConcurrentHashMap<>();
+    @VisibleForTesting
+    @Getter
+    private final ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>>
+            localBrokerTopics = new ConcurrentHashMap<>();
 
     public KopBrokerLookupManager(KafkaServiceConfiguration conf, PulsarService pulsarService,
                                   LookupClient lookupClient) throws Exception {
@@ -106,7 +109,11 @@ public class KopBrokerLookupManager {
             log.debug("Handle Lookup for topic {}", topicName);
         }
 
-        final CompletableFuture<InetSocketAddress> future = LOOKUP_CACHE.get(topicName);
+        final CompletableFuture<InetSocketAddress> future = localBrokerTopics.get(topicName);
+        if (future != null && future.isCompletedExceptionally()) {
+            // this is not possible to happen, but just in case
+            localBrokerTopics.remove(topicName, future);
+        }
         return (future != null) ? future : lookupBroker(topicName);
     }
 
@@ -177,7 +184,7 @@ public class KopBrokerLookupManager {
         return serviceLookupData.get().getProtocol(KafkaProtocolHandler.PROTOCOL_NAME).map(kafkaAdvertisedListeners -> {
             if (kafkaAdvertisedListeners.equals(selfAdvertisedListeners)) {
                 // the topic is owned by this broker, cache the look up result
-                LOOKUP_CACHE.put(topic, CompletableFuture.completedFuture(internalListenerAddress));
+                localBrokerTopics.put(topic, CompletableFuture.completedFuture(internalListenerAddress));
             }
             return Optional.ofNullable(advertisedEndPoint)
                     .map(endPoint -> EndPoint.findListener(kafkaAdvertisedListeners, endPoint.getListenerName()))
@@ -192,12 +199,12 @@ public class KopBrokerLookupManager {
                 || StringUtils.endsWith(data.getPulsarServiceUrlTls(), hostAndPort);
     }
 
-    public static void removeTopicManagerCache(String topicName) {
-        LOOKUP_CACHE.remove(topicName);
+    public void removeTopicManagerCache(String topicName) {
+        localBrokerTopics.remove(topicName);
     }
 
-    public static void clear() {
-        LOOKUP_CACHE.clear();
+    public void clear() {
+        localBrokerTopics.clear();
     }
 
     public void close() {

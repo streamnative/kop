@@ -41,13 +41,13 @@ public class KafkaTopicManager {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler) {
+    KafkaTopicManager(KafkaRequestHandler kafkaRequestHandler, KafkaTopicLookupService kafkaTopicLookupService) {
         this.requestHandler = kafkaRequestHandler;
         PulsarService pulsarService = kafkaRequestHandler.getPulsarService();
         this.brokerService = pulsarService.getBrokerService();
         this.internalServerCnx = new InternalServerCnx(requestHandler);
         this.lookupClient = kafkaRequestHandler.getLookupClient();
-        this.kafkaTopicLookupService = new KafkaTopicLookupService(pulsarService.getBrokerService());
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
      }
 
     // update Ctx information, since at internalServerCnx create time there is no ctx passed into kafkaRequestHandler.

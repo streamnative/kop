@@ -30,9 +30,12 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class KafkaTopicLookupService {
     private final BrokerService brokerService;
+    private final KopBrokerLookupManager kopBrokerLookupManager;
 
-    public KafkaTopicLookupService(BrokerService brokerService) {
+    public KafkaTopicLookupService(BrokerService brokerService,
+            KopBrokerLookupManager kopBrokerLookupManager) {
         this.brokerService = brokerService;
+        this.kopBrokerLookupManager = kopBrokerLookupManager;
      }
 
     // A wrapper of `BrokerService#getTopic` that is to find the topic's associated `PersistentTopic` instance
@@ -42,7 +45,7 @@ public class KafkaTopicLookupService {
             TopicName topicNameObject = TopicName.get(topicName);
             if (throwable != null) {
                 // Failed to getTopic from current broker, remove cache, which added in getTopicBroker.
-                KopBrokerLookupManager.removeTopicManagerCache(topicName);
+                kopBrokerLookupManager.removeTopicManagerCache(topicName);
                 if (topicNameObject.getPartitionIndex() == 0) {
                     log.warn("Get partition-0 error [{}].", throwable.getMessage());
                 } else {
@@ -66,7 +69,7 @@ public class KafkaTopicLookupService {
                         handleGetTopicException(nonPartitionedTopicName, topicCompletableFuture, ex, requestor);
                         // Failed to getTopic from current broker, remove non-partitioned topic cache,
                         // which added in getTopicBroker.
-                        KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
+                        kopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
                         return;
                     }
                     if (nonPartitionedTopic.isPresent()) {
@@ -75,14 +78,14 @@ public class KafkaTopicLookupService {
                     } else {
                         log.error("[{}]Get empty non-partitioned topic for name {}",
                                 requestor, nonPartitionedTopicName);
-                        KopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
+                        kopBrokerLookupManager.removeTopicManagerCache(nonPartitionedTopicName);
                         topicCompletableFuture.complete(Optional.empty());
                     }
                 });
                 return;
             }
             log.error("[{}]Get empty topic for name {}", requestor, topicName);
-            KopBrokerLookupManager.removeTopicManagerCache(topicName);
+            kopBrokerLookupManager.removeTopicManagerCache(topicName);
             topicCompletableFuture.complete(Optional.empty());
         });
         return topicCompletableFuture;

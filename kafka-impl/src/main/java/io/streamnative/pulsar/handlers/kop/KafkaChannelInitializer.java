@@ -50,6 +50,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KopBrokerLookupManager kopBrokerLookupManager;
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+    private final KafkaTopicLookupService kafkaTopicLookupService;
     private final LookupClient lookupClient;
 
     private final AdminManager adminManager;
@@ -82,6 +83,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler,
                                    KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                                   KafkaTopicLookupService kafkaTopicLookupService,
                                    LookupClient lookupClient) {
         super();
         this.pulsarService = pulsarService;
@@ -105,6 +107,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
         this.lengthFieldPrepender = new LengthFieldPrepender(4);
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
     }
 
     @Override
@@ -130,7 +133,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState, lookupClient);
+                kafkaTopicManagerSharedState, kafkaTopicLookupService, lookupClient);
     }
 
     @VisibleForTesting
@@ -141,6 +144,6 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState, lookupClient);
+                kafkaTopicManagerSharedState, kafkaTopicLookupService, lookupClient);
     }
 }

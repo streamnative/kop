@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertTrue;
 
@@ -858,8 +859,8 @@ public abstract class KopProtocolHandlerTestBase {
             admin.namespaces().setRetention(namespace, new RetentionPolicies(0, 0));
             admin.namespaces().setDeduplicationStatus(namespace, false);
 
-
-            KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
+            KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService(),
+                    mock(KopBrokerLookupManager.class));
             PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
 
             Awaitility.await().untilAsserted(() -> {
