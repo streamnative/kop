@@ -180,18 +180,6 @@ public class PartitionLog {
         return initFuture;
     }
 
-    public CompletableFuture<PartitionLog> awaitInitialisation() {
-        return initFuture;
-    }
-
-    public boolean isInitialised() {
-        return initFuture.isDone() && !initFuture.isCompletedExceptionally();
-    }
-
-    public boolean isInitialisationFailed() {
-        return initFuture.isDone() && initFuture.isCompletedExceptionally();
-    }
-
     private CompletableFuture<Void> loadTopicProperties() {
         CompletableFuture<Optional<PersistentTopic>> persistentTopicFuture =
                 kafkaTopicLookupService.getTopic(fullPartitionName, this);

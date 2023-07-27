@@ -13,15 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import com.google.common.collect.Maps;
+import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +30,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Manage {@link PartitionLog}.
@@ -39,9 +38,9 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class PartitionLogManager {
 
+    private final Map<String, CompletableFuture<PartitionLog>> logMap = new ConcurrentHashMap<>();
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
-    private final Map<String, PartitionLog> logMap;
     private final Time time;
     private final List<EntryFilter> entryFilters;
 
@@ -60,7 +59,6 @@ public class PartitionLogManager {
                                OrderedExecutor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
-        this.logMap = Maps.newConcurrentMap();
         this.entryFilters = entryFilters;
         this.time = time;
         this.kafkaTopicLookupService = kafkaTopicLookupService;
@@ -68,54 +66,27 @@ public class PartitionLogManager {
         this.recoveryExecutor = recoveryExecutor;
     }
 
-    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
-        PartitionLog res =  logMap.computeIfAbsent(kopTopic, key -> {
-            PartitionLog partitionLog = new PartitionLog(kafkaConfig, requestStats,
-                    time, topicPartition, key, entryFilters,
-                    kafkaTopicLookupService,
-                    prodPerTenant, recoveryExecutor);
-
-            CompletableFuture<PartitionLog> initialiseResult = partitionLog
-                    .initialise();
-
-            initialiseResult.whenComplete((___, error) -> {
-                if (error != null) {
-                    // in case of failure we have to remove the CompletableFuture from the map
-                    log.error("Failed to recovery of {}", key, error);
-                    logMap.remove(key, partitionLog);
-                }
-            });
-
-            return partitionLog;
-        });
-        if (res.isInitialisationFailed()) {
-            log.error("Failed to initialize of {}", kopTopic);
-            logMap.remove(kopTopic, res);
-        }
-        return res;
+        return logMap.computeIfAbsent(kopTopic, key -> new PartitionLog(
+                kafkaConfig, requestStats, time, topicPartition, key, entryFilters, kafkaTopicLookupService,
+                prodPerTenant, recoveryExecutor
+        ).initialise());
     }
 
-    public PartitionLog removeLog(String topicName) {
-        log.info("removePartitionLog {}", topicName);
+    CompletableFuture<PartitionLog> removeLog(String topicName) {
         return logMap.remove(topicName);
     }
 
-    public int size() {
+    @VisibleForTesting
+    int size() {
         return logMap.size();
     }
 
-    public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
-        List<CompletableFuture<?>> handles = new ArrayList<>();
-        logMap.values().forEach(log -> {
-            if (log.isInitialised()) {
-                handles.add(log.updatePurgeAbortedTxnsOffset());
-            }
-        });
-        return FutureUtil
-                .waitForAll(handles);
+    void updatePurgeAbortedTxnsOffsets() {
+        logMap.values().forEach(future -> future.thenApply(PartitionLog::updatePurgeAbortedTxnsOffset));
     }
 }
 

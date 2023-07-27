@@ -79,13 +79,13 @@ public class ReplicaManager {
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
-    public PartitionLog getPartitionLog(TopicPartition topicPartition,
-                                        String namespacePrefix) {
+    @VisibleForTesting
+    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
     public void removePartitionLog(String topicName) {
-        PartitionLog partitionLog = logManager.removeLog(topicName);
+        CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
             log.debug("PartitionLog: {} has bean removed.", topicName);
         }
@@ -168,8 +168,9 @@ public class ReplicaManager {
                     addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
                             Errors.forException(new InvalidTopicException(
                                     String.format("Cannot append to internal topic %s", topicPartition.topic())))));
-                } else {
-                    PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
+                    return;
+                }
+                getPartitionLog(topicPartition, namespacePrefix).thenAccept(partitionLog -> {
                     if (requiredAcks == 0) {
                         partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext);
                         return;
@@ -208,7 +209,13 @@ public class ReplicaManager {
                                 }
                                 return null;
                             });
-                }
+                }).exceptionally(e -> {
+                    log.error("Failed to get PartitionLog for {}", topicPartition, e);
+                    logManager.removeLog(fullPartitionName);
+                    addPartitionResponse.accept(topicPartition,
+                            new ProduceResponse.PartitionResponse(Errors.UNKNOWN_SERVER_ERROR));
+                    return null;
+                });
             });
             // delay produce
             if (timeout <= 0) {
@@ -307,7 +314,6 @@ public class ReplicaManager {
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             getPartitionLog(tp, context.getNamespacePrefix())
-                    .awaitInitialisation()
                     .whenComplete((partitionLog, failed) ->{
                         if (failed != null) {
                             result.put(tp,
@@ -337,8 +343,8 @@ public class ReplicaManager {
         }
     }
 
-    public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
-        return logManager.updatePurgeAbortedTxnsOffsets();
+    public void updatePurgeAbortedTxnsOffsets() {
+        logManager.updatePurgeAbortedTxnsOffsets();
     }
 
 }
