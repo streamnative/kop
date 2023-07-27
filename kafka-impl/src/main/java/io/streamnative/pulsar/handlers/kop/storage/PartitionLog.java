@@ -1127,7 +1127,7 @@ public class PartitionLog {
 
             return future;
         }
-        log.info("{} numberOfEntries={}", fullPartitionName, numberOfEntries);
+
         // this is a DUMMY entry with -1
         PositionImpl firstPosition = managedLedger.getFirstPosition();
         // look for the first entry with data
