@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.security;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import java.io.Closeable;
 import java.util.Properties;
