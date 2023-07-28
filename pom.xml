@@ -102,6 +102,8 @@
     <module>schema-registry</module>
     <module>kafka-impl</module>
     <module>oauth-client</module>
+    <module>oauth-client-shaded</module>
+    <module>oauth-client-shaded-test</module>
     <module>tests</module>
     <module>kafka-payload-processor</module>
     <module>kafka-payload-processor-shaded</module>

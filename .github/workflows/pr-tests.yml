@@ -56,6 +56,9 @@ jobs:
       - name: oauth-client test after build
         run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
 
+      - name: oauth-client-shaded test after build
+        run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client-shaded-test
+
       - name: Upload to Codecov
         uses: codecov/codecov-action@v3
 
