@@ -61,17 +61,6 @@
       <groupId>io.apicurio</groupId>
       <artifactId>apicurio-registry-schema-compatibility-json</artifactId>
       <version>${apicurio.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>com.fasterxml.jackson.datatype</groupId>
-          <artifactId>jackson-datatype-json-org</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.datatype</groupId>
-      <artifactId>jackson-datatype-json-org</artifactId>
-      <version>${jackson.version}</version>
     </dependency>
     <dependency>
       <groupId>${pulsar.group.id}</groupId>
