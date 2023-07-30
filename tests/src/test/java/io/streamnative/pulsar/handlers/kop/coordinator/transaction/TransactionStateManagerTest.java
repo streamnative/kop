@@ -107,6 +107,8 @@ public class TransactionStateManagerTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
+        // we need to disable the kafka transaction coordinator to avoid the conflict
+        this.conf.setKafkaTransactionCoordinatorEnabled(false);
         this.conf.setKafkaTxnLogTopicNumPartitions(numPartitions);
         internalSetup();
         MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);

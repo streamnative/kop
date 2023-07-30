@@ -25,6 +25,7 @@ import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,6 +41,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.ListTransactionsResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.requests.ProduceResponse;
@@ -243,6 +245,71 @@ public class TransactionStateManager {
     private boolean shouldExpire(TransactionMetadata txnMetadata, Long currentTimeMs){
             return txnMetadata.getState().isExpirationAllowed() && txnMetadata.getTxnLastUpdateTimestamp()
                     <= (currentTimeMs - transactionConfig.getTransactionalIdExpirationMs());
+    }
+
+    private static boolean shouldInclude(TransactionMetadata txnMetadata,
+                          List<Long> filterProducerIds, Set<String> filterStateNames) {
+        if (txnMetadata.getState() == TransactionState.DEAD) {
+            // We filter the `Dead` state since it is a transient state which
+            // indicates that the transactionalId and its metadata are in the
+            // process of expiration and removal.
+            return false;
+        } else if (!filterProducerIds.isEmpty() && !filterProducerIds.contains(txnMetadata.getProducerId())) {
+            return false;
+        } else if (!filterStateNames.isEmpty() && !filterStateNames.contains(
+                txnMetadata.getState().toAdminState().toString())) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    public ListTransactionsResponseData listTransactionStates(List<Long> filteredProducerIds,
+                                                              List<String> filteredStates) {
+        return CoreUtils.inReadLock(stateLock, () -> {
+            ListTransactionsResponseData response = new ListTransactionsResponseData();
+            if (!loadingPartitions.isEmpty()) {
+                response.setErrorCode(Errors.COORDINATOR_LOAD_IN_PROGRESS.code());
+            } else {
+                Set<String> filterStates = new HashSet<>();
+                for (TransactionState stateName : TransactionState.values()) {
+                    String nameForTheClient = stateName.toAdminState().toString();
+                    if (filteredStates.contains(nameForTheClient)) {
+                        filterStates.add(nameForTheClient);
+                    } else {
+                        response.unknownStateFilters().add(nameForTheClient);
+                    }
+                }
+                List<ListTransactionsResponseData.TransactionState> states = new ArrayList<>();
+                transactionMetadataCache.forEach((__, cache) -> {
+                    cache.values().forEach(txnMetadata -> {
+                        txnMetadata.inLock(() -> {
+                            // use toString() to get the name of the state according to the protocol
+                            ListTransactionsResponseData.TransactionState transactionState =
+                                    new ListTransactionsResponseData.TransactionState()
+                                    .setTransactionalId(txnMetadata.getTransactionalId())
+                                    .setProducerId(txnMetadata.getProducerId())
+                                    .setTransactionState(txnMetadata.getState().toAdminState().toString());
+
+                            if (shouldInclude(txnMetadata, filteredProducerIds, filterStates)) {
+                                if (log.isDebugEnabled()) {
+                                     log.debug("add transaction state: {}", transactionState);
+                                }
+                                states.add(transactionState);
+                            } else {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Skip transaction state: {}", transactionState);
+                                }
+                            }
+                            return null;
+                        });
+                    });
+                });
+                response.setErrorCode(Errors.NONE.code())
+                        .setTransactionStates(states);
+            }
+            return response;
+        });
     }
 
     @Data

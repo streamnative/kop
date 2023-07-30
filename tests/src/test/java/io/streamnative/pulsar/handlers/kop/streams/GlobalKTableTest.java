@@ -25,6 +25,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.ForeachAction;
@@ -109,7 +110,8 @@ public class GlobalKTableTest extends KafkaStreamsTestBase {
         produceGlobalTableValues();
 
         final ReadOnlyKeyValueStore<Long, String> replicatedStore =
-                kafkaStreams.store(globalStore, QueryableStoreTypes.keyValueStore());
+                kafkaStreams.store(
+                        StoreQueryParameters.fromNameAndType(globalStore, QueryableStoreTypes.keyValueStore()));
 
         TestUtils.waitForCondition(() -> "J".equals(replicatedStore.get(5L)),
                 30000, "waiting for data in replicated store");
@@ -143,7 +145,9 @@ public class GlobalKTableTest extends KafkaStreamsTestBase {
         produceGlobalTableValues();
 
         final ReadOnlyKeyValueStore<Long, String> replicatedStore =
-                kafkaStreams.store(globalStore, QueryableStoreTypes.<Long, String>keyValueStore());
+                kafkaStreams.store(
+                        StoreQueryParameters
+                                .fromNameAndType(globalStore, QueryableStoreTypes.<Long, String>keyValueStore()));
 
         TestUtils.waitForCondition(() -> "J".equals(replicatedStore.get(5L)),
                 30000, "waiting for data in replicated store");
@@ -173,13 +177,15 @@ public class GlobalKTableTest extends KafkaStreamsTestBase {
         Thread.sleep(1000); // NOTE: it may take a few milliseconds to wait streams started
 
         ReadOnlyKeyValueStore<Long, String> store =
-                kafkaStreams.store(globalStore, QueryableStoreTypes.keyValueStore());
+                kafkaStreams.store(
+                        StoreQueryParameters.fromNameAndType(globalStore, QueryableStoreTypes.keyValueStore()));
         assertEquals(store.approximateNumEntries(), 4L);
         kafkaStreams.close();
 
         startStreams();
         Thread.sleep(1000); // NOTE: it may take a few milliseconds to wait streams started
-        store = kafkaStreams.store(globalStore, QueryableStoreTypes.keyValueStore());
+        store = kafkaStreams.store(
+                StoreQueryParameters.fromNameAndType(globalStore, QueryableStoreTypes.keyValueStore()));
         assertEquals(store.approximateNumEntries(), 4L);
     }
 

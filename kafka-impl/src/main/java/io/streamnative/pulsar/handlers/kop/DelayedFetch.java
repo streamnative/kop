@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.message.FetchRequestData;
 
 @Slf4j
 public class DelayedFetch extends DelayedOperation {
@@ -33,7 +33,7 @@ public class DelayedFetch extends DelayedOperation {
     private final long bytesReadable;
     private final int fetchMaxBytes;
     private final boolean readCommitted;
-    private final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo;
+    private final Map<TopicPartition, FetchRequestData.FetchPartition> readPartitionInfo;
     private final Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult;
     private final MessageFetchContext context;
     protected volatile Boolean hasError;
@@ -55,7 +55,7 @@ public class DelayedFetch extends DelayedOperation {
                         final boolean readCommitted,
                         final MessageFetchContext context,
                         final ReplicaManager replicaManager,
-                        final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
+                        final Map<TopicPartition, FetchRequestData.FetchPartition> readPartitionInfo,
                         final Map<TopicPartition, PartitionLog.ReadRecordsResult> readRecordsResult,
                         final CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> callback) {
         super(delayMs, Optional.empty());

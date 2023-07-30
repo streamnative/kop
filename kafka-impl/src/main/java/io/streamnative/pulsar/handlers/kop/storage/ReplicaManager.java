@@ -42,9 +42,10 @@ import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
+import org.apache.kafka.common.message.DescribeProducersResponseData;
+import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
@@ -240,7 +241,7 @@ public class ReplicaManager {
             final long timeout,
             final int fetchMinBytes,
             final int fetchMaxBytes,
-            final ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> fetchInfos,
+            final ConcurrentHashMap<TopicPartition, FetchRequestData.FetchPartition> fetchInfos,
             final IsolationLevel isolationLevel,
             final MessageFetchContext context) {
         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> future =
@@ -294,7 +295,7 @@ public class ReplicaManager {
             final boolean readCommitted,
             final int fetchMaxBytes,
             final int maxReadEntriesNum,
-            final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
+            final Map<TopicPartition, FetchRequestData.FetchPartition> readPartitionInfo,
             final MessageFetchContext context) {
         AtomicLong limitBytes = new AtomicLong(fetchMaxBytes);
         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> resultFuture = new CompletableFuture<>();
@@ -340,6 +341,16 @@ public class ReplicaManager {
 
     public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
         return logManager.updatePurgeAbortedTxnsOffsets();
+    }
+
+    public CompletableFuture<DescribeProducersResponseData.PartitionResponse> activeProducerState(
+                                                                                TopicPartition topicPartition,
+                                                                                String namespacePrefix) {
+        PartitionLog partitionLog = getPartitionLog(topicPartition, namespacePrefix);
+        // https://github.com/apache/kafka/blob/5514f372b3e12db1df35b257068f6bb5083111c7/
+        // core/src/main/scala/kafka/server/ReplicaManager.scala#L535
+        return partitionLog.awaitInitialisation()
+                        .thenApply(log -> log.activeProducerState());
     }
 
 }

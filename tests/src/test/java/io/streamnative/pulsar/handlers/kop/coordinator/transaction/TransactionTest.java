@@ -17,6 +17,8 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
@@ -31,6 +33,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -41,12 +44,20 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.kafka.clients.admin.AbortTransactionSpec;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.DescribeProducersResult;
+import org.apache.kafka.clients.admin.ListTransactionsOptions;
+import org.apache.kafka.clients.admin.ListTransactionsResult;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.ProducerState;
+import org.apache.kafka.clients.admin.TransactionDescription;
+import org.apache.kafka.clients.admin.TransactionListing;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -57,8 +68,8 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -76,6 +87,8 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
+
+    private static final int TRANSACTION_TIMEOUT_CONFIG_VALUE = 600 * 1000;
 
     protected void setupTransactions() {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
@@ -764,12 +777,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         partitionLog.awaitInitialisation().get();
         assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
-        List<FetchResponse.AbortedTransaction> abortedIndexList =
+        List<FetchResponseData.AbortedTransaction> abortedIndexList =
                 partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
 
         producer.beginTransaction();
         String lastMessage = "msg1b";
@@ -804,7 +817,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
         assertEquals(1, abortedIndexList.size());
 
         waitForTransactionsToBeInStableState(transactionalId);
@@ -842,7 +855,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         });
 
         assertEquals(1, abortedIndexList.size());
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
 
         producer.beginTransaction();
         producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get(); // OFFSET 8
@@ -869,8 +882,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
 
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
-        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
+        assertEquals(11, abortedIndexList.get(1).firstOffset());
         assertEquals(2, abortedIndexList.size());
 
         producer.beginTransaction();
@@ -894,8 +907,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
 
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
-        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
+        assertEquals(11, abortedIndexList.get(1).firstOffset());
         assertEquals(2, abortedIndexList.size());
 
 
@@ -910,7 +923,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
         assertEquals(1, abortedIndexList.size());
-        assertEquals(11, abortedIndexList.get(0).firstOffset);
+        assertEquals(11, abortedIndexList.get(0).firstOffset());
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -1153,7 +1166,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, txTimeout);
         } else {
             // very long time-out
-            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, 600 * 1000);
+            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, TRANSACTION_TIMEOUT_CONFIG_VALUE);
         }
         addCustomizeProps(producerProps);
 
@@ -1318,6 +1331,245 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer1.close();
         producer2.close();
+    }
+
+    @Test(timeOut = 1000 * 30)
+    public void testListAndDescribeTransactions() throws Exception {
+
+        String topicName = "testListAndDescribeTransactions";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        producer.initTransactions();
+        producer.beginTransaction();
+        assertTransactionState(kafkaAdmin, transactionalId,
+            org.apache.kafka.clients.admin.TransactionState.EMPTY, (stateOnBroker, stateOnCoodinator) -> {
+               assertNull(stateOnBroker);
+            });
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+
+        // the transaction is in ONGOING state
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.ONGOING,
+                (stateOnBroker, stateOnCoodinator) -> {});
+
+        // wait for the brokers to update the state
+        Awaitility.await().untilAsserted(() -> {
+             assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.ONGOING,
+                (stateOnBroker, stateOnCoodinator) -> {
+                     // THESE ASSERTIONS ARE NOT VALID YET
+                     //log.info("stateOnBroker: {}", stateOnBroker);
+                     //log.info("stateOnCoodinator: {}", stateOnCoodinator);
+                     // assertTrue(stateOnBroker.lastTimestamp()
+                     //       >= stateOnCoodinator.transactionStartTimeMs().orElseThrow());
+                });
+        });
+        producer.commitTransaction();
+        Awaitility.await().untilAsserted(() -> {
+                    assertTransactionState(kafkaAdmin, transactionalId,
+                            org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT,
+                            (stateOnBroker, stateOnCoodinator) -> {
+                            });
+                });
+        producer.beginTransaction();
+
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT,
+                (stateOnBroker, stateOnCoodinator) -> {
+                });
+
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+        producer.abortTransaction();
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT,
+                    (stateOnBroker, stateOnCoodinator) -> {
+                    });
+        });
+        producer.close();
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT,
+                (stateOnBroker, stateOnCoodinator) -> {
+                });
+    }
+
+    private static void assertTransactionState(AdminClient kafkaAdmin, String transactionalId,
+                                               org.apache.kafka.clients.admin.TransactionState transactionState,
+                                               BiConsumer<ProducerState, TransactionDescription>
+                                               producerStateValidator)
+            throws Exception {
+        ListTransactionsResult listTransactionsResult = kafkaAdmin.listTransactions();
+        Collection<TransactionListing> transactionListings = listTransactionsResult.all().get();
+        transactionListings.forEach(t -> {
+            log.info("Found transactionalId: {} {} {}",
+                    t.transactionalId(),
+                    t.producerId(),
+                    t.state());
+        });
+        TransactionListing transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        // filter for the same state
+        ListTransactionsOptions optionFilterState = new ListTransactionsOptions()
+                .filterStates(Collections.singleton(transactionState));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterState);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+
+        // filter for the same producer id
+        ListTransactionsOptions optionFilterProducer = new ListTransactionsOptions()
+                .filterProducerIds(Collections.singleton(transactionListing.producerId()));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterProducer);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        // filter for the same producer id and state
+        ListTransactionsOptions optionFilterProducerAndState = new ListTransactionsOptions()
+                .filterStates(Collections.singleton(transactionState))
+                .filterProducerIds(Collections.singleton(transactionListing.producerId()));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterProducerAndState);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        Map<String, TransactionDescription> map =
+                kafkaAdmin.describeTransactions(Collections.singleton(transactionalId))
+                .all().get();
+        assertEquals(1, map.size());
+        TransactionDescription transactionDescription = map.get(transactionalId);
+        log.info("transactionDescription {}", transactionDescription);
+        assertNotNull(transactionDescription);
+        assertEquals(transactionDescription.state(), transactionState);
+        assertTrue(transactionDescription.producerEpoch() >= 0);
+        assertEquals(TRANSACTION_TIMEOUT_CONFIG_VALUE, transactionDescription.transactionTimeoutMs());
+        assertTrue(transactionDescription.transactionStartTimeMs().isPresent());
+        assertTrue(transactionDescription.coordinatorId() >= 0);
+
+        switch (transactionState) {
+            case EMPTY:
+            case COMPLETE_COMMIT:
+            case COMPLETE_ABORT:
+                assertEquals(0, transactionDescription.topicPartitions().size());
+                break;
+            case ONGOING:
+            case PREPARE_ABORT:
+                assertTrue(transactionDescription.transactionStartTimeMs().orElseThrow() > 0);
+                assertEquals(1, transactionDescription.topicPartitions().size());
+                break;
+            default:
+                fail("unhandled " + transactionState);
+        }
+
+        DescribeProducersResult producers = kafkaAdmin.describeProducers(transactionDescription.topicPartitions());
+        Map<TopicPartition, DescribeProducersResult.PartitionProducerState> topicPartitionPartitionProducerStateMap =
+                producers.all().get();
+        log.debug("topicPartitionPartitionProducerStateMap {}", topicPartitionPartitionProducerStateMap);
+
+
+        switch (transactionState) {
+            case EMPTY:
+            case COMPLETE_COMMIT:
+            case COMPLETE_ABORT:
+                producerStateValidator.accept(null, transactionDescription);
+                assertEquals(0, topicPartitionPartitionProducerStateMap.size());
+                break;
+            case ONGOING:
+            case PREPARE_ABORT:
+                assertEquals(1, topicPartitionPartitionProducerStateMap.size());
+                TopicPartition tp = transactionDescription.topicPartitions().iterator().next();
+                DescribeProducersResult.PartitionProducerState partitionProducerState =
+                        topicPartitionPartitionProducerStateMap.get(tp);
+                List<ProducerState> producerStates = partitionProducerState.activeProducers();
+                assertEquals(1, producerStates.size());
+                ProducerState producerState = producerStates.get(0);
+                assertEquals(producerState.producerId(), transactionDescription.producerId());
+                producerStateValidator.accept(producerState, transactionDescription);
+
+
+                break;
+            default:
+                fail("unhandled " + transactionState);
+        }
+
+
+    }
+
+    @Test(timeOut = 1000 * 30)
+    public void testAbortTransactinsFromAdmin() throws Exception {
+
+        String topicName = "testAbortTransactinsFromAdmin";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1)))
+                .all().get();
+
+        producer.initTransactions();
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+
+        // the transaction is in ONGOING state
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.ONGOING,
+                (stateOnBroker, stateOnCoodinator) -> {
+                });
+
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+
+        DescribeProducersResult.PartitionProducerState partitionProducerState =
+                kafkaAdmin.describeProducers(Collections.singletonList(topicPartition))
+                .partitionResult(topicPartition).get();
+        ProducerState producerState = partitionProducerState.activeProducers().get(0);
+
+        // we send the ABORT transaction marker to the broker
+        kafkaAdmin.abortTransaction(new AbortTransactionSpec(topicPartition,
+                producerState.producerId(),
+                (short) producerState.producerEpoch(),
+                producerState.coordinatorEpoch().orElse(-1))).all().get();
+
+        // the coordinator isn't aware of the operation sent to the brokers
+        // so it allows to abort the transaction
+        producer.commitTransaction();
+
+        producer.close();
+
+        // the transaction is eventually committed
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT,
+                    (stateOnBroker, stateOnCoodinator) -> {
+                    });
+        });
     }
 
     /**

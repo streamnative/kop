@@ -23,6 +23,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.errors.InvalidStateStoreException;
 import org.apache.kafka.streams.kstream.Consumed;
@@ -115,14 +116,16 @@ public class KTableTest extends KafkaStreamsTestBase {
         startStreams();
         Thread.sleep(1000); // NOTE: it may take a few milliseconds to wait streams started
         final ReadOnlyKeyValueStore<Long, String> store =
-                kafkaStreams.store(this.store, QueryableStoreTypes.keyValueStore());
+                kafkaStreams.store(
+                        StoreQueryParameters.fromNameAndType(this.store, QueryableStoreTypes.keyValueStore()));
         TestUtils.waitForCondition(() -> store.approximateNumEntries() == 4L, 30000L, "waiting for values");
         kafkaStreams.close();
 
         startStreams();
         Thread.sleep(1000); // NOTE: it may take a few milliseconds to wait streams started
         final ReadOnlyKeyValueStore<Long, String> recoveredStore =
-                kafkaStreams.store(this.store, QueryableStoreTypes.keyValueStore());
+                kafkaStreams.store(
+                        StoreQueryParameters.fromNameAndType(this.store, QueryableStoreTypes.keyValueStore()));
         TestUtils.waitForCondition(() -> {
                          try {
                              return recoveredStore.approximateNumEntries() == 4L;
