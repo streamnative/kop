@@ -25,7 +25,8 @@ public class PulsarPartitionedTopicProducerStateManagerSnapshotBufferTest
 
     @Override
     protected ProducerStateManagerSnapshotBuffer createProducerStateManagerSnapshotBuffer(String topic) {
-        return new PulsarPartitionedTopicProducerStateManagerSnapshotBuffer(topic, systemTopicClient, NUM_PARTITIONS);
+        return new PulsarPartitionedTopicProducerStateManagerSnapshotBuffer(
+                topic, systemTopicClient, getProtocolHandler().getRecoveryExecutor(), NUM_PARTITIONS);
     }
 
 }

@@ -48,6 +48,7 @@ import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -347,7 +348,17 @@ public class TransactionStateManager {
                 }).exceptionally(ex -> {
                     log.error("Store transactional log failed, transactionalId : {}, metadata: [{}].",
                             transactionalId, newMetadata, ex);
-                    responseCallback.fail(Errors.forException(ex));
+                    Throwable cause = ex.getCause();
+                    if (cause instanceof PulsarClientException.TimeoutException) {
+                        // timeout writing to the system topic
+                        // we respond that the broker has a temporary error
+                        // the client could retry the operation
+                        // because writes to this system topic are basically
+                        // idempotent
+                        responseCallback.fail(Errors.BROKER_NOT_AVAILABLE);
+                    } else {
+                        responseCallback.fail(Errors.forException(ex));
+                    }
                     return null;
                 });
                 return null;
