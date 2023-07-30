@@ -302,9 +302,15 @@ public class SSLUtils {
                     break;
                 case SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG:
                     obj = kafkaServiceConfiguration.getKopSslTruststoreLocation();
+                    if (obj == null) {
+                        obj = kafkaServiceConfiguration.getBrokerClientTlsTrustStore();
+                    }
                     break;
                 case SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG:
                     obj = kafkaServiceConfiguration.getKopSslTruststorePassword();
+                    if (obj == null && kafkaServiceConfiguration.getKopSslTruststoreLocation() == null) {
+                        obj = kafkaServiceConfiguration.getBrokerClientTlsTrustStorePassword();
+                    }
                     break;
                 case SslConfigs.SSL_KEYMANAGER_ALGORITHM_CONFIG:
                     obj = kafkaServiceConfiguration.getKopSslKeymanagerAlgorithm();
