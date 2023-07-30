@@ -48,9 +48,11 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Aggregator;
 import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.Initializer;
 import org.apache.kafka.streams.kstream.KGroupedStream;
 import org.apache.kafka.streams.kstream.KStream;
@@ -58,7 +60,6 @@ import org.apache.kafka.streams.kstream.KeyValueMapper;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Reducer;
-import org.apache.kafka.streams.kstream.Serialized;
 import org.apache.kafka.streams.kstream.SessionWindowedDeserializer;
 import org.apache.kafka.streams.kstream.SessionWindows;
 import org.apache.kafka.streams.kstream.TimeWindowedDeserializer;
@@ -115,7 +116,7 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         groupedStream = stream
                 .groupBy(
                         mapper,
-                        Serialized.with(Serdes.String(), Serdes.String()));
+                        Grouped.with(Serdes.String(), Serdes.String()));
 
         reducer = (value1, value2) -> value1 + ":" + value2;
         initializer = () -> 0;
@@ -174,7 +175,7 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
 
         final Serde<Windowed<String>> windowedSerde = WindowedSerdes.timeWindowedSerdeFrom(String.class);
         groupedStream
-                .windowedBy(TimeWindows.of(500L))
+                .windowedBy(TimeWindows.of(Duration.ofMillis(500L)))
                 .reduce(reducer)
                 .toStream()
                 .to(outputTopic, Produced.with(windowedSerde, Serdes.String()));
@@ -279,7 +280,7 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         produceMessages(secondTimestamp);
 
         final Serde<Windowed<String>> windowedSerde = WindowedSerdes.timeWindowedSerdeFrom(String.class);
-        groupedStream.windowedBy(TimeWindows.of(500L))
+        groupedStream.windowedBy(TimeWindows.of(Duration.ofMillis(500L)))
                 .aggregate(
                         initializer,
                         aggregator,
@@ -415,8 +416,8 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         produceMessages(timestamp);
         produceMessages(timestamp);
 
-        stream.groupByKey(Serialized.with(Serdes.Integer(), Serdes.String()))
-                .windowedBy(TimeWindows.of(500L))
+        stream.groupByKey(Grouped.with(Serdes.Integer(), Serdes.String()))
+                .windowedBy(TimeWindows.of(Duration.ofMillis(500L)))
                 .count()
                 .toStream((windowedKey, value) -> windowedKey.key() + "@"
                         + windowedKey.window().start()).to(outputTopic, Produced.with(Serdes.String(), Serdes.Long()));
@@ -509,8 +510,9 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         final CountDownLatch latch = new CountDownLatch(11);
 
         builder.stream(userSessionsStream, Consumed.with(Serdes.String(), Serdes.String()))
-                .groupByKey(Serialized.with(Serdes.String(), Serdes.String()))
-                .windowedBy(SessionWindows.with(sessionGap).until(maintainMillis))
+                .groupByKey(Grouped.with(Serdes.String(), Serdes.String()))
+                .windowedBy(SessionWindows.ofInactivityGapAndGrace(Duration.ofMillis(sessionGap),
+                        Duration.ofMillis(maintainMillis)))
                 .count()
                 .toStream()
                 .transform(() -> new Transformer<Windowed<String>, Long, KeyValue<Object, Object>>() {
@@ -608,8 +610,9 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         final CountDownLatch latch = new CountDownLatch(11);
         final String userSessionsStore = "UserSessionsStore";
         builder.stream(userSessionsStream, Consumed.with(Serdes.String(), Serdes.String()))
-                .groupByKey(Serialized.with(Serdes.String(), Serdes.String()))
-                .windowedBy(SessionWindows.with(sessionGap).until(maintainMillis))
+                .groupByKey(Grouped.with(Serdes.String(), Serdes.String()))
+                .windowedBy(SessionWindows.ofInactivityGapAndGrace(Duration.ofMillis(sessionGap),
+                        Duration.ofMillis(maintainMillis)))
                 .reduce((value1, value2) -> value1 + ":" + value2, Materialized.as(userSessionsStore))
                 .toStream()
                 .foreach((key, value) -> {
@@ -620,7 +623,8 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         startStreams();
         latch.await(30, TimeUnit.SECONDS);
         final ReadOnlySessionStore<String, String> sessionStore =
-                kafkaStreams.store(userSessionsStore, QueryableStoreTypes.sessionStore());
+                kafkaStreams.store(
+                        StoreQueryParameters.fromNameAndType(userSessionsStore, QueryableStoreTypes.sessionStore()));
 
         // verify correct data received
         assertThat(results.get(new Windowed<>("bob", new SessionWindow(t1, t1))), equalTo("start"));
@@ -690,6 +694,9 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         consumerProperties.setProperty(StreamsConfig.WINDOW_SIZE_MS_CONFIG, Long.MAX_VALUE + "");
         if (keyDeserializer instanceof TimeWindowedDeserializer
                 || keyDeserializer instanceof SessionWindowedDeserializer) {
+            consumerProperties.setProperty(StreamsConfig.WINDOWED_INNER_CLASS_SERDE,
+                    Serdes.serdeFrom(innerClass).getClass().getName());
+
             consumerProperties.setProperty(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS,
                     Serdes.serdeFrom(innerClass).getClass().getName());
         }
@@ -740,6 +747,8 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         final Map<String, String> configs = new HashMap<>();
         Serde<?> serde = Serdes.serdeFrom(innerClass);
         configs.put(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS, serde.getClass().getName());
+        configs.put(StreamsConfig.WINDOWED_INNER_CLASS_SERDE, serde.getClass().getName());
+
         serde.close();
         // https://issues.apache.org/jira/browse/KAFKA-10366
         configs.put(StreamsConfig.WINDOW_SIZE_MS_CONFIG, Long.toString(Long.MAX_VALUE));

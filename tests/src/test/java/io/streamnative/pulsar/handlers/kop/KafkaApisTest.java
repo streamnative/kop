@@ -73,10 +73,12 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.message.ProduceResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
@@ -108,6 +110,7 @@ import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
+import org.jetbrains.annotations.NotNull;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -285,7 +288,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-            .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+            .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
             .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -338,7 +341,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-            .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+            .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
             .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -572,7 +575,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     private ListOffsetsResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
                 .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, timestamp));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -586,21 +589,24 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     /// Add test for FetchRequest
     private void checkFetchResponse(List<TopicPartition> expectedPartitions,
-                                    FetchResponse<MemoryRecords> fetchResponse,
+                                    FetchResponse fetchResponse,
                                     int maxPartitionBytes,
                                     int maxResponseBytes,
                                     int numMessagesPerPartition) {
 
-        assertEquals(expectedPartitions.size(), fetchResponse.responseData().size());
-        expectedPartitions.forEach(tp -> assertTrue(fetchResponse.responseData().get(tp) != null));
+        assertEquals(expectedPartitions.size(), fetchResponse
+                .data().responses().stream().mapToInt(r->r.partitions().size()));
+        expectedPartitions.forEach(tp
+                -> assertTrue(getPartitionDataFromFetchResponse(fetchResponse, tp) != null));
 
         final AtomicBoolean emptyResponseSeen = new AtomicBoolean(false);
         AtomicInteger responseSize = new AtomicInteger(0);
         AtomicInteger responseBufferSize = new AtomicInteger(0);
 
         expectedPartitions.forEach(tp -> {
-            FetchResponse.PartitionData partitionData = fetchResponse.responseData().get(tp);
-            assertEquals(Errors.NONE, partitionData.error());
+            FetchResponseData.PartitionData partitionData = getPartitionDataFromFetchResponse(fetchResponse, tp);
+
+            assertEquals(Errors.NONE.code(), partitionData.errorCode());
             assertTrue(partitionData.highWatermark() > 0);
 
             MemoryRecords records = (MemoryRecords) partitionData.records();
@@ -631,6 +637,18 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // In Kop implementation, fetch at least 1 item for each topicPartition in the request.
     }
 
+    @NotNull
+    private static FetchResponseData.PartitionData getPartitionDataFromFetchResponse(FetchResponse fetchResponse,
+                                                                                     TopicPartition tp) {
+        FetchResponseData.PartitionData partitionData = fetchResponse
+                .data()
+                        .responses().stream().filter(t->t.topic().equals(tp.topic()))
+                        .flatMap(r-> r.partitions().stream())
+                                .filter(p -> p.partitionIndex() == tp.partition())
+                                        .findFirst().orElse(null);
+        return partitionData;
+    }
+
     private Map<TopicPartition, FetchRequest.PartitionData> createPartitionMap(int maxPartitionBytes,
                                                                                List<TopicPartition> topicPartitions,
                                                                                Map<TopicPartition, Long> offsetMap) {
@@ -649,7 +667,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                      Map<TopicPartition, Long> offsetMap) {
 
         AbstractRequest.Builder builder = FetchRequest.Builder
-            .forConsumer(Integer.MAX_VALUE, 0, createPartitionMap(maxPartitionBytes, topicPartitions, offsetMap))
+            .forConsumer(ApiKeys.FETCH.latestVersion(),
+                    Integer.MAX_VALUE, 0, createPartitionMap(maxPartitionBytes, topicPartitions, offsetMap))
             .setMaxBytes(maxResponseBytes);
 
         return buildRequest(builder);
@@ -795,8 +814,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             Collections.EMPTY_MAP);
         CompletableFuture<AbstractResponse> responseFuture1 = new CompletableFuture<>();
         kafkaRequestHandler.handleFetchRequest(fetchRequest1, responseFuture1);
-        FetchResponse<MemoryRecords> fetchResponse1 =
-            (FetchResponse<MemoryRecords>) responseFuture1.get();
+        FetchResponse fetchResponse1 =
+            (FetchResponse) responseFuture1.get();
 
         checkFetchResponse(shuffledTopicPartitions1, fetchResponse1,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
@@ -814,8 +833,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             Collections.EMPTY_MAP);
         CompletableFuture<AbstractResponse> responseFuture2 = new CompletableFuture<>();
         kafkaRequestHandler.handleFetchRequest(fetchRequest2, responseFuture2);
-        FetchResponse<MemoryRecords> fetchResponse2 =
-            (FetchResponse<MemoryRecords>) responseFuture2.get();
+        FetchResponse fetchResponse2 =
+            (FetchResponse) responseFuture2.get();
 
         checkFetchResponse(shuffledTopicPartitions2, fetchResponse2,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
@@ -836,8 +855,8 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
             offsetMaps);
         CompletableFuture<AbstractResponse> responseFuture3 = new CompletableFuture<>();
         kafkaRequestHandler.handleFetchRequest(fetchRequest3, responseFuture3);
-        FetchResponse<MemoryRecords> fetchResponse3 =
-            (FetchResponse<MemoryRecords>) responseFuture3.get();
+        FetchResponse fetchResponse3 =
+            (FetchResponse) responseFuture3.get();
 
         checkFetchResponse(shuffledTopicPartitions3, fetchResponse3,
             maxPartitionBytes, maxResponseBytes, messagesPerPartition);
@@ -895,7 +914,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         TopicPartition tp = new TopicPartition(topicName, 0);
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-            .forConsumer(false, IsolationLevel.READ_UNCOMMITTED)
+            .forConsumer(false, IsolationLevel.READ_UNCOMMITTED, false)
             .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -989,11 +1008,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 ApiKeys.PRODUCE.latestVersion(), produceRequestData));
         final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
         kafkaRequestHandler.handleProduceRequest(request, future);
-        final ProduceResponse.PartitionResponse response =
-                ((ProduceResponse) future.get()).responses().get(topicPartition);
+        final ProduceResponseData.PartitionProduceResponse response =
+                ((ProduceResponse) future.get()).data().responses()
+                        .stream()
+                        .filter(r->r.name().equals(topicPartition.topic()))
+                        .flatMap(r->r.partitionResponses().stream())
+                        .filter(p->p.index() == topicPartition.partition())
+                        .findFirst()
+                        .get();
         assertNotNull(response);
-        assertEquals(response.error, expectedError);
-        assertEquals(response.baseOffset, expectedOffset);
+        assertEquals(response.errorCode(), expectedError.code());
+        assertEquals(response.baseOffset(), expectedOffset);
     }
 
     private static MemoryRecords newIdempotentRecords(
@@ -1142,10 +1167,13 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         final int minBytes = 1;
 
         @Cleanup
-        final KafkaHeaderAndRequest request = buildRequest(FetchRequest.Builder.forConsumer(maxWaitMs, minBytes,
-                Collections.singletonMap(topicPartition, new FetchRequest.PartitionData(
+        final KafkaHeaderAndRequest request = buildRequest(FetchRequest.Builder
+                .forConsumer(ApiKeys.FETCH.oldestVersion(),
+                maxWaitMs, minBytes,
+                Collections.singletonMap(topicPartition, new FetchRequest.PartitionData(null,
                         0L, -1L, 1024 * 1024, Optional.empty()
                 ))));
+
         final CompletableFuture<AbstractResponse> future = new CompletableFuture<>();
         final long startTime = System.currentTimeMillis();
         kafkaRequestHandler.handleFetchRequest(request, future);
@@ -1157,11 +1185,10 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         AbstractResponse abstractResponse = ((ResponseCallbackWrapper)
                 future.get(maxWaitMs + 1000, TimeUnit.MILLISECONDS)).getResponse();
         assertTrue(abstractResponse instanceof FetchResponse);
-        final FetchResponse<MemoryRecords> response = (FetchResponse<MemoryRecords>) abstractResponse;
+        final FetchResponse response = (FetchResponse) abstractResponse;
         assertEquals(response.error(), Errors.NONE);
         final long endTime = System.currentTimeMillis();
-        log.info("Take {} ms to process FETCH request, record count: {}",
-                endTime - startTime, response.responseData().size());
+        log.info("Take {} ms to process FETCH request", endTime - startTime);
         assertTrue(endTime - startTime <= maxWaitMs);
 
         Long waitingFetchesTriggered = kafkaRequestHandler.getRequestStats().getWaitingFetchesTriggered().get();

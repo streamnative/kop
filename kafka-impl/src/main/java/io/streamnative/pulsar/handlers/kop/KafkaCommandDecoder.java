@@ -322,8 +322,17 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case DESCRIBE_GROUPS:
                         handleDescribeGroupRequest(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case DESCRIBE_PRODUCERS:
+                        handleDescribeProducersRequest(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case LIST_GROUPS:
                         handleListGroupsRequest(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case LIST_TRANSACTIONS:
+                        handleListTransactionsRequest(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case DESCRIBE_TRANSACTIONS:
+                        handleDescribeTransactionsRequest(kafkaHeaderAndRequest, responseFuture);
                         break;
                     case DELETE_GROUPS:
                         handleDeleteGroupsRequest(kafkaHeaderAndRequest, responseFuture);
@@ -465,7 +474,14 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                 request, response);
                     }
 
-                    final ByteBuf result = responseToByteBuf(response, request, true);
+                    final ByteBuf result;
+                    try {
+                        result = responseToByteBuf(response, request, true);
+                    } catch (Throwable error) {
+                        log.error("[{}] Failed to convert response {} to ByteBuf", channel, response, error);
+                        sendErrorResponse(request, channel, error, true);
+                        return;
+                    }
                     final int resultSize = result.readableBytes();
                     channel.writeAndFlush(result).addListener(future -> {
                         if (response instanceof ResponseCallbackWrapper) {
@@ -571,10 +587,21 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
-    handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup, CompletableFuture<AbstractResponse> response);
+    handleDescribeGroupRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                               CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeProducersRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                   CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleListGroupsRequest(KafkaHeaderAndRequest listGroups, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleListTransactionsRequest(KafkaHeaderAndRequest listGroups, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeTransactionsRequest(KafkaHeaderAndRequest listGroups, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleDeleteGroupsRequest(KafkaHeaderAndRequest deleteGroups, CompletableFuture<AbstractResponse> response);

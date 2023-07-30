@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static org.testng.Assert.assertEquals;
+
 import io.netty.buffer.ByteBuf;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -48,7 +50,7 @@ public class KafkaCommonTestUtils {
     public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,
                                                                           long logStartOffset,
                                                                           int maxBytes) {
-        return new FetchRequest.PartitionData(fetchOffset,
+        return new FetchRequest.PartitionData(null, fetchOffset,
                 logStartOffset,
                 maxBytes,
                 Optional.empty()
@@ -110,7 +112,12 @@ public class KafkaCommonTestUtils {
 
     public static KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
                                                                   SocketAddress serviceAddress) {
-        AbstractRequest request = builder.build(builder.apiKey().latestVersion());
+        return buildRequest(builder, serviceAddress, builder.latestAllowedVersion());
+    }
+    public static KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                SocketAddress serviceAddress, short version) {
+        AbstractRequest request = builder.build(version);
+        assertEquals(version, request.version());
         RequestHeader mockHeader = new RequestHeader(builder.apiKey(), request.version(), "dummy", 1233);
 
 

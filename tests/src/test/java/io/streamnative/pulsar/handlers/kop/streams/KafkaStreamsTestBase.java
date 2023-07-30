@@ -15,8 +15,8 @@ package io.streamnative.pulsar.handlers.kop.streams;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTime;
+import java.time.Duration;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.NonNull;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -83,7 +83,7 @@ public abstract class KafkaStreamsTestBase extends KopProtocolHandlerTestBase {
     @AfterMethod
     protected void cleanupTestCase() throws Exception {
         if (kafkaStreams != null) {
-            kafkaStreams.close(3, TimeUnit.SECONDS);
+            kafkaStreams.close(Duration.ofSeconds(3));
             TestUtils.purgeLocalStreamsState(streamsConfiguration);
         }
     }

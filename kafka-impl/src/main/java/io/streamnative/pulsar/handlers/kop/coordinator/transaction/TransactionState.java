@@ -117,4 +117,26 @@ public enum TransactionState {
                 return false;
         }
     }
+
+    public org.apache.kafka.clients.admin.TransactionState toAdminState() {
+        switch (this) {
+            case EMPTY:
+                return org.apache.kafka.clients.admin.TransactionState.EMPTY;
+            case ONGOING:
+                return org.apache.kafka.clients.admin.TransactionState.ONGOING;
+            case PREPARE_COMMIT:
+                return org.apache.kafka.clients.admin.TransactionState.PREPARE_COMMIT;
+            case PREPARE_ABORT:
+                return org.apache.kafka.clients.admin.TransactionState.PREPARE_ABORT;
+            case COMPLETE_COMMIT:
+                return org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT;
+            case COMPLETE_ABORT:
+                return org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT;
+            case PREPARE_EPOCH_FENCE:
+                return org.apache.kafka.clients.admin.TransactionState.PREPARE_EPOCH_FENCE;
+            case DEAD:
+            default:
+                return org.apache.kafka.clients.admin.TransactionState.UNKNOWN;
+        }
+    }
 }
