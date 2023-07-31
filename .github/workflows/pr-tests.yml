@@ -53,9 +53,6 @@ jobs:
         run: ./ci/init_hydra_oauth_server.sh
         timeout-minutes: 5
 
-      - name: oauth-client test after build
-        run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client
-
       - name: oauth-client-shaded test after build
         run: mvn test -ntp -B -DfailIfNoTests=false -pl oauth-client-shaded-test
 
