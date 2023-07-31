@@ -173,6 +173,16 @@ This section lists configurations about the authentication.
 | saslAllowedMechanisms                | A set of supported SASL mechanisms exposed by the broker.     | PLAIN,<br>OAUTHBEARER |         |
 | kopOauth2AuthenticateCallbackHandler | The fully qualified name of a SASL server callback handler class that implements the <br>AuthenticateCallbackHandler interface, which is used for OAuth2 authentication. <br>If it is not set, the class will be Kafka's default server callback handler for <br>OAUTHBEARER mechanism: OAuthBearerUnsecuredValidatorCallbackHandler. |                       |         |
 
+
+## Authorization
+
+This section lists configurations about the authorization.
+
+| Name                                      | Description                                                                                            | Range       | Default |
+|-------------------------------------------|--------------------------------------------------------------------------------------------------------|-------------|---------|
+| kafkaEnableAuthorizationForceGroupIdCheck | Whether to enable authorization force group ID check. Note: It only support for OAuth2 authentication. | true, false | false   |
+
+
 ## SSL encryption
 
 |Name|Description|Default|
