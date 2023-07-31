@@ -15,7 +15,7 @@ The following figure illustrates how the Kafka-on-Pulsar protocol handler is imp
 
 ![](docs/kop-architecture.png)
 
-# Version compatibility
+## Version compatibility
 
 The version of KoP `x.y.z.m` conforms to Pulsar `x.y.z`, while `m` is the patch version number. KoP might also be compatible with older patched versions, but it's not guaranteed. See [upgrade.md](./docs/upgrade.md) for details.
 
@@ -26,7 +26,7 @@ kafkaTransactionCoordinatorEnabled=true
 brokerDeduplicationEnabled=true
 ```
 
-# How to use KoP
+## How to use KoP
 You can configure and manage KoP based on your requirements. Check the following guides for more details.
 -   [Quick Start](docs/kop.md)
 -   [Configure KoP](docs/configuration.md)
@@ -36,7 +36,7 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [Schema Registry](docs/schema.md)
 -   [Implementation: How to converse Pulsar and Kafka](docs/implementation.md)
 
-# Project Maintainers
+## Project Maintainers
 
 -   [@aloyszhang](https://github.com/aloyszhang)
 -   [@BewareMyPower](https://github.com/BewareMyPower)
@@ -47,3 +47,11 @@ You can configure and manage KoP based on your requirements. Check the following
 -   [@PierreZ](https://github.com/PierreZ)
 -   [@wenbingshen](https://github.com/wenbingshen)
 -   [@wuzhanpeng](https://github.com/wuzhanpeng)
+
+## License
+
+This library is licensed under the terms of the [Apache License 2.0](LICENSE) and may include packages written by third parties which carry their own copyright notices and license terms.
+
+## About StreamNative
+
+Founded in 2019 by the original creators of Apache Pulsar, [StreamNative](https://streamnative.io/) is one of the leading contributors to the open-source Apache Pulsar project. We have helped engineering teams worldwide make the move to Pulsar with [StreamNative Cloud](https://streamnative.io/product), a fully managed service to help teams accelerate time-to-production.
