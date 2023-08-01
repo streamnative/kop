@@ -17,9 +17,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import lombok.Getter;
 
@@ -41,7 +46,7 @@ public class ClientConfig {
     public static final String OAUTH_SCOPE = "oauth.scope";
 
     private final URL issuerUrl;
-    private final URL credentialsUrl;
+    private final io.streamnative.pulsar.handlers.kop.security.oauth.url.URL credentialsUrl;
     private final String audience;
     private final String scope;
     private final ClientInfo clientInfo;
@@ -63,21 +68,45 @@ public class ClientConfig {
             throw new IllegalArgumentException("no key for " + OAUTH_CREDENTIALS_URL);
         }
         try {
-            this.credentialsUrl = new URL(credentialsUrlString);
-        } catch (MalformedURLException e) {
+            this.credentialsUrl = new io.streamnative.pulsar.handlers.kop.security.oauth.url.URL(credentialsUrlString);
+        } catch (MalformedURLException | URISyntaxException | InstantiationException | IllegalAccessException e) {
             throw new IllegalArgumentException(String.format(
                     "invalid %s \"%s\": %s", OAUTH_CREDENTIALS_URL, credentialsUrlString, e.getMessage()));
         }
         try {
-            final URLConnection connection = getCredentialsUrl().openConnection();
-            try (InputStream inputStream = connection.getInputStream()) {
-                this.clientInfo = CLIENT_INFO_READER.readValue(inputStream);
-            }
+            this.clientInfo = ClientConfig.loadClientInfo(credentialsUrlString);
         } catch (IOException e) {
             throw new IllegalArgumentException(String.format(
                     "failed to load client credentials from %s: %s", credentialsUrlString, e.getMessage()));
         }
         this.audience = configs.getOrDefault(OAUTH_AUDIENCE, null);
         this.scope = configs.getOrDefault(OAUTH_SCOPE, null);
+    }
+
+    private static ClientInfo loadClientInfo(String credentialsUrl) throws IOException {
+        try {
+            URLConnection urlConnection = new io.streamnative.pulsar.handlers.kop.security.oauth.url.URL(credentialsUrl)
+                    .openConnection();
+            try {
+                String protocol = urlConnection.getURL().getProtocol();
+                String contentType = urlConnection.getContentType();
+                if ("data".equals(protocol) && !"application/json".equals(contentType)) {
+                    throw new IllegalArgumentException(
+                            "Unsupported media type or encoding format: " + urlConnection.getContentType());
+                }
+                ClientInfo privateKey;
+                try (Reader r = new InputStreamReader((InputStream) urlConnection.getContent(),
+                        StandardCharsets.UTF_8)) {
+                    privateKey = CLIENT_INFO_READER.readValue(r);
+                }
+                return privateKey;
+            } finally {
+                if (urlConnection instanceof HttpURLConnection) {
+                    ((HttpURLConnection) urlConnection).disconnect();
+                }
+            }
+        } catch (URISyntaxException | InstantiationException | IllegalAccessException e) {
+            throw new IOException("Invalid credentialsUrl format", e);
+        }
     }
 }

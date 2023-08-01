@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -89,7 +90,46 @@ public class ClientConfigTest {
             ClientConfigHelper.create("https://issuer-url.com", "xxx");
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
-            Assert.assertTrue(e.getMessage().startsWith("invalid " + ClientConfig.OAUTH_CREDENTIALS_URL + " \"xxx\""));
+            Assert.assertTrue(e.getMessage().startsWith("failed to load client credentials from xxx"));
         }
+
+        try {
+            ClientConfigHelper.create("https://issuer-url.com", "data:application/json;base64,xxx");
+        } catch (IllegalArgumentException e) {
+            System.out.println(e.getMessage());
+            Assert.assertTrue(e.getMessage()
+                    .startsWith("failed to load client credentials from data:application/json;base64"));
+        }
+
+        try {
+            ClientConfigHelper.create("https://issuer-url.com", "data:application/json;base64");
+        } catch (IllegalArgumentException e) {
+            System.out.println(e.getMessage());
+            Assert.assertTrue(e.getMessage()
+                    .startsWith("Unsupported media type or encoding format"));
+        }
+    }
+
+    @Test
+    public void testBase64Url() {
+        String json = "{\n"
+                + "  \"client_id\": \"my-id\",\n"
+                + "  \"client_secret\": \"my-secret\",\n"
+                + "  \"tenant\": \"my-tenant\"\n"
+                + "}\n";
+
+        String credentialsUrlData = "data:application/json;base64,"
+                + new String(Base64.getEncoder().encode(json.getBytes()));
+
+        final ClientConfig clientConfig = ClientConfigHelper.create(
+                "https://issuer-url.com",
+                credentialsUrlData,
+                "audience"
+        );
+        Assert.assertEquals(clientConfig.getIssuerUrl().toString(), "https://issuer-url.com");
+        Assert.assertEquals(clientConfig.getCredentialsUrl().toString(), credentialsUrlData);
+        Assert.assertEquals(clientConfig.getAudience(), "audience");
+        Assert.assertEquals(clientConfig.getClientInfo(),
+                new ClientInfo("my-id", "my-secret", "my-tenant", null));
     }
 }
