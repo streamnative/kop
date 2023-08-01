@@ -84,88 +84,88 @@ jobs:
       matrix:
         test: [
           {
-            name: "admin test",
+            name: "admin_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.admin.*Test' -pl tests"
             ]
           },
           {
-            name: "compatibility test",
+            name: "compatibility_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility.*Test' -pl tests",
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.compatibility..*.*Test' -pl tests"
             ]
           },
           {
-            name: "coordinator test",
+            name: "coordinator_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.coordinator.*Test' -pl tests",
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.coordinator..*.*Test' -pl tests"
             ]
           },
           {
-            name: "end to end test",
+            name: "end_to_end_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.e2e.*Test' -pl tests"
             ]
           },
           {
-            name: "format test",
+            name: "format_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.format.*Test' -pl tests"
             ]
           },
           {
-            name: "metadata test",
+            name: "metadata_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.metadata.*Test' -pl tests"
             ]
           },
           {
-            name: "metrics test",
+            name: "metrics_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.metrics.*Test' -pl tests"
             ]
           },
           {
-            name: "producer test",
+            name: "producer_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.producer.*Test' -pl tests"
             ]
           },
           {
-            name: "schema test",
+            name: "schema_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.*Test' -pl tests"
             ]
           },
           {
-            name: "security test",
+            name: "security_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.security.*Test' -pl tests",
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.security.*.*Test' -pl tests"
             ]
           },
           {
-            name: "storage test",
+            name: "storage_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.storage.*Test' -pl tests"
             ]
           },
           {
-            name: "streams test",
+            name: "streams_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.streams.*Test' -pl tests"
             ]
           },
           {
-            name: "util test",
+            name: "util_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.util.timer.*Test' -pl tests"
             ]
           },
           {
-            name: "other test",
+            name: "other_test",
             scripts: [
               "mvn test -ntp -B -DfailIfNoTests=false '-Dtest=io.streamnative.pulsar.handlers.kop.*Test' -pl tests"
             ]
@@ -211,14 +211,14 @@ jobs:
           rm -rf artifacts
           mkdir artifacts
           find . -type d -name "*surefire*" -exec cp --parents -R {} artifacts/ \;
-          zip -r artifacts.zip artifacts
+          zip -r "artifacts-${{ matrix.test.name }}.zip" artifacts
 
       - uses: actions/upload-artifact@master
         name: upload surefire-artifacts
         if: failure()
         with:
-          name: surefire-artifacts
-          path: artifacts.zip
+          name: "surefire-artifacts-${{ matrix.test.name }}"
+          path: "artifacts-${{ matrix.test.name }}.zip"
 
   unit-test-check:
     name: Unit Test Check
