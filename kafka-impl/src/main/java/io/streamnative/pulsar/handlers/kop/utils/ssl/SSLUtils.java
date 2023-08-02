@@ -257,9 +257,10 @@ public class SSLUtils {
         return engine;
     }
 
-    public static SSLEngine createClientSslEngine(SslContextFactory.Client sslContextFactory) throws Exception {
+    public static SSLEngine createClientSslEngine(SslContextFactory.Client sslContextFactory,
+                                                  String host, int port) throws Exception {
         sslContextFactory.start();
-        SSLEngine engine  = sslContextFactory.newSSLEngine();
+        SSLEngine engine  = sslContextFactory.newSSLEngine(host, port);
         engine.setUseClientMode(true);
 
         return engine;
