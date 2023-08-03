@@ -78,6 +78,7 @@ import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.FetchRequest;
@@ -1018,7 +1019,17 @@ public class PartitionLog {
             batch.ensureValid();
             shallowMessageCount += 1;
             validBytesCount += batchSize;
-            numMessages += (batch.lastOffset() - batch.baseOffset() + 1);
+
+            int numMessagesInBatch = (int) (batch.lastOffset() - batch.baseOffset() + 1);
+            if (numMessagesInBatch <= 1) {
+                // The lastOffset field might be set. We need to iterate the records.
+                for (Record record : batch) {
+                    numMessages++;
+                }
+            } else {
+                numMessages += numMessagesInBatch;
+            }
+
             isTransaction = batch.isTransactional();
             isControlBatch = batch.isControlBatch();
 
