@@ -122,6 +122,7 @@ public class ProducerStateManager {
         return result;
     }
 
+    @VisibleForTesting
     public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot(Executor executor) {
         CompletableFuture<ProducerStateManagerSnapshot> result = new CompletableFuture<>();
         executor.execute(new SafeRunnable() {
@@ -139,8 +140,10 @@ public class ProducerStateManager {
                             if (error != null) {
                                 result.completeExceptionally(error);
                             } else {
-                                log.info("Snapshot for {} ({}) taken at offset {}",
-                                        topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Snapshot for {} ({}) taken at offset {}",
+                                            topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                                }
                                 result.complete(snapshot);
                             }
                         });
@@ -169,7 +172,7 @@ public class ProducerStateManager {
 
     void updateAbortedTxnsPurgeOffset(long abortedTxnsPurgeOffset) {
         if (log.isDebugEnabled()) {
-            log.debug("{} updateAbortedTxnsPurgeOffset {}", topicPartition, abortedTxnsPurgeOffset);
+            log.debug("{} updateAbortedTxnsPurgeOffset offset={}", topicPartition, abortedTxnsPurgeOffset);
         }
         if (abortedTxnsPurgeOffset < 0) {
             return;
@@ -183,7 +186,11 @@ public class ProducerStateManager {
         }
         long now = System.currentTimeMillis();
         long deltaFromLast = (now - lastPurgeAbortedTxnTime) / 1000;
-        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+        if (log.isDebugEnabled()) {
+            log.debug("maybePurgeAbortedTx deltaFromLast {} vs kafkaTxnPurgeAbortedTxnIntervalSeconds {} ",
+                    deltaFromLast, kafkaTxnPurgeAbortedTxnIntervalSeconds);
+        }
+        if (deltaFromLast < kafkaTxnPurgeAbortedTxnIntervalSeconds) {
             return 0;
         }
         lastPurgeAbortedTxnTime = now;
@@ -318,6 +325,10 @@ public class ProducerStateManager {
                 if (toRemove) {
                     log.info("Transaction {} can be removed (lastOffset {} < {})", tx, tx.lastOffset(), offset);
                     count.incrementAndGet();
+                } else {
+                    if (log.isDebugEnabled()) {
+                        log.info("Transaction {} cannot be removed (lastOffset >= {})", tx, tx.lastOffset(), offset);
+                    }
                 }
                 return toRemove;
             });

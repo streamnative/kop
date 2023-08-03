@@ -46,6 +46,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
@@ -138,6 +139,8 @@ public class PartitionLog {
 
     private volatile String kafkaTopicUUID;
 
+    private volatile AtomicBoolean unloaded = new AtomicBoolean();
+
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         RequestStats requestStats,
                         Time time,
@@ -190,6 +193,10 @@ public class PartitionLog {
 
     public boolean isInitialisationFailed() {
         return initFuture.isDone() && initFuture.isCompletedExceptionally();
+    }
+
+    public void markAsUnloaded() {
+        unloaded.set(true);
     }
 
     private CompletableFuture<Void> loadTopicProperties() {
@@ -1080,6 +1087,10 @@ public class PartitionLog {
             // nothing to do
             return CompletableFuture.completedFuture(null);
         }
+        if (unloaded.get()) {
+            // nothing to do
+            return CompletableFuture.completedFuture(null);
+        }
         return fetchOldestAvailableIndexFromTopic()
                 .thenAccept(offset ->
                     producerStateManager.updateAbortedTxnsPurgeOffset(offset));
@@ -1087,6 +1098,10 @@ public class PartitionLog {
     }
 
     public CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
+        if (unloaded.get()) {
+            return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
+        }
+
         final CompletableFuture<Long> future = new CompletableFuture<>();
 
         // The future that is returned by getTopicConsumerManager is always completed normally
@@ -1102,8 +1117,9 @@ public class PartitionLog {
             }
         });
 
-        ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
-        if (managedLedger.getNumberOfEntries() == 0) {
+        ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) persistentTopic.getManagedLedger();
+        long numberOfEntries = managedLedger.getNumberOfEntries();
+        if (numberOfEntries == 0) {
             long currentOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
             log.info("First offset for topic {} is {} as the topic is empty (numberOfEntries=0)",
                     fullPartitionName, currentOffset);
@@ -1111,6 +1127,7 @@ public class PartitionLog {
 
             return future;
         }
+
         // this is a DUMMY entry with -1
         PositionImpl firstPosition = managedLedger.getFirstPosition();
         // look for the first entry with data
@@ -1141,6 +1158,7 @@ public class PartitionLog {
 
     }
 
+    @VisibleForTesting
     public CompletableFuture<?> takeProducerSnapshot() {
         return initFuture.thenCompose((___)  -> {
             // snapshot can be taken only on the same thread that is used for writes
@@ -1152,6 +1170,7 @@ public class PartitionLog {
         });
     }
 
+    @VisibleForTesting
     public CompletableFuture<Long> forcePurgeAbortTx() {
         return initFuture.thenCompose((___)  -> {
             // purge can be taken only on the same thread that is used for writes
@@ -1365,4 +1384,7 @@ public class PartitionLog {
         }
     }
 
+    public boolean isUnloaded() {
+        return unloaded.get();
+    }
 }

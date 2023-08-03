@@ -350,8 +350,10 @@ public class TransactionCoordinator {
                     new TransactionStateManager.ResponseCallback() {
                         @Override
                         public void complete() {
-                            log.info("Initialized transactionalId {} with producerId {} and producer "
-                                            + "epoch {} on partition {}-{}", transactionalId,
+                            log.info("{} Initialized transactionalId {} with producerId {} and producer "
+                                            + "epoch {} on partition {}-{}",
+                                    namespacePrefixForMetadata,
+                                    transactionalId,
                                     newMetadata.getProducerId(), newMetadata.getProducerEpoch(),
                                     Topic.TRANSACTION_STATE_TOPIC_NAME,
                                     txnManager.partitionFor(transactionalId));
@@ -363,8 +365,8 @@ public class TransactionCoordinator {
 
                         @Override
                         public void fail(Errors errors) {
-                            log.info("Returning {} error code to client for {}'s InitProducerId "
-                                    + "request", errors, transactionalId);
+                            log.info("{} Returning {} error code to client for {}'s InitProducerId "
+                                    + "request", namespacePrefixForMetadata, errors, transactionalId);
                             responseCallback.accept(initTransactionError(errors));
                         }
                     }, errors -> true);
@@ -406,7 +408,13 @@ public class TransactionCoordinator {
             Optional<ProducerIdAndEpoch> expectedProducerIdAndEpoch) {
         CompletableFuture<Either<Errors, EpochAndTxnTransitMetadata>> resultFuture = new CompletableFuture<>();
         if (txnMetadata.pendingTransitionInProgress()) {
-            // return a retriable exception to let the client backoff and retry
+            // return a retryable exception to let the client backoff and retry
+            // it is okay to log this here, this is not on the write path
+            // the client calls initProducer only at bootstrap
+            log.info("{} Failed initProducer for {}, pending transition to {}. {}",
+                    namespacePrefixForMetadata,
+                    transactionalId, txnMetadata.getPendingState(),
+                    txnMetadata);
             resultFuture.complete(Either.left(Errors.CONCURRENT_TRANSACTIONS));
             return resultFuture;
         }
@@ -602,8 +610,8 @@ public class TransactionCoordinator {
         }
 
         if (!isFromClient) {
-            log.info("endTransaction - before endTxnPreAppend {} metadata {}",
-                    transactionalId, epochAndMetadata.get().getTransactionMetadata());
+            log.info("{} endTransaction - before endTxnPreAppend {} metadata {}",
+                    namespacePrefixForMetadata, transactionalId, epochAndMetadata.get().getTransactionMetadata());
         }
 
         Either<Errors, TxnTransitMetadata> preAppendResult = endTxnPreAppend(
@@ -630,14 +638,16 @@ public class TransactionCoordinator {
                     public void fail(Errors errors) {
 
                         if (!isFromClient) {
-                            log.info("endTransaction - AFTER failed appendTransactionToLog {} metadata {}"
+                            log.info("{} endTransaction - AFTER failed appendTransactionToLog {} metadata {}"
                                             +  "isEpochFence {}",
+                                    namespacePrefixForMetadata,
                                     transactionalId, epochAndMetadata.get().getTransactionMetadata(), isEpochFence);
                         }
 
-                        log.info("Aborting sending of transaction markers and returning {} error to client for {}'s "
+                        log.info("{} Aborting sending of transaction markers and returning {} error to client for {}'s "
                                 + "EndTransaction request of {}, since appending {} to transaction log with "
-                                + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
+                                + "coordinator epoch {} failed",
+                                namespacePrefixForMetadata, errors, transactionalId, txnMarkerResult,
                                 preAppendResult.getRight(), coordinatorEpoch);
 
                         if (isEpochFence.get()) {
@@ -844,8 +854,9 @@ public class TransactionCoordinator {
         }
 
         if (errorsOrPreSendResult.isLeft()) {
-            log.info("Aborting sending of transaction markers after appended {} to transaction log "
+            log.info("{} Aborting sending of transaction markers after appended {} to transaction log "
                             + "and returning {} error to client for {}'s EndTransaction request",
+                    namespacePrefixForMetadata,
                     transactionalId, txnMarkerResult, errorsOrPreSendResult.getLeft());
             callback.accept(errorsOrPreSendResult.getLeft());
             return;
@@ -915,7 +926,7 @@ public class TransactionCoordinator {
      * Startup logic executed at the same time when the server starts up.
      */
     public CompletableFuture<Void> startup(boolean enableTransactionalIdExpiration) {
-        log.info("Starting up transaction coordinator ...");
+        log.info("{} Starting up transaction coordinator ...", namespacePrefixForMetadata);
 
         // Abort timeout transactions
         scheduler.scheduleAtFixedRate(
@@ -928,7 +939,7 @@ public class TransactionCoordinator {
         txnManager.startup(enableTransactionalIdExpiration);
 
         return this.producerIdManager.initialize().thenCompose(ignored -> {
-            log.info("Startup transaction coordinator complete.");
+            log.info("{} Startup transaction coordinator complete.", namespacePrefixForMetadata);
             return CompletableFuture.completedFuture(null);
         });
     }
@@ -938,14 +949,13 @@ public class TransactionCoordinator {
      * Ordering of actions should be reversed from the startup process.
      */
     public void shutdown() {
-        log.info("Shutting down transaction coordinator ...");
+        log.info("{} Shutting down transaction coordinator ...", namespacePrefixForMetadata);
         producerIdManager.shutdown();
         txnManager.shutdown();
         transactionMarkerChannelManager.close();
         producerStateManagerSnapshotBuffer.shutdown();
         scheduler.shutdown();
-        // TODO shutdown txn
-        log.info("Shutdown transaction coordinator complete.");
+        log.info("{} Shutdown transaction coordinator complete.", namespacePrefixForMetadata);
     }
 
 }

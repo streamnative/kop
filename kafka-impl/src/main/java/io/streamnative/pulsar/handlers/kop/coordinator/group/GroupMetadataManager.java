@@ -911,8 +911,13 @@ public class GroupMetadataManager {
         TopicPartition topicPartition = new TopicPartition(
             GROUP_METADATA_TOPIC_NAME, offsetsPartition
         );
-        log.info("Scheduling unloading of offsets and group metadata from {}", topicPartition);
-        scheduler.submit(() -> removeGroupsAndOffsets(offsetsPartition, onGroupUnloaded));
+
+        if (scheduler.isShutdown()) {
+            log.info("Broker is shutting down, skip unloading of offsets and group metadata from {}", topicPartition);
+        } else {
+            log.info("Scheduling unloading of offsets and group metadata from {}", topicPartition);
+            scheduler.submit(() -> removeGroupsAndOffsets(offsetsPartition, onGroupUnloaded));
+        }
     }
 
 

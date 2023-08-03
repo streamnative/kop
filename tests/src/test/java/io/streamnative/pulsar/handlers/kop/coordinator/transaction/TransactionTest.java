@@ -13,10 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static org.apache.kafka.clients.CommonClientConfigs.CLIENT_ID_CONFIG;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
@@ -27,6 +30,8 @@ import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshot;
+import io.streamnative.pulsar.handlers.kop.storage.TxnMetadata;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -39,6 +44,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -1155,6 +1161,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             // very long time-out
             producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, 600 * 1000);
         }
+        producerProps.put(CLIENT_ID_CONFIG, "dummy_client_" + UUID.randomUUID());
         addCustomizeProps(producerProps);
 
         return new KafkaProducer<>(producerProps);
@@ -1318,6 +1325,168 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer1.close();
         producer2.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testSnapshotEventuallyTaken() throws Exception {
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+        int kafkaTxnPurgeAbortedTxnIntervalSeconds = conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds();
+        conf.setKafkaTxnProducerStateTopicSnapshotIntervalSeconds(2);
+        try {
+            String topicName = "testSnapshotEventuallyTaken";
+            TopicName topicName1 = TopicName.get(topicName);
+            String fullTopicName = topicName1.getPartition(0).toString();
+            String transactionalId = "myProducer_" + UUID.randomUUID();
+
+            @Cleanup
+            AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1)));
+
+            // no snapshot initially
+            assertNull(protocolHandler.getTransactionCoordinator(tenant)
+                    .getProducerStateManagerSnapshotBuffer()
+                    .readLatestSnapshot(fullTopicName)
+                    .get());
+
+            final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
+
+            producer1.initTransactions();
+            producer1.beginTransaction();
+            producer1.send(new ProducerRecord<>(topicName, "test")); // OFFSET 0
+            producer1.commitTransaction(); // OFFSET 1
+
+            producer1.beginTransaction();
+            producer1.send(new ProducerRecord<>(topicName, "test")); // OFFSET 2 - first offset
+            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 3
+
+            Thread.sleep(conf.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() * 1000 + 5);
+
+            // sending a message triggers the creation of the snapshot
+            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 4
+
+            // snapshot is written and sent to Pulsar async and also the ProducerStateManagerSnapshotBuffer
+            // reads it asynchronously
+
+            Awaitility
+                    .await()
+                    .pollDelay(5, TimeUnit.SECONDS)
+                    .untilAsserted(() -> {
+                ProducerStateManagerSnapshot snapshot = protocolHandler.getTransactionCoordinator(tenant)
+                        .getProducerStateManagerSnapshotBuffer()
+                        .readLatestSnapshot(fullTopicName)
+                        .get();
+
+                assertNotNull(snapshot);
+                assertEquals(4, snapshot.getOffset());
+                assertEquals(1, snapshot.getProducers().size());
+                assertEquals(1, snapshot.getOngoingTxns().size());
+                assertNotNull(snapshot.getTopicUUID());
+                TxnMetadata txnMetadata = snapshot.getOngoingTxns().values().iterator().next();
+                assertEquals(txnMetadata.firstOffset(), 2);
+            });
+
+            producer1.close();
+        } finally {
+            conf.setKafkaTxnProducerStateTopicSnapshotIntervalSeconds(kafkaTxnPurgeAbortedTxnIntervalSeconds);
+        }
+    }
+
+    @Test(timeOut = 30000)
+    public void testAbortedTxEventuallyPurged() throws Exception {
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+        int kafkaTxnPurgeAbortedTxnIntervalSeconds = conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds();
+        conf.setKafkaTxnPurgeAbortedTxnIntervalSeconds(2);
+        try {
+            String topicName = "testAbortedTxEventuallyPurged";
+            TopicName topicName1 = TopicName.get(topicName);
+            String fullTopicName = topicName1.getPartition(0).toString();
+            String transactionalId = "myProducer_" + UUID.randomUUID();
+            TopicPartition topicPartition = new TopicPartition(topicName, 0);
+            String namespacePrefix = topicName1.getNamespace();
+
+            @Cleanup
+            AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1)));
+
+            final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
+
+            producer1.initTransactions();
+            producer1.beginTransaction();
+            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 0
+            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 1
+            producer1.abortTransaction(); // OFFSET 2
+
+            producer1.beginTransaction();
+            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 3
+            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 4
+            producer1.abortTransaction(); // OFFSET 5
+
+            waitForTransactionsToBeInStableState(transactionalId);
+
+            PartitionLog partitionLog = protocolHandler
+                    .getReplicaManager()
+                    .getPartitionLog(topicPartition, namespacePrefix);
+            partitionLog.awaitInitialisation().get();
+
+            List<FetchResponse.AbortedTransaction> abortedIndexList =
+                    partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+            assertEquals(2, abortedIndexList.size());
+            assertEquals(2, abortedIndexList.size());
+            assertEquals(0, abortedIndexList.get(0).firstOffset);
+            assertEquals(3, abortedIndexList.get(1).firstOffset);
+
+            takeSnapshot(topicName);
+
+
+            assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
+            // unload and reload in order to have at least 2 ledgers in the
+            // topic, this way we can drop the head ledger
+            admin.namespaces().unload(namespacePrefix);
+            admin.lookups().lookupTopic(fullTopicName);
+
+            assertTrue(partitionLog.isUnloaded());
+
+            trimConsumedLedgers(fullTopicName);
+
+            partitionLog = protocolHandler
+                    .getReplicaManager()
+                    .getPartitionLog(topicPartition, namespacePrefix);
+            partitionLog.awaitInitialisation().get();
+            assertEquals(5, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
+            abortedIndexList =
+                    partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+            assertEquals(2, abortedIndexList.size());
+            assertEquals(0, abortedIndexList.get(0).firstOffset);
+            assertEquals(3, abortedIndexList.get(1).firstOffset);
+
+            // force reading the minimum valid offset
+            // the timer is not started by the PH because
+            // we don't want it to make noise in the other tests
+            partitionLog.updatePurgeAbortedTxnsOffset().get();
+
+            // wait for some time
+            Thread.sleep(conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds() * 1000 + 5);
+
+            producer1.beginTransaction();
+            // sending a message triggers the procedure
+            producer1.send(new ProducerRecord<>(topicName, "test")).get();
+
+            abortedIndexList =
+                    partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+            assertEquals(1, abortedIndexList.size());
+            // the second TX cannot be purged because the lastOffset is 5, that is the boundary of the
+            // trimmed portion of the topic
+            assertEquals(3, abortedIndexList.get(0).firstOffset);
+
+            producer1.close();
+
+        } finally {
+            conf.setKafkaTxnPurgeAbortedTxnIntervalSeconds(kafkaTxnPurgeAbortedTxnIntervalSeconds);
+        }
     }
 
     /**
