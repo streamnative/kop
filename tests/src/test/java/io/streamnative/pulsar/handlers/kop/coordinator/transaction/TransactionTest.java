@@ -1430,12 +1430,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                     .getPartitionLog(topicPartition, namespacePrefix);
             partitionLog.awaitInitialisation().get();
 
-            List<FetchResponse.AbortedTransaction> abortedIndexList =
+            List<FetchResponseData.AbortedTransaction> abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
             assertEquals(2, abortedIndexList.size());
             assertEquals(2, abortedIndexList.size());
-            assertEquals(0, abortedIndexList.get(0).firstOffset);
-            assertEquals(3, abortedIndexList.get(1).firstOffset);
+            assertEquals(0, abortedIndexList.get(0).firstOffset());
+            assertEquals(3, abortedIndexList.get(1).firstOffset());
 
             takeSnapshot(topicName);
 
@@ -1460,8 +1460,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
             assertEquals(2, abortedIndexList.size());
-            assertEquals(0, abortedIndexList.get(0).firstOffset);
-            assertEquals(3, abortedIndexList.get(1).firstOffset);
+            assertEquals(0, abortedIndexList.get(0).firstOffset());
+            assertEquals(3, abortedIndexList.get(1).firstOffset());
 
             // force reading the minimum valid offset
             // the timer is not started by the PH because
@@ -1480,7 +1480,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             assertEquals(1, abortedIndexList.size());
             // the second TX cannot be purged because the lastOffset is 5, that is the boundary of the
             // trimmed portion of the topic
-            assertEquals(3, abortedIndexList.get(0).firstOffset);
+            assertEquals(3, abortedIndexList.get(0).firstOffset());
 
             producer1.close();
 
