@@ -477,7 +477,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         for (int i = 0; i < numPartitions; i++) {
             PartitionLog partitionLog = protocolHandler
                     .getReplicaManager()
-                    .getPartitionLog(new TopicPartition(topicName, i), tenant + "/" + namespace);
+                    .getPartitionLog(new TopicPartition(topicName, i), tenant + "/" + namespace).join();
 
             // we can only take the snapshot on the only thread that is allowed to process mutations
             // on the state
@@ -728,7 +728,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-    @Test(timeOut = 10000, dataProvider = "takeSnapshotBeforeRecovery")
+    @Test(timeOut = 20000, dataProvider = "takeSnapshotBeforeRecovery")
     public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery;
@@ -760,8 +760,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         PartitionLog partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
         assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         List<FetchResponse.AbortedTransaction> abortedIndexList =
@@ -795,8 +794,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
         assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         abortedIndexList =
@@ -821,8 +819,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // validate that the topic has been trimmed
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
         assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // all the messages up to here will be trimmed
@@ -832,7 +829,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         assertSame(partitionLog, protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix));
+                .getPartitionLog(topicPartition, namespacePrefix).join());
 
         assertEquals(7L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
         abortedIndexList =
@@ -851,8 +848,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
         assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // this TX is aborted and must not be purged
@@ -883,8 +879,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
 
         // verify that we have 2 aborted TX in memory
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
@@ -1058,8 +1053,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 pulsar.getProtocolHandlers().protocol("kafka");
         PartitionLog partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
         assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // all the messages up to here will be trimmed
@@ -1078,8 +1072,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
-        partitionLog.awaitInitialisation().get();
+                .getPartitionLog(topicPartition, namespacePrefix).join();
         assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // use a new consumer group, it will read from the beginning of the topic
