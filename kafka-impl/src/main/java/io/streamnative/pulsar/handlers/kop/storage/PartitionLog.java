@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicInitializeException;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
@@ -165,7 +166,7 @@ public class PartitionLog {
     public CompletableFuture<PartitionLog> initialise() {
         loadTopicProperties().whenComplete((___, errorLoadTopic) -> {
             if (errorLoadTopic != null) {
-                initFuture.completeExceptionally(errorLoadTopic);
+                initFuture.completeExceptionally(new KoPTopicInitializeException(errorLoadTopic));
                 return;
             }
             if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
@@ -173,7 +174,7 @@ public class PartitionLog {
                         .recover(this, recoveryExecutor)
                         .thenRun(() -> initFuture.complete(this))
                         .exceptionally(error -> {
-                            initFuture.completeExceptionally(error);
+                            initFuture.completeExceptionally(new KoPTopicInitializeException(error));
                             return null;
                         });
             } else {

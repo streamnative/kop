@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils.buildOffsetFetchResponse;
+import static io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils.newCoordinator;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -1005,10 +1006,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             log.error("[{}] Request {}: Error while find coordinator.",
                                     ctx.channel(), findCoordinator.getHeader(), throwable);
                             findSingleCoordinatorResult.complete(
-                                    new FindCoordinatorResponseData.Coordinator()
-                                            .setErrorCode(Errors.LEADER_NOT_AVAILABLE.code())
-                                            .setErrorMessage(Errors.LEADER_NOT_AVAILABLE.message())
-                                            .setKey(coordinatorKey));
+                                    newCoordinator(Errors.LEADER_NOT_AVAILABLE, null, coordinatorKey));
                             return;
                         }
 
@@ -1017,35 +1015,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     ctx.channel(), result.node, request.data().key(), partition);
                         }
                         findSingleCoordinatorResult.complete(
-                                new FindCoordinatorResponseData.Coordinator()
-                                        .setNodeId(result.node.id())
-                                        .setHost(result.node.host())
-                                        .setPort(result.node.port())
-                                        .setErrorCode(result.error.code())
-                                        .setErrorMessage(result.error.message())
-                                        .setKey(coordinatorKey));
+                                newCoordinator(result.error, result.node, coordinatorKey));
                     });
         } else if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.GROUP.id()) {
-            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.GROUP, request.data().key()))
+            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.GROUP, coordinatorKey))
                     .whenComplete((isAuthorized, ex) -> {
                         if (ex != null) {
                             log.error("Describe group authorize failed, group - {}. {}",
                                     request.data().key(), ex.getMessage());
                             findSingleCoordinatorResult.complete(
-                                    new FindCoordinatorResponseData.Coordinator()
-                                            .setErrorCode(Errors.GROUP_AUTHORIZATION_FAILED.code())
-                                            .setErrorMessage(Errors.GROUP_AUTHORIZATION_FAILED.message())
-                                            .setKey(coordinatorKey));
-
+                                    newCoordinator(Errors.GROUP_AUTHORIZATION_FAILED, null, coordinatorKey));
                             return;
                         }
                         if (!isAuthorized) {
                             findSingleCoordinatorResult.complete(
-                                    new FindCoordinatorResponseData.Coordinator()
-                                            .setErrorCode(Errors.GROUP_AUTHORIZATION_FAILED.code())
-                                            .setErrorMessage(Errors.GROUP_AUTHORIZATION_FAILED.message())
-                                            .setKey(coordinatorKey));
-
+                                    newCoordinator(Errors.GROUP_AUTHORIZATION_FAILED, null, coordinatorKey));
                             return;
                         }
                         CompletableFuture<Void> storeGroupIdFuture;
@@ -1074,10 +1058,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     ctx.channel(), findCoordinator.getHeader(), throwable);
 
                                             findSingleCoordinatorResult.complete(
-                                                    new FindCoordinatorResponseData.Coordinator()
-                                                            .setErrorCode(Errors.LEADER_NOT_AVAILABLE.code())
-                                                            .setErrorMessage(Errors.LEADER_NOT_AVAILABLE.message())
-                                                            .setKey(coordinatorKey));
+                                                    newCoordinator(Errors.LEADER_NOT_AVAILABLE, null, coordinatorKey));
                                             return;
                                         }
 
@@ -1086,13 +1067,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     ctx.channel(), result.node, request.data().key(), partition);
                                         }
                                         findSingleCoordinatorResult.complete(
-                                                new FindCoordinatorResponseData.Coordinator()
-                                                        .setNodeId(result.node.id())
-                                                        .setHost(result.node.host())
-                                                        .setPort(result.node.port())
-                                                        .setErrorCode(result.error.code())
-                                                        .setErrorMessage(result.error.message())
-                                                        .setKey(coordinatorKey));
+                                                newCoordinator(result.error, result.node, coordinatorKey));
                                     });
                                 });
                     });

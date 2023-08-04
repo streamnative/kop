@@ -188,31 +188,22 @@ public class KafkaResponseUtils {
         return new DescribeGroupsResponse(data);
     }
 
-    public static FindCoordinatorResponse newFindCoordinator(List<String> coordinatorKeys,
-                                                             Node node,
-                                                             int version) {
-        FindCoordinatorResponseData data = new FindCoordinatorResponseData();
-        if (version < FindCoordinatorRequest.MIN_BATCHED_VERSION) {
-            data.setErrorMessage(Errors.NONE.message())
-                    .setErrorCode(Errors.NONE.code())
-                    .setPort(node.port())
-                    .setHost(node.host())
-                    .setNodeId(node.id());
-        } else {
-            // for new clients
-            data.setCoordinators(coordinatorKeys
-                    .stream()
-                    .map(key -> new FindCoordinatorResponseData.Coordinator()
-                            .setErrorCode(Errors.NONE.code())
-                            .setErrorMessage(Errors.NONE.message())
-                            .setHost(node.host())
-                            .setPort(node.port())
-                            .setNodeId(node.id())
-                            .setKey(key))
-                    .collect(Collectors.toList()));
+    public static FindCoordinatorResponseData.Coordinator newCoordinator(Errors errors,
+                                                                         Node node,
+                                                                         String coordinatorKey) {
+        if (errors != Errors.NONE) {
+            return new FindCoordinatorResponseData.Coordinator()
+                    .setErrorCode(errors.code())
+                    .setErrorMessage(errors.message())
+                    .setKey(coordinatorKey);
         }
-
-        return new FindCoordinatorResponse(data);
+        return new FindCoordinatorResponseData.Coordinator()
+                .setNodeId(node.id())
+                .setHost(node.host())
+                .setPort(node.port())
+                .setErrorCode(Errors.NONE.code())
+                .setErrorMessage(Errors.NONE.message())
+                .setKey(coordinatorKey);
     }
 
     public static FindCoordinatorResponse newFindCoordinator(List<FindCoordinatorResponseData.Coordinator> coordinators,
