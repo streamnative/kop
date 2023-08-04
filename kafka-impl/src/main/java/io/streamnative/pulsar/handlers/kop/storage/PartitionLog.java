@@ -1199,8 +1199,7 @@ public class PartitionLog {
     public CompletableFuture<Long> recoverTxEntries(
             long offset,
             Executor executor) {
-        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()
-                || !MessageMetadataUtils.isInterceptorConfigured(persistentTopic.getManagedLedger())) {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(Long.valueOf(0));
         }
