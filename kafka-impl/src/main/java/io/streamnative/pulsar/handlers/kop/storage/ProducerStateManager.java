@@ -363,8 +363,7 @@ public class ProducerStateManager {
         if (snapshotOffset < minOffset) {
             log.info("{} handleMissingDataBeforeRecovery mapEndOffset {} snapshotOffset "
                             + "{} minOffset {} RESETTING STATE",
-                    topicPartition,
-                    mapEndOffset, minOffset);
+                    topicPartition, mapEndOffset, snapshotOffset, minOffset);
             // topic was not empty (mapEndOffset has some value)
             // but there is no more data on the topic (trimmed?)
             ongoingTxns.clear();

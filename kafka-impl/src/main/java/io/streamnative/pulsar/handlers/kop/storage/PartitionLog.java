@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils.isBrokerIndexMetadataInterceptorConfigured;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
@@ -1201,7 +1203,18 @@ public class PartitionLog {
             Executor executor) {
         if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
-            return CompletableFuture.completedFuture(Long.valueOf(0));
+            return CompletableFuture.completedFuture(0L);
+        }
+        if (!isBrokerIndexMetadataInterceptorConfigured(persistentTopic.getBrokerService())) {
+            // The `UpgradeTest` will set the interceptor to null,
+            // this will cause NPE problem while `fetchOldestAvailableIndexFromTopic`,
+            // but we can't disable kafka transaction,
+            // currently transaction coordinator must set to true (Newly Kafka client requirement).
+            // TODO Actually, if the AppendIndexMetadataInterceptor is not set, the kafka transaction can't work,
+            //  we need to throw an exception, maybe we need add a new configuration for ProducerId.
+            log.error("The broker index metadata interceptor is not configured for topic {}, skip recover txn entries.",
+                    fullPartitionName);
+            return CompletableFuture.completedFuture(0L);
         }
         return fetchOldestAvailableIndexFromTopic().thenCompose((minOffset -> {
             log.info("start recoverTxEntries for {} at offset {} minOffset {}",
