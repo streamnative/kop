@@ -74,6 +74,24 @@ public class PartitionLogTest {
         Assert.assertFalse(appendInfo.isTransaction());
     }
 
+    @DataProvider(name = "compressionTypesForSarama")
+    public static Object[] compressionTypesForSarama() {
+        return Arrays.stream(CompressionType.values()).filter(t ->
+                        t.id > CompressionType.NONE.id && t.id < CompressionType.ZSTD.id
+                ).map(x -> (Object) x).toArray();
+    }
+
+    @Test(dataProvider = "compressionTypesForSarama")
+    public void testAnalyzeSaramaV1CompressedRecords(CompressionType compressionType) throws Exception {
+        final SaramaCompressedV1Records builder = new SaramaCompressedV1Records(compressionType);
+        for (int i = 0; i < 3; i++) {
+            builder.appendLegacyRecord(i, "msg-" + i);
+        }
+        final MemoryRecords records = builder.build();
+        PartitionLog.LogAppendInfo appendInfo = PARTITION_LOG.analyzeAndValidateRecords(records);
+        Assert.assertEquals(appendInfo.numMessages(), 3);
+    }
+
     @Test
     public void testAnalyzeAndValidateEmptyRecords() {
         MemoryRecords memoryRecords = buildMemoryRecords(new int[]{}, CompressionType.NONE, 0);
