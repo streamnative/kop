@@ -653,26 +653,42 @@ public class TransactionCoordinator {
                         if (isEpochFence.get()) {
                             Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>>
                                     errorsAndData = txnManager.getTransactionState(transactionalId);
-                            if (!errorsAndData.getRight().isPresent()) {
-                                log.warn("The coordinator still owns the transaction partition for {}, but there "
+                            if (errorsAndData.isLeft()) {
+                                log.error("Cannot get transaction metadata for {}, status {}", transactionalId,
+                                        errorsAndData.getLeft());
+                            } else if (errorsAndData.isLeft() || !errorsAndData.getRight().isPresent()) {
+                                log.error("The coordinator still owns the transaction partition for {}, but there "
                                         + "is no metadata in the cache; this is not expected", transactionalId);
-                                return;
-                            }
-                            CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getRight().get();
-                            if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
+                            } else {
+                                CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getRight().get();
+                                if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
-                                epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
+                                    epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
 
-                                // this line is not present in Kafka code base ?
-                                epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
+                                    // this line is not present in Kafka code base ?
+                                    epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
 
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
-                                            + "{} to the transaction log with error {}. The epoch was increased to {} "
-                                            + "but not returned to the client", transactionalId, errors,
+                                                    + "{} to the transaction log with error {}. "
+                                                    + "The epoch was increased to {} "
+                                                    + "but not returned to the client", transactionalId, errors,
                                             preAppendResult.getRight().getProducerEpoch());
+                                }
+                            }
+                        } else {
+                            Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>>
+                                    errorsAndData = txnManager.getTransactionState(transactionalId);
+                            if (errorsAndData.isLeft()) {
+                                log.error("Cannot get transaction metadata for {}, status {}", transactionalId,
+                                        errorsAndData.getLeft());
+                            } else if (errorsAndData.getRight().isPresent()) {
+                                log.error("Resetting transactionalId {} pendingState to EMPTY, status {}",
+                                        transactionalId,
+                                        errorsAndData.getLeft());
+                                CoordinatorEpochAndTxnMetadata epochAndMetadata = errorsAndData.getRight().get();
+                                epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
                             }
                         }
-
 
                         callback.accept(errors);
                     }

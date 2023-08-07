@@ -153,7 +153,7 @@ public class ProducerStateManager {
     }
 
     void maybeTakeSnapshot(Executor executor) {
-        if (mapEndOffset == -1) {
+        if (mapEndOffset == -1 || kafkaTxnProducerStateTopicSnapshotIntervalSeconds <= 0) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -181,7 +181,7 @@ public class ProducerStateManager {
     }
 
     long maybePurgeAbortedTx() {
-        if (mapEndOffset == -1) {
+        if (mapEndOffset == -1 || kafkaTxnPurgeAbortedTxnIntervalSeconds <= 0) {
             return 0;
         }
         long now = System.currentTimeMillis();
@@ -332,9 +332,6 @@ public class ProducerStateManager {
                 }
                 return toRemove;
             });
-            if (!abortedIndexList.isEmpty()) {
-                log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
-            }
         }
         return count.get();
     }
