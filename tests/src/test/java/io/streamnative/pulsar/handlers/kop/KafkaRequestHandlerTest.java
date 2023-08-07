@@ -19,6 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartit
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
@@ -38,6 +39,9 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.PulsarTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
@@ -58,10 +62,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewPartitions;
@@ -1096,6 +1102,45 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(fetchMessages, numMessages);
+    }
+
+    @Test(timeOut = 30000)
+    public void testProducerStateManagerSnapshotProvider() throws IllegalAccessException {
+        boolean kafkaTransactionCoordinatorEnabled = conf.isKafkaTransactionCoordinatorEnabled();
+        boolean kafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
+        try {
+            String tenant = "test-tenant";
+            KafkaProtocolHandler protocolHandler = spy(getProtocolHandler());
+            conf.setKafkaTransactionCoordinatorEnabled(false);
+            Function<String, ProducerStateManagerSnapshotBuffer> fun =
+                    protocolHandler.getProducerStateManagerSnapshotBufferByTenant;
+            ProducerStateManagerSnapshotBuffer buffer = fun.apply(tenant);
+            assertNotNull(buffer);
+            assertTrue(buffer instanceof MemoryProducerStateManagerSnapshotBuffer);
+
+            // test multi-tenant
+            conf.setKafkaEnableMultiTenantMetadata(true);
+            conf.setKafkaTransactionCoordinatorEnabled(true);
+            buffer = fun.apply(tenant);
+            assertNotNull(buffer);
+            assertTrue(buffer instanceof PulsarTopicProducerStateManagerSnapshotBuffer);
+            PulsarTopicProducerStateManagerSnapshotBuffer bufferImpl =
+                    (PulsarTopicProducerStateManagerSnapshotBuffer) buffer;
+            String topic = (String) FieldUtils.readField(bufferImpl, "topic", true);
+            assertEquals(TopicName.get(topic).getTenant(), tenant);
+
+            // test default tenant
+            conf.setKafkaEnableMultiTenantMetadata(false);
+            buffer = fun.apply(tenant);
+            assertNotNull(buffer);
+            assertTrue(buffer instanceof PulsarTopicProducerStateManagerSnapshotBuffer);
+            bufferImpl = (PulsarTopicProducerStateManagerSnapshotBuffer) buffer;
+            topic = (String) FieldUtils.readField(bufferImpl, "topic", true);
+            assertEquals(TopicName.get(topic).getTenant(), conf.getKafkaMetadataTenant());
+        } finally {
+            conf.setKafkaTransactionCoordinatorEnabled(kafkaTransactionCoordinatorEnabled);
+            conf.setKafkaEnableMultiTenantMetadata(kafkaEnableMultiTenantMetadata);
+        }
     }
 
     private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics, boolean allowAutoTopicCreation) {

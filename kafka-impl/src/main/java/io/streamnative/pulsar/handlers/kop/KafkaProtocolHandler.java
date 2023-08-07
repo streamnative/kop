@@ -472,12 +472,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
                 return new MemoryProducerStateManagerSnapshotBuffer();
             }
-            return getTransactionCoordinator(tenant)
+            if (kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
+                return getTransactionCoordinator(tenant)
+                        .getProducerStateManagerSnapshotBuffer();
+            }
+            return getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant())
                     .getProducerStateManagerSnapshotBuffer();
         }
     }
 
-    private Function<String, ProducerStateManagerSnapshotBuffer> getProducerStateManagerSnapshotBufferByTenant =
+    protected final Function<String, ProducerStateManagerSnapshotBuffer> getProducerStateManagerSnapshotBufferByTenant =
             new ProducerStateManagerSnapshotProvider();
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
