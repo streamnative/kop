@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import static io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils.isBrokerIndexMetadataInterceptorConfigured;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
@@ -26,6 +28,7 @@ import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicInitializeException;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.EncodeRequest;
@@ -76,13 +79,13 @@ import org.apache.kafka.common.errors.KafkaStorageException;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.UnknownServerException;
+import org.apache.kafka.common.message.FetchRequestData;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.Records;
-import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.Topic;
@@ -166,7 +169,7 @@ public class PartitionLog {
     public CompletableFuture<PartitionLog> initialise() {
         loadTopicProperties().whenComplete((___, errorLoadTopic) -> {
             if (errorLoadTopic != null) {
-                initFuture.completeExceptionally(errorLoadTopic);
+                initFuture.completeExceptionally(new KoPTopicInitializeException(errorLoadTopic));
                 return;
             }
             if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
@@ -174,7 +177,7 @@ public class PartitionLog {
                         .recover(this, recoveryExecutor)
                         .thenRun(() -> initFuture.complete(this))
                         .exceptionally(error -> {
-                            initFuture.completeExceptionally(error);
+                            initFuture.completeExceptionally(new KoPTopicInitializeException(error));
                             return null;
                         });
             } else {
@@ -292,7 +295,7 @@ public class PartitionLog {
         private final Recycler.Handle<ReadRecordsResult> recyclerHandle;
 
         private DecodeResult decodeResult;
-        private List<FetchResponse.AbortedTransaction> abortedTransactions;
+        private List<FetchResponseData.AbortedTransaction> abortedTransactions;
         private long highWatermark;
         private long lastStableOffset;
         private Position lastPosition;
@@ -309,7 +312,7 @@ public class PartitionLog {
         }
 
         public static ReadRecordsResult get(DecodeResult decodeResult,
-                                            List<FetchResponse.AbortedTransaction> abortedTransactions,
+                                            List<FetchResponseData.AbortedTransaction> abortedTransactions,
                                             long highWatermark,
                                             long lastStableOffset,
                                             Position lastPosition,
@@ -325,7 +328,7 @@ public class PartitionLog {
         }
 
         public static ReadRecordsResult get(DecodeResult decodeResult,
-                                            List<FetchResponse.AbortedTransaction> abortedTransactions,
+                                            List<FetchResponseData.AbortedTransaction> abortedTransactions,
                                             long highWatermark,
                                             long lastStableOffset,
                                             Position lastPosition,
@@ -369,7 +372,7 @@ public class PartitionLog {
                     partitionLog);
         }
 
-        public FetchResponse.PartitionData<Records> toPartitionData() {
+        public FetchResponseData.PartitionData toPartitionData() {
 
             // There are three cases:
             //
@@ -380,21 +383,20 @@ public class PartitionLog {
             // 3. errors == Others error :
             //        Get errors.
             if (errors != null) {
-                return new FetchResponse.PartitionData<>(
-                        errors,
-                        FetchResponse.INVALID_HIGHWATERMARK,
-                        FetchResponse.INVALID_LAST_STABLE_OFFSET,
-                        FetchResponse.INVALID_LOG_START_OFFSET,
-                        null,
-                        MemoryRecords.EMPTY);
+                return new FetchResponseData.PartitionData()
+                        .setErrorCode(errors.code())
+                        .setHighWatermark(FetchResponse.INVALID_HIGH_WATERMARK)
+                        .setLastStableOffset(FetchResponse.INVALID_LAST_STABLE_OFFSET)
+                        .setLogStartOffset(FetchResponse.INVALID_LOG_START_OFFSET)
+                        .setRecords(MemoryRecords.EMPTY);
             }
-            return new FetchResponse.PartitionData<>(
-                    Errors.NONE,
-                    highWatermark,
-                    lastStableOffset,
-                    highWatermark, // TODO: should it be changed to the logStartOffset?
-                    abortedTransactions,
-                    decodeResult.getRecords());
+            return new FetchResponseData.PartitionData()
+                    .setErrorCode(Errors.NONE.code())
+                    .setHighWatermark(highWatermark)
+                    .setLastStableOffset(lastStableOffset)
+                    .setHighWatermark(highWatermark) // TODO: should it be changed to the logStartOffset?
+                    .setAbortedTransactions(abortedTransactions)
+                    .setRecords(decodeResult.getRecords());
         }
 
         public void recycle() {
@@ -461,7 +463,7 @@ public class PartitionLog {
         return producerStateManager.firstUndecidedOffset();
     }
 
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
+    public List<FetchResponseData.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
         return producerStateManager.getAbortedIndexList(fetchOffset);
     }
 
@@ -538,14 +540,14 @@ public class PartitionLog {
         return persistentTopic.getLastPosition();
     }
 
-    public CompletableFuture<ReadRecordsResult> readRecords(final FetchRequest.PartitionData partitionData,
+    public CompletableFuture<ReadRecordsResult> readRecords(final FetchRequestData.FetchPartition partitionData,
                                                             final boolean readCommitted,
                                                             final AtomicLong limitBytes,
                                                             final int maxReadEntriesNum,
                                                             final MessageFetchContext context) {
         final long startPrepareMetadataNanos = MathUtils.nowInNano();
         final CompletableFuture<ReadRecordsResult> future = new CompletableFuture<>();
-        final long offset = partitionData.fetchOffset;
+        final long offset = partitionData.fetchOffset();
         KafkaTopicManager topicManager = context.getTopicManager();
         // The future that is returned by getTopicConsumerManager is always completed normally
         topicManager.getTopicConsumerManager(fullPartitionName).thenAccept(tcm -> {
@@ -593,7 +595,7 @@ public class PartitionLog {
 
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
-                long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
+                long adjustedMaxBytes = Math.min(partitionData.partitionMaxBytes(), limitBytes.get());
                 if (readCommitted) {
                     long firstUndecidedOffset = producerStateManager.firstUndecidedOffset().orElse(-1L);
                     if (firstUndecidedOffset >= 0 && firstUndecidedOffset <= offset) {
@@ -675,7 +677,7 @@ public class PartitionLog {
 
     private void handleEntries(final CompletableFuture<ReadRecordsResult> future,
                                final List<Entry> entries,
-                               final FetchRequest.PartitionData partitionData,
+                               final FetchRequestData.FetchPartition partitionData,
                                final KafkaTopicConsumerManager tcm,
                                final ManagedCursor cursor,
                                final boolean readCommitted,
@@ -717,9 +719,9 @@ public class PartitionLog {
 
             // collect consumer metrics
             decodeResult.updateConsumerStats(topicPartition, committedEntries.size(), groupName, requestStats);
-            List<FetchResponse.AbortedTransaction> abortedTransactions = null;
+            List<FetchResponseData.AbortedTransaction> abortedTransactions = null;
             if (readCommitted) {
-                abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset);
+                abortedTransactions = this.getAbortedIndexList(partitionData.fetchOffset());
             }
             if (log.isDebugEnabled()) {
                 log.debug("Partition {} read entry completed in {} ns",
@@ -1144,7 +1146,15 @@ public class PartitionLog {
         // look for the first entry with data
         PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
 
-        managedLedger.asyncReadEntry(nextValidPosition, new AsyncCallbacks.ReadEntryCallback() {
+        fetchOldestAvailableIndexFromTopicReadNext(future, managedLedger, nextValidPosition);
+
+        return future;
+
+    }
+
+    private void fetchOldestAvailableIndexFromTopicReadNext(CompletableFuture<Long> future,
+                                                            ManagedLedgerImpl managedLedger, PositionImpl position) {
+        managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
             public void readEntryComplete(Entry entry, Object ctx) {
                 try {
@@ -1152,6 +1162,13 @@ public class PartitionLog {
                     log.info("First offset for topic {} is {} - position {}", fullPartitionName,
                             startOffset, entry.getPosition());
                     future.complete(startOffset);
+                } catch (MetadataCorruptedException.NoBrokerEntryMetadata noBrokerEntryMetadata) {
+                    long currentOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+                    log.info("Legacy entry for topic {} - position {} - returning current offset {}",
+                            fullPartitionName,
+                            entry.getPosition(),
+                            currentOffset);
+                    future.complete(currentOffset);
                 } catch (Exception err) {
                     future.completeExceptionally(err);
                 } finally {
@@ -1164,9 +1181,6 @@ public class PartitionLog {
                 future.completeExceptionally(exception);
             }
         }, null);
-
-        return future;
-
     }
 
     @VisibleForTesting
@@ -1200,7 +1214,18 @@ public class PartitionLog {
             Executor executor) {
         if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
-            return CompletableFuture.completedFuture(Long.valueOf(0));
+            return CompletableFuture.completedFuture(0L);
+        }
+        if (!isBrokerIndexMetadataInterceptorConfigured(persistentTopic.getBrokerService())) {
+            // The `UpgradeTest` will set the interceptor to null,
+            // this will cause NPE problem while `fetchOldestAvailableIndexFromTopic`,
+            // but we can't disable kafka transaction,
+            // currently transaction coordinator must set to true (Newly Kafka client requirement).
+            // TODO Actually, if the AppendIndexMetadataInterceptor is not set, the kafka transaction can't work,
+            //  we need to throw an exception, maybe we need add a new configuration for ProducerId.
+            log.error("The broker index metadata interceptor is not configured for topic {}, skip recover txn entries.",
+                    fullPartitionName);
+            return CompletableFuture.completedFuture(0L);
         }
         return fetchOldestAvailableIndexFromTopic().thenCompose((minOffset -> {
             log.info("start recoverTxEntries for {} at offset {} minOffset {}",

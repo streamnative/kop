@@ -33,6 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -86,6 +87,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setOffsetsTopicNumPartitions(offsetsTopicNumPartitions);
 
         kConfig.setAdvertisedAddress("localhost");
+        kConfig.setKafkaTransactionCoordinatorEnabled(true);
         kConfig.setClusterName(configClusterName);
         kConfig.setManagedLedgerCacheSizeMB(8);
         kConfig.setActiveConsumerFailoverDelayTimeMillis(0);
@@ -392,7 +394,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 30000)
     public void testMultiBrokerUnloadReload() throws Exception {
         int partitionNumber = 10;
-        String kafkaTopicName = "kopMultiBrokerUnloadReload" + partitionNumber;
+        String kafkaTopicName = "kopMultiBrokerUnloadReload-" + partitionNumber + "-" + UUID.randomUUID();
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
         String kopNamespace = "public/default";
 

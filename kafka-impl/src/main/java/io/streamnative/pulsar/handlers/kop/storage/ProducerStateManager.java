@@ -27,8 +27,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.SafeRunnable;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.requests.FetchResponse;
 
 /**
  * Producer state manager.
@@ -339,13 +339,15 @@ public class ProducerStateManager {
         return count.get();
     }
 
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
+    public List<FetchResponseData.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
         synchronized (abortedIndexList) {
-            List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
+            List<FetchResponseData.AbortedTransaction> abortedTransactions = new ArrayList<>();
             for (AbortedTxn abortedTxn : abortedIndexList) {
                 if (abortedTxn.lastOffset() >= fetchOffset) {
                     abortedTransactions.add(
-                            new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+                            new FetchResponseData.AbortedTransaction()
+                                    .setProducerId(abortedTxn.producerId())
+                                    .setFirstOffset(abortedTxn.firstOffset()));
                 }
             }
             return abortedTransactions;
@@ -361,8 +363,7 @@ public class ProducerStateManager {
         if (snapshotOffset < minOffset) {
             log.info("{} handleMissingDataBeforeRecovery mapEndOffset {} snapshotOffset "
                             + "{} minOffset {} RESETTING STATE",
-                    topicPartition,
-                    mapEndOffset, minOffset);
+                    topicPartition, mapEndOffset, snapshotOffset, minOffset);
             // topic was not empty (mapEndOffset has some value)
             // but there is no more data on the topic (trimmed?)
             ongoingTxns.clear();

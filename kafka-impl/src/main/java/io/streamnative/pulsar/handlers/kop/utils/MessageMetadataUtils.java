@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.base.Predicate;
+import io.jsonwebtoken.lang.Collections;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import java.util.concurrent.CompletableFuture;
@@ -28,8 +29,11 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
+import org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor;
+import org.apache.pulsar.common.intercept.BrokerEntryMetadataInterceptor;
 import org.apache.pulsar.common.protocol.Commands;
 
 /**
@@ -37,6 +41,18 @@ import org.apache.pulsar.common.protocol.Commands;
  */
 @Slf4j
 public class MessageMetadataUtils {
+
+    public static boolean isBrokerIndexMetadataInterceptorConfigured(BrokerService brokerService) {
+        if (Collections.isEmpty(brokerService.getBrokerEntryMetadataInterceptors())) {
+            return false;
+        }
+        for (BrokerEntryMetadataInterceptor interceptor : brokerService.getBrokerEntryMetadataInterceptors()) {
+            if (interceptor instanceof AppendIndexMetadataInterceptor) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public static long getCurrentOffset(ManagedLedger managedLedger) {
         return ((ManagedLedgerInterceptorImpl) managedLedger.getManagedLedgerInterceptor()).getIndex();

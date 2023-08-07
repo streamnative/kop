@@ -20,6 +20,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicInitializeException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
@@ -42,15 +43,16 @@ import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
+import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Used to append records. Mapping to Kafka ReplicaManager.scala.
@@ -179,13 +181,12 @@ public class ReplicaManager {
                             .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                             .exceptionally(ex -> {
-                                if (isCannotLoadTopicError(ex)) {
-                                    log.error("Cannot load topic error while handling append for {}",
+                                Throwable cause = FutureUtil.unwrapCompletionException(ex);
+                                if (cause instanceof BrokerServiceException.PersistenceException
+                                        || cause instanceof BrokerServiceException.ServiceUnitNotReadyException
+                                        || cause instanceof KoPTopicInitializeException) {
+                                    log.error("Encounter NotLeaderOrFollower error while handling append for {}",
                                             fullPartitionName, ex);
-                                    addPartitionResponse.accept(topicPartition,
-                                            new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
-                                } else if (ex.getCause() instanceof BrokerServiceException.PersistenceException) {
-                                    log.error("Persistence error while handling append for {}", fullPartitionName, ex);
                                     // BrokerServiceException$PersistenceException:
                                     // org.apache.bookkeeper.mledger.ManagedLedgerException:
                                     // org.apache.bookkeeper.mledger.ManagedLedgerException$BadVersionException:
@@ -193,19 +194,19 @@ public class ReplicaManager {
 
                                     addPartitionResponse.accept(topicPartition,
                                             new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
-                                } else if (ex.getCause() instanceof PulsarClientException) {
+                                } else if (cause instanceof PulsarClientException) {
                                     log.error("Error on Pulsar Client while handling append for {}",
                                             fullPartitionName, ex);
 
                                     addPartitionResponse.accept(topicPartition,
                                             new ProduceResponse.PartitionResponse(Errors.BROKER_NOT_AVAILABLE));
-                                } else if (ex.getCause() instanceof NotLeaderOrFollowerException) {
+                                } else if (cause instanceof NotLeaderOrFollowerException) {
                                     addPartitionResponse.accept(topicPartition,
-                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                            new ProduceResponse.PartitionResponse(Errors.forException(cause)));
                                 } else {
                                     log.error("System error while handling append for {}", fullPartitionName, ex);
                                     addPartitionResponse.accept(topicPartition,
-                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                            new ProduceResponse.PartitionResponse(Errors.forException(cause)));
                                 }
                                 return null;
                             });
@@ -231,16 +232,11 @@ public class ReplicaManager {
         return completableFuture;
     }
 
-    private static boolean isCannotLoadTopicError(Throwable error) {
-        String asString = error + "";
-        return asString.contains("Failed to load topic within timeout");
-    }
-
     public CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> fetchMessage(
             final long timeout,
             final int fetchMinBytes,
             final int fetchMaxBytes,
-            final ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> fetchInfos,
+            final ConcurrentHashMap<TopicPartition, FetchRequestData.FetchPartition> fetchInfos,
             final IsolationLevel isolationLevel,
             final MessageFetchContext context) {
         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> future =
@@ -294,7 +290,7 @@ public class ReplicaManager {
             final boolean readCommitted,
             final int fetchMaxBytes,
             final int maxReadEntriesNum,
-            final Map<TopicPartition, FetchRequest.PartitionData> readPartitionInfo,
+            final Map<TopicPartition, FetchRequestData.FetchPartition> readPartitionInfo,
             final MessageFetchContext context) {
         AtomicLong limitBytes = new AtomicLong(fetchMaxBytes);
         CompletableFuture<Map<TopicPartition, PartitionLog.ReadRecordsResult>> resultFuture = new CompletableFuture<>();
