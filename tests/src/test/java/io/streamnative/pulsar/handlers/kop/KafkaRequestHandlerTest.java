@@ -20,6 +20,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
@@ -38,6 +39,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRes
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
@@ -1024,6 +1026,9 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                     expectedError = null;
                     assertEquals(1, metadataResponse.topicMetadata().size());
                     assertEquals(topicName, metadataResponse.topicMetadata().iterator().next().topic());
+                    Map<String, String> properties = admin.topics().getProperties(topicName);
+                    assertFalse(properties.isEmpty());
+                    assertTrue(properties.containsKey(PartitionLog.KAFKA_TOPIC_UUID_PROPERTY_NAME));
                 } else {
                     // topic does not exist and it is not created
                     expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;

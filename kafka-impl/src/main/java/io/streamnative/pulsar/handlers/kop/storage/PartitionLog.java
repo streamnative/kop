@@ -111,6 +111,7 @@ class AnalyzeResult {
 @Slf4j
 public class PartitionLog {
 
+    public static final String KAFKA_TOPIC_UUID_PROPERTY_NAME = "kafkaTopicUUID";
     private static final String PID_PREFIX = "KOP-PID-PREFIX";
 
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
@@ -212,7 +213,7 @@ public class PartitionLog {
                     this.topicProperties = properties;
                     log.info("Topic properties for {} are {}", fullPartitionName, properties);
                     this.entryFormatter = buildEntryFormatter(topicProperties);
-                    this.kafkaTopicUUID = properties.get("kafkaTopicUUID");
+                    this.kafkaTopicUUID = properties.get(KAFKA_TOPIC_UUID_PROPERTY_NAME);
                     this.producerStateManager =
                             new ProducerStateManager(
                                     fullPartitionName,

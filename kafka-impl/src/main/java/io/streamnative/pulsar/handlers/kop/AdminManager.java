@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -136,7 +137,7 @@ public class AdminManager {
                 return;
             }
             admin.topics().createPartitionedTopicAsync(kopTopic.getFullName(), numPartitions,
-                            Map.of("kafkaTopicUUID", UUID.randomUUID().toString()))
+                            Map.of(PartitionLog.KAFKA_TOPIC_UUID_PROPERTY_NAME, UUID.randomUUID().toString()))
                     .whenComplete((ignored, e) -> {
                         if (e == null) {
                             if (log.isDebugEnabled()) {
