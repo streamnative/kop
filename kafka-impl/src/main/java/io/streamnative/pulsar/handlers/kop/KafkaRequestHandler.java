@@ -64,6 +64,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -539,7 +540,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         return;
                     }
                     if (allowed) {
-                        admin.topics().createPartitionedTopicAsync(topic, defaultNumPartitions)
+                        Map<String, String> properties =
+                                Map.of(PartitionLog.KAFKA_TOPIC_UUID_PROPERTY_NAME, UUID.randomUUID().toString());
+                        admin.topics().createPartitionedTopicAsync(topic, defaultNumPartitions, properties)
                                 .whenComplete((__, createException) -> {
                                     if (createException == null) {
                                         future.complete(TopicAndMetadata.success(topic, defaultNumPartitions));
