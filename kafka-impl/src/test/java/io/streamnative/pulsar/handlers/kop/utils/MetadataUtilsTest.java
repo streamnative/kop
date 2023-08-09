@@ -126,11 +126,11 @@ public class MetadataUtilsTest {
         verify(mockNamespaces, times(1)).setNamespaceMessageTTL(eq(conf.getKafkaMetadataTenant() + "/"
             + conf.getKafkaMetadataNamespace()), any(Integer.class));
         verify(mockTopics, times(1)).createPartitionedTopic(
-                eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()));
+                eq(offsetsTopic.getFullName()), eq(conf.getOffsetsTopicNumPartitions()), any());
         verify(mockTopics, times(1)).createPartitionedTopic(
-                eq(txnTopic.getFullName()), eq(conf.getKafkaTxnLogTopicNumPartitions()));
+                eq(txnTopic.getFullName()), eq(conf.getKafkaTxnLogTopicNumPartitions()), any());
         verify(mockTopics, times(1)).createPartitionedTopic(
-                eq(txnProducerStateTopic.getFullName()), eq(conf.getKafkaTxnProducerStateTopicNumPartitions()));
+                eq(txnProducerStateTopic.getFullName()), eq(conf.getKafkaTxnProducerStateTopicNumPartitions()), any());
         // check user topics namespace doesn't set the policy
         verify(mockNamespaces, times(1)).createNamespace(eq(conf.getKafkaTenant() + "/"
                 + conf.getKafkaNamespace()), any(Set.class));
