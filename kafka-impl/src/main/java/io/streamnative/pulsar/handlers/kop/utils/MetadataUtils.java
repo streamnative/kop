@@ -335,12 +335,11 @@ public class MetadataUtils {
                                               final String topic,
                                               final int numPartitions,
                                               final boolean partitioned) throws PulsarAdminException {
+        Map<String, String> properties = Map.of(
+                PartitionLog.KAFKA_ENTRY_FORMATTER_PROPERTY_NAME, EntryFormatterFactory.EntryFormat.PULSAR.name());
         if (partitioned) {
             log.info("Creating partitioned topic {} (with {} partitions) if it does not exist", topic, numPartitions);
             try {
-                Map<String, String> properties =
-                        Map.of(PartitionLog.KAFKA_ENTRY_FORMATTER_PROPERTY_NAME,
-                                EntryFormatterFactory.EntryFormat.PULSAR.name());
                 admin.topics().createPartitionedTopic(topic, numPartitions, properties);
             } catch (PulsarAdminException.ConflictException e) {
                 log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
@@ -353,7 +352,7 @@ public class MetadataUtils {
         } else {
             log.info("Creating non-partitioned topic {}-{} if it does not exist", topic, numPartitions);
             try {
-                admin.topics().createNonPartitionedTopic(topic);
+                admin.topics().createNonPartitionedTopic(topic, properties);
             } catch (PulsarAdminException.ConflictException e) {
                 log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
             }
