@@ -101,7 +101,7 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         throw new UnsupportedOperationException();
     }
 
-    public void rotateLatencyCollection() {
+    public void rotateLatencyCollection(long expiredTimeSeconds) {
         // Swap current with replacement
         ThreadLocalAccessor local = current;
         current = replacement;
@@ -109,7 +109,7 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
 
         final DoublesUnion aggregateSuccess = new DoublesUnionBuilder().build();
         final DoublesUnion aggregateFail = new DoublesUnionBuilder().build();
-        local.record(aggregateSuccess, aggregateFail);
+        local.recordAndCheckStatsExpire(aggregateSuccess, aggregateFail, expiredTimeSeconds);
         successResult = aggregateSuccess.getResultAndReset();
         failResult = aggregateFail.getResultAndReset();
     }

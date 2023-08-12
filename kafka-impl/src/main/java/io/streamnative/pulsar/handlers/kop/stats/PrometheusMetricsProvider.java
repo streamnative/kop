@@ -38,6 +38,12 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
     public static final String PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = "prometheusStatsLatencyRolloverSeconds";
     public static final int DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS = 60;
 
+    public static final String PROMETHEUS_STATS_EXPIRED_SECONDS = "prometheusStatsExpiredSeconds";
+
+    public static final long DEFAULT_PROMETHEUS_STATS_EXPIRED_SECONDS = TimeUnit.HOURS.toSeconds(1);
+
+    private long expiredTimeSeconds;
+
     private static final String KOP_PROMETHEUS_STATS_CLUSTER = "cluster";
     private final Map<String, String> defaultStatsLoggerLabels = new HashMap<>();
 
@@ -65,11 +71,14 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
         int latencyRolloverSeconds = conf.getInt(PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS,
                 DEFAULT_PROMETHEUS_STATS_LATENCY_ROLLOVER_SECONDS);
 
+        expiredTimeSeconds = conf.getLong(PROMETHEUS_STATS_EXPIRED_SECONDS,
+                DEFAULT_PROMETHEUS_STATS_EXPIRED_SECONDS);
+
         defaultStatsLoggerLabels.putIfAbsent(KOP_PROMETHEUS_STATS_CLUSTER,
                 conf.getString(KOP_PROMETHEUS_STATS_CLUSTER));
 
         executor.scheduleAtFixedRate(() -> {
-            rotateLatencyCollection();
+            rotateLatencyCollectionAndExpire(expiredTimeSeconds);
         }, 1, latencyRolloverSeconds, TimeUnit.SECONDS);
 
     }
@@ -103,9 +112,9 @@ public class PrometheusMetricsProvider implements PrometheusRawMetricsProvider {
     }
 
     @VisibleForTesting
-    void rotateLatencyCollection() {
+    void rotateLatencyCollectionAndExpire(long expiredTimeSeconds) {
         opStats.forEach((name, metric) -> {
-            metric.rotateLatencyCollection();
+            metric.rotateLatencyCollection(expiredTimeSeconds);
         });
     }
 }
