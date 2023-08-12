@@ -36,7 +36,9 @@ public class ThreadLocalAccessor {
         }
     };
 
-    public void recordAndCheckStatsExpire(DoublesUnion aggregateSuccess, DoublesUnion aggregateFail, long expireTimeMs) {
+    public void recordAndCheckStatsExpire(DoublesUnion aggregateSuccess,
+                                          DoublesUnion aggregateFail,
+                                          long expireTimeMs) {
         long currentTime = System.currentTimeMillis();
 
         map.keySet().forEach(key -> {
