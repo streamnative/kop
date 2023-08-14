@@ -36,8 +36,20 @@ public class ThreadLocalAccessor {
         }
     };
 
-    public void record(DoublesUnion aggregateSuccess, DoublesUnion aggregateFail) {
-        map.keySet().forEach(key -> key.record(aggregateSuccess, aggregateFail));
+    public void recordAndCheckStatsExpire(DoublesUnion aggregateSuccess,
+                                          DoublesUnion aggregateFail,
+                                          long expireTimeMs) {
+        long currentTime = System.currentTimeMillis();
+
+        map.keySet().forEach(key -> {
+            // update stats
+            key.record(aggregateSuccess, aggregateFail);
+
+            // check if record expired.
+            if (currentTime - key.lastHasRecordTime() > expireTimeMs) {
+                map.remove(key);
+            }
+        });
     }
 
     public LocalData getLocalData() {

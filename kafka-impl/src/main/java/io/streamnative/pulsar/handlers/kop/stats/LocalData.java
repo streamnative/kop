@@ -23,6 +23,7 @@ public class LocalData {
     private final DoublesSketch successSketch = new DoublesSketchBuilder().build();
     private final DoublesSketch failSketch = new DoublesSketchBuilder().build();
     private final StampedLock lock = new StampedLock();
+    private volatile long lastHasRecordTime = System.currentTimeMillis();
 
     public void updateSuccessSketch(double value) {
         long stamp = lock.readLock();
@@ -42,9 +43,18 @@ public class LocalData {
         }
     }
 
+    public long lastHasRecordTime() {
+        return lastHasRecordTime;
+    }
+
     public void record(DoublesUnion aggregateSuccess, DoublesUnion aggregateFail) {
         long stamp = lock.writeLock();
         try {
+            boolean isEmpty = successSketch.isEmpty() && failSketch.isEmpty();
+            if (!isEmpty) {
+                lastHasRecordTime = System.currentTimeMillis();
+            }
+
             aggregateSuccess.update(successSketch);
             successSketch.reset();
             aggregateFail.update(failSketch);
