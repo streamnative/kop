@@ -112,6 +112,7 @@ class AnalyzeResult {
 public class PartitionLog {
 
     public static final String KAFKA_TOPIC_UUID_PROPERTY_NAME = "kafkaTopicUUID";
+    public static final String KAFKA_ENTRY_FORMATTER_PROPERTY_NAME = "kafkaEntryFormat";
     private static final String PID_PREFIX = "KOP-PID-PREFIX";
 
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
@@ -252,7 +253,8 @@ public class PartitionLog {
     private EntryFormatter buildEntryFormatter(Map<String, String> topicProperties) {
         final String entryFormat;
         if (topicProperties != null) {
-            entryFormat = topicProperties.getOrDefault("kafkaEntryFormat", kafkaConfig.getEntryFormat());
+            entryFormat = topicProperties
+                    .getOrDefault(KAFKA_ENTRY_FORMATTER_PROPERTY_NAME, kafkaConfig.getEntryFormat());
         } else {
             entryFormat = kafkaConfig.getEntryFormat();
         }

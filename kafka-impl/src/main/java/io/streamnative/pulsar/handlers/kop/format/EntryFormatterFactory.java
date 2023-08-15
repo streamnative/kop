@@ -24,7 +24,7 @@ import org.apache.pulsar.broker.service.plugin.EntryFilter;
  */
 public class EntryFormatterFactory {
 
-    enum EntryFormat {
+    public enum EntryFormat {
         PULSAR,
         KAFKA,
         MIXED_KAFKA

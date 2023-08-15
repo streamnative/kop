@@ -15,8 +15,11 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
@@ -332,10 +335,12 @@ public class MetadataUtils {
                                               final String topic,
                                               final int numPartitions,
                                               final boolean partitioned) throws PulsarAdminException {
+        Map<String, String> properties = Map.of(
+                PartitionLog.KAFKA_ENTRY_FORMATTER_PROPERTY_NAME, EntryFormatterFactory.EntryFormat.PULSAR.name());
         if (partitioned) {
             log.info("Creating partitioned topic {} (with {} partitions) if it does not exist", topic, numPartitions);
             try {
-                admin.topics().createPartitionedTopic(topic, numPartitions);
+                admin.topics().createPartitionedTopic(topic, numPartitions, properties);
             } catch (PulsarAdminException.ConflictException e) {
                 log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
             }
@@ -347,7 +352,7 @@ public class MetadataUtils {
         } else {
             log.info("Creating non-partitioned topic {}-{} if it does not exist", topic, numPartitions);
             try {
-                admin.topics().createNonPartitionedTopic(topic);
+                admin.topics().createNonPartitionedTopic(topic, properties);
             } catch (PulsarAdminException.ConflictException e) {
                 log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
             }
