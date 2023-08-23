@@ -13,12 +13,17 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.lang3.tuple.Triple;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -39,6 +44,19 @@ public class SimpleAclAuthorizer implements Authorizer {
     private final AuthorizationService authorizationService;
 
     private final boolean forceCheckGroupId;
+    // Cache the authorization results to avoid authorizing PRODUCE or FETCH requests each time.
+    // key is (topic, role)
+    private final LoadingCache<Pair<TopicName, String>, Boolean> produceCache = Caffeine.newBuilder()
+            .maximumSize(10000)
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .refreshAfterWrite(Duration.ofMinutes(1))
+            .build(__ -> null);
+    // key is (topic, role, group)
+    private final LoadingCache<Triple<TopicName, String, String>, Boolean> fetchCache = Caffeine.newBuilder()
+            .maximumSize(10000)
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .refreshAfterWrite(Duration.ofMinutes(1))
+            .build(__ -> null);
 
     public SimpleAclAuthorizer(PulsarService pulsarService, KafkaServiceConfiguration config) {
         this.pulsarService = pulsarService;
@@ -151,7 +169,16 @@ public class SimpleAclAuthorizer implements Authorizer {
     public CompletableFuture<Boolean> canProduceAsync(KafkaPrincipal principal, Resource resource) {
         checkResourceType(resource, ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
-        return authorizationService.canProduceAsync(topicName, principal.getName(), principal.getAuthenticationData());
+        final Pair<TopicName, String> key = Pair.of(topicName, principal.getName());
+        final Boolean authorized = produceCache.get(key);
+        if (authorized != null) {
+            return CompletableFuture.completedFuture(authorized);
+        }
+        return authorizationService.canProduceAsync(topicName, principal.getName(), principal.getAuthenticationData())
+                .thenApply(__ -> {
+                    produceCache.put(key, __);
+                    return __;
+                });
     }
 
     @Override
@@ -161,8 +188,17 @@ public class SimpleAclAuthorizer implements Authorizer {
         if (forceCheckGroupId && StringUtils.isBlank(principal.getGroupId())) {
             return CompletableFuture.completedFuture(false);
         }
+        final Triple<TopicName, String, String> key = Triple.of(topicName, principal.getName(), principal.getGroupId());
+        final Boolean authorized = fetchCache.get(key);
+        if (authorized != null) {
+            return CompletableFuture.completedFuture(authorized);
+        }
         return authorizationService.canConsumeAsync(
-                topicName, principal.getName(), principal.getAuthenticationData(), principal.getGroupId());
+                topicName, principal.getName(), principal.getAuthenticationData(), principal.getGroupId())
+                .thenApply(__ -> {
+                    fetchCache.put(key, __);
+                    return __;
+                });
     }
 
     @Override
