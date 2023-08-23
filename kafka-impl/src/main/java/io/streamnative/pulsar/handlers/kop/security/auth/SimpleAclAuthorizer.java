@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
+import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -32,6 +33,7 @@ import org.apache.pulsar.common.policies.data.NamespaceOperation;
 import org.apache.pulsar.common.policies.data.PolicyName;
 import org.apache.pulsar.common.policies.data.PolicyOperation;
 import org.apache.pulsar.common.policies.data.TopicOperation;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Simple acl authorizer.
@@ -50,13 +52,23 @@ public class SimpleAclAuthorizer implements Authorizer {
             .maximumSize(10000)
             .expireAfterWrite(Duration.ofMinutes(5))
             .refreshAfterWrite(Duration.ofMinutes(1))
-            .build(__ -> null);
+            .build(new CacheLoader<>() {
+                @Override
+                public @Nullable Boolean load(Pair<TopicName, String> topicNameStringPair) {
+                    return null;
+                }
+            });
     // key is (topic, role, group)
     private final LoadingCache<Triple<TopicName, String, String>, Boolean> fetchCache = Caffeine.newBuilder()
             .maximumSize(10000)
             .expireAfterWrite(Duration.ofMinutes(5))
             .refreshAfterWrite(Duration.ofMinutes(1))
-            .build(__ -> null);
+            .build(new CacheLoader<>() {
+                @Override
+                public @Nullable Boolean load(Triple<TopicName, String, String> topicNameStringStringTriple) {
+                    return null;
+                }
+            });
 
     public SimpleAclAuthorizer(PulsarService pulsarService, KafkaServiceConfiguration config) {
         this.pulsarService = pulsarService;
