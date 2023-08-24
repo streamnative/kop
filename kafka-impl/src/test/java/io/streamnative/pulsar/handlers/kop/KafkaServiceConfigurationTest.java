@@ -19,8 +19,11 @@ import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
+import com.github.benmanes.caffeine.cache.CacheLoader;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
@@ -33,8 +36,12 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
 import org.apache.pulsar.broker.PulsarService;
@@ -42,6 +49,7 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.resources.NamespaceResources;
 import org.apache.pulsar.broker.resources.PulsarResources;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.testng.annotations.Test;
 
 /**
@@ -282,5 +290,40 @@ public class KafkaServiceConfigurationTest {
         configuration.setKopMigrationServicePort(port);
         assertTrue(configuration.isKopMigrationEnable());
         assertEquals(port, configuration.getKopMigrationServicePort());
+    }
+
+    @Test(timeOut = 10000)
+    public void testKopAuthorizationCache() throws InterruptedException {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setKopAuthorizationCacheRefreshMs(100);
+        configuration.setKopAuthorizationCacheMaxCountPerConnection(5);
+        LoadingCache<Integer, Integer> cache = configuration.getAuthorizationCacheBuilder().build(new CacheLoader<>() {
+            @Override
+            public @Nullable Integer load(Integer integer) {
+                return null;
+            }
+        });
+        for (int i = 0; i < 5; i++) {
+            assertNull(cache.get(1));
+        }
+        for (int i = 0; i < 10; i++) {
+            cache.put(i, i + 100);
+        }
+        while (true) {
+            List<Integer> values = IntStream.range(0, 10).mapToObj(cache::get).filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            if (values.size() == 5) {
+                for (int value : values) {
+                    int key = value - 100;
+                    assertEquals(cache.get(key), Integer.valueOf(value));
+                }
+                break;
+            }
+            Thread.sleep(1);
+        }
+        Thread.sleep(200); // wait until the cache expired
+        for (int i = 0; i < 10; i++) {
+            assertNull(cache.get(i));
+        }
     }
 }

@@ -181,6 +181,8 @@ This section lists configurations about the authorization.
 | Name                                      | Description                                                                                            | Range       | Default |
 |-------------------------------------------|--------------------------------------------------------------------------------------------------------|-------------|---------|
 | kafkaEnableAuthorizationForceGroupIdCheck | Whether to enable authorization force group ID check. Note: It only support for OAuth2 authentication. | true, false | false   |
+| kopAuthorizationCacheRefreshMs | If it's configured with a positive value N, each connection will cache the authorization results of PRODUCE and FETCH requests for at least N ms.<br>It could help improve the performance when authorization is enabled, but the permission revoke will also take N ms to take effect. | 1 .. 2147483647 | 30000 |
+| kopAuthorizationCacheMaxCountPerConnection | If it's configured with a positive value N, each connection will cache at most N entries for PRODUCE or FETCH requests.<br>If it's non-positive, the cache size will be the default value. | 1 .. 2147483647 | 100 |
 
 
 ## SSL encryption

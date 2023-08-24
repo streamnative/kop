@@ -13,12 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
@@ -564,6 +566,24 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private boolean skipMessagesWithoutIndex = false;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "If it's configured with a positive value N, each connection will cache the authorization results "
+                    + "of PRODUCE and FETCH requests for at least N ms.\n"
+                    + "It could help improve the performance when authorization is enabled, but the permission revoke "
+                    + "will also take N ms to take effect.\nDefault: 30000 (30 seconds)"
+    )
+    private int kopAuthorizationCacheRefreshMs = 30000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "If it's configured with a positive value N, each connection will cache at most N "
+                    + "entries for PRODUCE or FETCH requests.\n"
+                    + "Default: 100\n"
+                    + "If it's non-positive, the cache size will be the default value."
+    )
+    private int kopAuthorizationCacheMaxCountPerConnection = 100;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {
@@ -629,4 +649,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
         return kopAllowedNamespaces;
     }
 
+    public Caffeine<Object, Object> getAuthorizationCacheBuilder() {
+        if (kopAuthorizationCacheRefreshMs <= 0) {
+            return Caffeine.newBuilder().maximumSize(0);
+        } else {
+            int maximumSize = (kopAuthorizationCacheMaxCountPerConnection >= 0)
+                    ? kopAuthorizationCacheMaxCountPerConnection : 100;
+            return Caffeine.newBuilder().maximumSize(maximumSize)
+                    .expireAfterWrite(Duration.ofMillis(kopAuthorizationCacheRefreshMs));
+        }
+    }
 }

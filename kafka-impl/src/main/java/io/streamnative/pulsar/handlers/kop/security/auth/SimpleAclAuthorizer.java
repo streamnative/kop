@@ -14,11 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import com.github.benmanes.caffeine.cache.CacheLoader;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
-import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
@@ -48,32 +46,28 @@ public class SimpleAclAuthorizer implements Authorizer {
     private final boolean forceCheckGroupId;
     // Cache the authorization results to avoid authorizing PRODUCE or FETCH requests each time.
     // key is (topic, role)
-    private final LoadingCache<Pair<TopicName, String>, Boolean> produceCache = Caffeine.newBuilder()
-            .maximumSize(10000)
-            .expireAfterWrite(Duration.ofMinutes(5))
-            .refreshAfterWrite(Duration.ofMinutes(1))
-            .build(new CacheLoader<>() {
-                @Override
-                public @Nullable Boolean load(Pair<TopicName, String> topicNameStringPair) {
-                    return null;
-                }
-            });
+    private final LoadingCache<Pair<TopicName, String>, Boolean> produceCache;
     // key is (topic, role, group)
-    private final LoadingCache<Triple<TopicName, String, String>, Boolean> fetchCache = Caffeine.newBuilder()
-            .maximumSize(10000)
-            .expireAfterWrite(Duration.ofMinutes(5))
-            .refreshAfterWrite(Duration.ofMinutes(1))
-            .build(new CacheLoader<>() {
-                @Override
-                public @Nullable Boolean load(Triple<TopicName, String, String> topicNameStringStringTriple) {
-                    return null;
-                }
-            });
+    private final LoadingCache<Triple<TopicName, String, String>, Boolean> fetchCache;
 
     public SimpleAclAuthorizer(PulsarService pulsarService, KafkaServiceConfiguration config) {
         this.pulsarService = pulsarService;
         this.authorizationService = pulsarService.getBrokerService().getAuthorizationService();
         this.forceCheckGroupId = config.isKafkaEnableAuthorizationForceGroupIdCheck();
+        this.produceCache = config.getAuthorizationCacheBuilder()
+                .build(new CacheLoader<>() {
+                    @Override
+                    public @Nullable Boolean load(Pair<TopicName, String> topicNameStringPair) {
+                        return null;
+                    }
+                });
+        this.fetchCache = config.getAuthorizationCacheBuilder()
+                .build(new CacheLoader<>() {
+                    @Override
+                    public @Nullable Boolean load(Triple<TopicName, String, String> topicNameStringStringTriple) {
+                        return null;
+                    }
+                });
     }
 
     protected PulsarService getPulsarService() {
