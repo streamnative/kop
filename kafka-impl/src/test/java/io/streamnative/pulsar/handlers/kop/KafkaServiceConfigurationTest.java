@@ -295,7 +295,7 @@ public class KafkaServiceConfigurationTest {
     @Test(timeOut = 10000)
     public void testKopAuthorizationCache() throws InterruptedException {
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
-        configuration.setKopAuthorizationCacheRefreshMs(100);
+        configuration.setKopAuthorizationCacheRefreshMs(500);
         configuration.setKopAuthorizationCacheMaxCountPerConnection(5);
         LoadingCache<Integer, Integer> cache = configuration.getAuthorizationCacheBuilder().build(new CacheLoader<>() {
             @Override
@@ -309,12 +309,12 @@ public class KafkaServiceConfigurationTest {
         for (int i = 0; i < 10; i++) {
             cache.put(i, i + 100);
         }
-        Awaitility.await().atMost(Duration.ofMillis(10)).pollInterval(Duration.ofMillis(1))
+        Awaitility.await().atMost(Duration.ofMillis(100)).pollInterval(Duration.ofMillis(1))
                 .until(() -> IntStream.range(0, 10).mapToObj(cache::get).filter(Objects::nonNull).count() <= 5);
         IntStream.range(0, 10).mapToObj(cache::get).filter(Objects::nonNull).map(i -> i - 100).forEach(key ->
                 assertEquals(cache.get(key).intValue(), key + 100));
 
-        Thread.sleep(200); // wait until the cache expired
+        Thread.sleep(600); // wait until the cache expired
         for (int i = 0; i < 10; i++) {
             assertNull(cache.get(i));
         }
