@@ -22,8 +22,7 @@ import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
-import com.github.benmanes.caffeine.cache.CacheLoader;
-import com.github.benmanes.caffeine.cache.LoadingCache;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
@@ -49,7 +48,6 @@ import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.resources.NamespaceResources;
 import org.apache.pulsar.broker.resources.PulsarResources;
 import org.awaitility.Awaitility;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.testng.annotations.Test;
 
 /**
@@ -297,39 +295,30 @@ public class KafkaServiceConfigurationTest {
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
         configuration.setKopAuthorizationCacheRefreshMs(500);
         configuration.setKopAuthorizationCacheMaxCountPerConnection(5);
-        LoadingCache<Integer, Integer> cache = configuration.getAuthorizationCacheBuilder().build(new CacheLoader<>() {
-            @Override
-            public @Nullable Integer load(Integer integer) {
-                return null;
-            }
-        });
+        Cache<Integer, Integer> cache = configuration.getAuthorizationCacheBuilder().build();
         for (int i = 0; i < 5; i++) {
-            assertNull(cache.get(1));
+            assertNull(cache.getIfPresent(1));
         }
         for (int i = 0; i < 10; i++) {
             cache.put(i, i + 100);
         }
         Awaitility.await().atMost(Duration.ofMillis(100)).pollInterval(Duration.ofMillis(1))
-                .until(() -> IntStream.range(0, 10).mapToObj(cache::get).filter(Objects::nonNull).count() <= 5);
-        IntStream.range(0, 10).mapToObj(cache::get).filter(Objects::nonNull).map(i -> i - 100).forEach(key ->
-                assertEquals(cache.get(key).intValue(), key + 100));
+                .until(() -> IntStream.range(0, 10).mapToObj(cache::getIfPresent)
+                        .filter(Objects::nonNull).count() <= 5);
+        IntStream.range(0, 10).mapToObj(cache::getIfPresent).filter(Objects::nonNull).map(i -> i - 100).forEach(key ->
+                assertEquals(cache.getIfPresent(key), Integer.valueOf(key + 100)));
 
         Thread.sleep(600); // wait until the cache expired
         for (int i = 0; i < 10; i++) {
-            assertNull(cache.get(i));
+            assertNull(cache.getIfPresent(i));
         }
 
         configuration.setKopAuthorizationCacheRefreshMs(0);
-        LoadingCache<Integer, Integer> cache2 = configuration.getAuthorizationCacheBuilder().build(new CacheLoader<>() {
-            @Override
-            public @Nullable Integer load(Integer integer) {
-                return null;
-            }
-        });
+        Cache<Integer, Integer> cache2 = configuration.getAuthorizationCacheBuilder().build();
         for (int i = 0; i < 5; i++) {
             cache2.put(i, i);
         }
         Awaitility.await().atMost(Duration.ofMillis(10)).pollInterval(Duration.ofMillis(1))
-                .until(() -> IntStream.range(0, 5).mapToObj(cache2::get).noneMatch(Objects::nonNull));
+                .until(() -> IntStream.range(0, 5).mapToObj(cache2::getIfPresent).noneMatch(Objects::nonNull));
     }
 }
