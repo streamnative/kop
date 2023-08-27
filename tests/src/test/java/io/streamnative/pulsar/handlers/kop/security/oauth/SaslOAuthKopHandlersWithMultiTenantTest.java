@@ -75,6 +75,7 @@ public class SaslOAuthKopHandlersWithMultiTenantTest extends SaslOAuthBearerTest
         conf.setSaslAllowedMechanisms(Sets.newHashSet("OAUTHBEARER"));
         conf.setKopOauth2AuthenticateCallbackHandler(OauthValidatorCallbackHandler.class.getName());
         conf.setKopOauth2ConfigFile("src/test/resources/kop-handler-oauth2.properties");
+        conf.setKopAuthorizationCacheRefreshMs(0);
 
         super.internalSetup();
     }

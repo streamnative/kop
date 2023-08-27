@@ -19,8 +19,10 @@ import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
+import com.github.benmanes.caffeine.cache.Cache;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import java.io.File;
@@ -31,10 +33,13 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
 import org.apache.pulsar.broker.PulsarService;
@@ -42,6 +47,7 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.resources.NamespaceResources;
 import org.apache.pulsar.broker.resources.PulsarResources;
+import org.awaitility.Awaitility;
 import org.testng.annotations.Test;
 
 /**
@@ -282,5 +288,37 @@ public class KafkaServiceConfigurationTest {
         configuration.setKopMigrationServicePort(port);
         assertTrue(configuration.isKopMigrationEnable());
         assertEquals(port, configuration.getKopMigrationServicePort());
+    }
+
+    @Test(timeOut = 10000)
+    public void testKopAuthorizationCache() throws InterruptedException {
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setKopAuthorizationCacheRefreshMs(500);
+        configuration.setKopAuthorizationCacheMaxCountPerConnection(5);
+        Cache<Integer, Integer> cache = configuration.getAuthorizationCacheBuilder().build();
+        for (int i = 0; i < 5; i++) {
+            assertNull(cache.getIfPresent(1));
+        }
+        for (int i = 0; i < 10; i++) {
+            cache.put(i, i + 100);
+        }
+        Awaitility.await().atMost(Duration.ofMillis(100)).pollInterval(Duration.ofMillis(1))
+                .until(() -> IntStream.range(0, 10).mapToObj(cache::getIfPresent)
+                        .filter(Objects::nonNull).count() <= 5);
+        IntStream.range(0, 10).mapToObj(cache::getIfPresent).filter(Objects::nonNull).map(i -> i - 100).forEach(key ->
+                assertEquals(cache.getIfPresent(key), Integer.valueOf(key + 100)));
+
+        Thread.sleep(600); // wait until the cache expired
+        for (int i = 0; i < 10; i++) {
+            assertNull(cache.getIfPresent(i));
+        }
+
+        configuration.setKopAuthorizationCacheRefreshMs(0);
+        Cache<Integer, Integer> cache2 = configuration.getAuthorizationCacheBuilder().build();
+        for (int i = 0; i < 5; i++) {
+            cache2.put(i, i);
+        }
+        Awaitility.await().atMost(Duration.ofMillis(10)).pollInterval(Duration.ofMillis(1))
+                .until(() -> IntStream.range(0, 5).mapToObj(cache2::getIfPresent).noneMatch(Objects::nonNull));
     }
 }
