@@ -32,6 +32,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.security.Session;
 import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
@@ -116,6 +117,7 @@ import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
+import org.apache.kafka.common.message.DescribeTransactionsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.EndTxnResponseData;
 import org.apache.kafka.common.message.FetchRequestData;
@@ -127,6 +129,7 @@ import org.apache.kafka.common.message.JoinGroupRequestData;
 import org.apache.kafka.common.message.LeaveGroupRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.ListTransactionsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
@@ -159,6 +162,8 @@ import org.apache.kafka.common.requests.DescribeClusterResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
+import org.apache.kafka.common.requests.DescribeTransactionsRequest;
+import org.apache.kafka.common.requests.DescribeTransactionsResponse;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.EndTxnResponse;
 import org.apache.kafka.common.requests.FetchRequest;
@@ -175,6 +180,8 @@ import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
+import org.apache.kafka.common.requests.ListTransactionsRequest;
+import org.apache.kafka.common.requests.ListTransactionsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
@@ -2017,8 +2024,36 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleListGroupsRequest(KafkaHeaderAndRequest listGroups,
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listGroups.getRequest() instanceof ListGroupsRequest);
-        KeyValue<Errors, List<GroupOverview>> listResult = getGroupCoordinator().handleListGroups();
-        resultFuture.complete(KafkaResponseUtils.newListGroups(listResult.getKey(), listResult.getValue()));
+        Either<Errors, List<GroupOverview>> listResult = getGroupCoordinator().handleListGroups();
+        resultFuture.complete(KafkaResponseUtils.newListGroups(listResult));
+    }
+
+    @Override
+    protected void handleListTransactionsRequest(KafkaHeaderAndRequest listTransactions,
+                                                 CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(listTransactions.getRequest() instanceof ListTransactionsRequest);
+        ListTransactionsRequest request = (ListTransactionsRequest) listTransactions.getRequest();
+        List<String> stateFilters = request.data().stateFilters();
+        if (stateFilters == null) {
+            stateFilters = Collections.emptyList();
+        }
+        List<Long> producerIdFilters = request.data().producerIdFilters();
+        if (producerIdFilters == null) {
+            producerIdFilters = Collections.emptyList();
+        }
+        ListTransactionsResponseData listResult = getTransactionCoordinator()
+                .handleListTransactions(stateFilters, producerIdFilters);
+        resultFuture.complete(new ListTransactionsResponse(listResult));
+    }
+
+    @Override
+    protected void handleDescribeTransactionsRequest(KafkaHeaderAndRequest listGroups,
+                                                     CompletableFuture<AbstractResponse> response) {
+        checkArgument(listGroups.getRequest() instanceof DescribeTransactionsRequest);
+        DescribeTransactionsRequest request = (DescribeTransactionsRequest) listGroups.getRequest();
+        DescribeTransactionsResponseData describeResult = getTransactionCoordinator()
+                .handleDescribeTransactions(request.data().transactionalIds());
+        response.complete(new DescribeTransactionsResponse(describeResult));
     }
 
     @Override

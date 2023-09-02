@@ -36,6 +36,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -52,7 +53,11 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ListTransactionsOptions;
+import org.apache.kafka.clients.admin.ListTransactionsResult;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TransactionDescription;
+import org.apache.kafka.clients.admin.TransactionListing;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -82,6 +87,8 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
+
+    private static final int TRANSACTION_TIMEOUT_CONFIG_VALUE = 600 * 1000;
 
     protected void setupTransactions() {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
@@ -1158,7 +1165,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, txTimeout);
         } else {
             // very long time-out
-            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, 600 * 1000);
+            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, TRANSACTION_TIMEOUT_CONFIG_VALUE);
         }
         producerProps.put(CLIENT_ID_CONFIG, "dummy_client_" + UUID.randomUUID());
         addCustomizeProps(producerProps);
@@ -1485,6 +1492,143 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         } finally {
             conf.setKafkaTxnPurgeAbortedTxnIntervalSeconds(kafkaTxnPurgeAbortedTxnIntervalSeconds);
         }
+    }
+
+    @Test(timeOut = 1000 * 30)
+    public void testListAndDescribeTransactions() throws Exception {
+
+        String topicName = "testListAndDescribeTransactions";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+
+        producer.initTransactions();
+        producer.beginTransaction();
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.EMPTY);
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+
+        ListTransactionsResult listTransactionsResult = kafkaAdmin.listTransactions();
+        listTransactionsResult.all().get().forEach(t -> {
+            log.info("Found transactionalId: {} {} {}",
+                    t.transactionalId(),
+                    t.producerId(),
+                    t.state());
+        });
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.ONGOING);
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.ONGOING);
+        });
+        producer.commitTransaction();
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT);
+        });
+        producer.beginTransaction();
+
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT);
+
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+        producer.abortTransaction();
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT);
+        });
+        producer.close();
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.COMPLETE_ABORT);
+    }
+
+    private static void assertTransactionState(AdminClient kafkaAdmin, String transactionalId,
+                                               org.apache.kafka.clients.admin.TransactionState transactionState)
+            throws Exception {
+        ListTransactionsResult listTransactionsResult = kafkaAdmin.listTransactions();
+        Collection<TransactionListing> transactionListings = listTransactionsResult.all().get();
+        transactionListings.forEach(t -> {
+            log.info("Found transactionalId: {} {} {}",
+                    t.transactionalId(),
+                    t.producerId(),
+                    t.state());
+        });
+        TransactionListing transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        // filter for the same state
+        ListTransactionsOptions optionFilterState = new ListTransactionsOptions()
+                .filterStates(Collections.singleton(transactionState));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterState);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+
+        // filter for the same producer id
+        ListTransactionsOptions optionFilterProducer = new ListTransactionsOptions()
+                .filterProducerIds(Collections.singleton(transactionListing.producerId()));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterProducer);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        // filter for the same producer id and state
+        ListTransactionsOptions optionFilterProducerAndState = new ListTransactionsOptions()
+                .filterStates(Collections.singleton(transactionState))
+                .filterProducerIds(Collections.singleton(transactionListing.producerId()));
+        listTransactionsResult = kafkaAdmin.listTransactions(optionFilterProducerAndState);
+        transactionListings = listTransactionsResult.all().get();
+        transactionListing = transactionListings
+                .stream()
+                .filter(t -> t.transactionalId().equals(transactionalId))
+                .findFirst()
+                .get();
+        assertEquals(transactionState, transactionListing.state());
+
+        Map<String, TransactionDescription> map =
+                kafkaAdmin.describeTransactions(Collections.singleton(transactionalId))
+                .all().get();
+        assertEquals(1, map.size());
+        TransactionDescription transactionDescription = map.get(transactionalId);
+        log.info("transactionDescription {}", transactionDescription);
+        assertNotNull(transactionDescription);
+        assertEquals(transactionDescription.state(), transactionState);
+        assertTrue(transactionDescription.producerEpoch() >= 0);
+        assertEquals(TRANSACTION_TIMEOUT_CONFIG_VALUE, transactionDescription.transactionTimeoutMs());
+        assertTrue(transactionDescription.transactionStartTimeMs().isPresent());
+        assertTrue(transactionDescription.coordinatorId() >= 0);
+
+        switch (transactionState) {
+            case EMPTY:
+            case COMPLETE_COMMIT:
+            case COMPLETE_ABORT:
+                assertEquals(0, transactionDescription.topicPartitions().size());
+                break;
+            case ONGOING:
+                assertEquals(1, transactionDescription.topicPartitions().size());
+                break;
+            default:
+                fail("unhandled " + transactionState);
+        }
+
     }
 
     /**

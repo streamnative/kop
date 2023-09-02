@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -28,6 +29,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.Group
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTimer;
 import java.util.ArrayList;
@@ -218,8 +220,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, describeGroupResult.getKey());
 
         // ListGroups
-        KeyValue<Errors, List<GroupOverview>> listGroupsResult = groupCoordinator.handleListGroups();
-        assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, listGroupsResult.getKey());
+        Either<Errors, List<GroupOverview>> listGroupsResult = groupCoordinator.handleListGroups();
+        assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, listGroupsResult.getLeft());
 
         // DeleteGroups
         Map<String, Errors> deleteGroupsErrors = groupCoordinator.handleDeleteGroups(
@@ -1695,12 +1697,12 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         ).get();
         assertEquals(Errors.NONE, syncGroupResult.getKey());
 
-        KeyValue<Errors, List<GroupOverview>> groups = groupCoordinator.handleListGroups();
-        assertEquals(Errors.NONE, groups.getKey());
-        assertEquals(1, groups.getValue().size());
+        Either<Errors, List<GroupOverview>> groups = groupCoordinator.handleListGroups();
+        assertFalse(groups.isLeft());
+        assertEquals(1, groups.getRight().size());
         assertEquals(
             new GroupOverview("groupId", "consumer"),
-            groups.getValue().get(0)
+            groups.getRight().get(0)
         );
     }
 
@@ -1712,12 +1714,12 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         );
         assertEquals(Errors.NONE, joinGroupResult.getError());
 
-        KeyValue<Errors, List<GroupOverview>> groups = groupCoordinator.handleListGroups();
-        assertEquals(Errors.NONE, groups.getKey());
-        assertEquals(1, groups.getValue().size());
+        Either<Errors, List<GroupOverview>> groups = groupCoordinator.handleListGroups();
+        assertFalse(groups.isLeft());
+        assertEquals(1, groups.getRight().size());
         assertEquals(
             new GroupOverview("groupId", "consumer"),
-            groups.getValue().get(0)
+            groups.getRight().get(0)
         );
     }
 

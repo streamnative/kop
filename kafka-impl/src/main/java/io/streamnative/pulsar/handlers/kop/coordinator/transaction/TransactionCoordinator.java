@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
+import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.DEAD;
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.ONGOING;
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_ABORT;
 import static io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState.PREPARE_COMMIT;
@@ -32,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotB
 import io.streamnative.pulsar.handlers.kop.storage.PulsarPartitionedTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -52,6 +54,8 @@ import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
+import org.apache.kafka.common.message.DescribeTransactionsResponseData;
+import org.apache.kafka.common.message.ListTransactionsResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.TransactionResult;
@@ -79,6 +83,8 @@ public class TransactionCoordinator {
     private final ScheduledExecutorService scheduler;
 
     private final Time time;
+
+    private final AtomicBoolean isActive = new AtomicBoolean(false);
 
     private static final BiConsumer<TransactionStateManager.TransactionalIdAndProducerIdEpoch, Errors>
             onEndTransactionComplete =
@@ -216,6 +222,87 @@ public class TransactionCoordinator {
 
     public static String getTopicPartitionName(String topicPartitionName, int partitionId) {
         return topicPartitionName + PARTITIONED_TOPIC_SUFFIX + partitionId;
+    }
+
+    public ListTransactionsResponseData handleListTransactions(List<String> filteredStates,
+                                                               List<Long> filteredProducerIds) {
+        // https://github.com/apache/kafka/blob/915991445fde106d02e61a70425ae2601c813db0/core/
+        // src/main/scala/kafka/coordinator/transaction/TransactionCoordinator.scala#L259
+        if (!isActive.get()) {
+            log.warn("The transaction coordinator is not active, so it will reject list transaction request");
+            return new ListTransactionsResponseData().setErrorCode(Errors.NOT_COORDINATOR.code());
+        }
+        return this.txnManager.listTransactionStates(filteredProducerIds, filteredStates);
+    }
+
+    public DescribeTransactionsResponseData handleDescribeTransactions(List<String> transactionalIds) {
+        DescribeTransactionsResponseData response = new DescribeTransactionsResponseData();
+        if (transactionalIds != null) {
+            transactionalIds.forEach(transactionalId -> {
+                DescribeTransactionsResponseData.TransactionState transactionState =
+                        handleDescribeTransactions(transactionalId);
+                response.transactionStates().add(transactionState);
+            });
+        }
+        return response;
+    }
+
+    private DescribeTransactionsResponseData.TransactionState handleDescribeTransactions(String transactionalId) {
+        // https://github.com/apache/kafka/blob/915991445fde106d02e61a70425ae2601c813db0/core/
+        // src/main/scala/kafka/coordinator/transaction/TransactionCoordinator.scala#L270
+        if (transactionalId == null) {
+            throw new IllegalArgumentException("Invalid null transactionalId");
+        }
+
+        DescribeTransactionsResponseData.TransactionState transactionState =
+                new DescribeTransactionsResponseData.TransactionState()
+                .setTransactionalId(transactionalId);
+
+        if (!isActive.get()) {
+            transactionState.setErrorCode(Errors.COORDINATOR_NOT_AVAILABLE.code());
+        } else if (transactionalId.isEmpty()) {
+            transactionState.setErrorCode(Errors.INVALID_REQUEST.code());
+        } else {
+            Either<Errors, Optional<CoordinatorEpochAndTxnMetadata>> tState =
+                    txnManager.getTransactionState(transactionalId);
+            if (tState.isLeft()) {
+                transactionState.setErrorCode(tState.getLeft().code());
+            } else {
+                Optional<CoordinatorEpochAndTxnMetadata> right = tState.getRight();
+                if (!right.isPresent()) {
+                    transactionState.setErrorCode(Errors.TRANSACTIONAL_ID_NOT_FOUND.code());
+                } else {
+                    CoordinatorEpochAndTxnMetadata coordinatorEpochAndMetadata = right.get();
+                    TransactionMetadata txnMetadata = coordinatorEpochAndMetadata.getTransactionMetadata();
+                    txnMetadata.inLock(() -> {
+                        if (txnMetadata.getState() == DEAD) {
+                            // The transaction state is being expired, so ignore it
+                            transactionState.setErrorCode(Errors.TRANSACTIONAL_ID_NOT_FOUND.code());
+                        } else {
+                            txnMetadata.getTopicPartitions().forEach(topicPartition -> {
+                                var topicData = transactionState.topics().find(topicPartition.topic());
+                                if (topicData == null) {
+                                    topicData = new DescribeTransactionsResponseData.TopicData()
+                                            .setTopic(topicPartition.topic());
+                                    transactionState.topics().add(topicData);
+                                }
+                                topicData.partitions().add(topicPartition.partition());
+                            });
+
+                            transactionState
+                                    .setErrorCode(Errors.NONE.code())
+                                    .setProducerId(txnMetadata.getProducerId())
+                                    .setProducerEpoch(txnMetadata.getProducerEpoch())
+                                    .setTransactionState(txnMetadata.getState().toAdminState().toString())
+                                    .setTransactionTimeoutMs(txnMetadata.getTxnTimeoutMs())
+                                    .setTransactionStartTimeMs(txnMetadata.getTxnStartTimestamp());
+                        }
+                        return null;
+                    });
+                }
+            }
+        }
+        return transactionState;
     }
 
     @Data
@@ -956,6 +1043,7 @@ public class TransactionCoordinator {
 
         return this.producerIdManager.initialize().thenCompose(ignored -> {
             log.info("{} Startup transaction coordinator complete.", namespacePrefixForMetadata);
+            isActive.set(true);
             return CompletableFuture.completedFuture(null);
         });
     }
