@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 
 import static org.mockito.Mockito.mock;
 
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import java.nio.ByteBuffer;
@@ -52,7 +53,8 @@ public class PartitionLogTest {
             null,
             mock(KafkaTopicLookupService.class),
             new MemoryProducerStateManagerSnapshotBuffer(),
-            mock(OrderedExecutor.class));
+            mock(OrderedExecutor.class),
+            mock(EventExecutor.class));
 
     @DataProvider(name = "compressionTypes")
     Object[] allCompressionTypes() {

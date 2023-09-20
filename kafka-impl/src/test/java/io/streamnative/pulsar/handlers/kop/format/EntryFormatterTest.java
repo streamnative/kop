@@ -18,6 +18,7 @@ import static org.apache.kafka.common.record.LegacyRecord.RECORD_OVERHEAD_V1;
 import static org.apache.kafka.common.record.Records.LOG_OVERHEAD;
 import static org.mockito.Mockito.mock;
 
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.storage.MemoryProducerStateManagerSnapshotBuffer;
@@ -83,7 +84,8 @@ public class EntryFormatterTest {
             null,
             mock(KafkaTopicLookupService.class),
             new MemoryProducerStateManagerSnapshotBuffer(),
-            mock(OrderedExecutor.class));
+            mock(OrderedExecutor.class),
+            mock(EventExecutor.class));
 
     private void init() {
         pulsarServiceConfiguration.setEntryFormat("pulsar");

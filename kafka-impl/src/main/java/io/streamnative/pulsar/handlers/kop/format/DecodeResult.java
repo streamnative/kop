@@ -22,6 +22,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_OUT;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.Recycler;
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.TimeUnit;
@@ -94,24 +95,28 @@ public class DecodeResult {
     public void updateConsumerStats(final TopicPartition topicPartition,
                                     int entrySize,
                                     final String groupId,
-                                    RequestStats statsLogger) {
+                                    RequestStats statsLogger,
+                                    EventExecutor executor) {
         final int numMessages = EntryFormatter.parseNumMessages(records);
-
         final StatsLogger statsLoggerForThisPartition = statsLogger.getStatsLoggerForTopicPartition(topicPartition);
 
-        statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).addCount(conversionCount);
-        statsLoggerForThisPartition.getOpStatsLogger(CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS)
-                .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
-        final StatsLogger statsLoggerForThisGroup;
-        if (groupId != null) {
-            statsLoggerForThisGroup = statsLogger.getStatsLoggerForTopicPartitionAndGroup(topicPartition, groupId);
-        } else {
-            statsLoggerForThisGroup = statsLoggerForThisPartition;
-        }
-        statsLoggerForThisGroup.getCounter(BYTES_OUT).addCount(records.sizeInBytes());
-        statsLoggerForThisGroup.getCounter(MESSAGE_OUT).addCount(numMessages);
-        statsLoggerForThisGroup.getCounter(ENTRIES_OUT).addCount(entrySize);
-
+        final long conversionTimeNanosCopy = conversionTimeNanos;
+        final int conversionCountCopy = conversionCount;
+        int sizeInBytes = records.sizeInBytes();
+        executor.execute(() -> {
+            statsLoggerForThisPartition.getCounter(CONSUME_MESSAGE_CONVERSIONS).addCount(conversionCountCopy);
+            statsLoggerForThisPartition.getOpStatsLogger(CONSUME_MESSAGE_CONVERSIONS_TIME_NANOS)
+                    .registerSuccessfulEvent(conversionTimeNanosCopy, TimeUnit.NANOSECONDS);
+            final StatsLogger statsLoggerForThisGroup;
+            if (groupId != null) {
+                statsLoggerForThisGroup = statsLogger.getStatsLoggerForTopicPartitionAndGroup(topicPartition, groupId);
+            } else {
+                statsLoggerForThisGroup = statsLoggerForThisPartition;
+            }
+            statsLoggerForThisGroup.getCounter(BYTES_OUT).addCount(sizeInBytes);
+            statsLoggerForThisGroup.getCounter(MESSAGE_OUT).addCount(numMessages);
+            statsLoggerForThisGroup.getCounter(ENTRIES_OUT).addCount(entrySize);
+        });
     }
 
 }

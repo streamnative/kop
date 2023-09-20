@@ -17,11 +17,9 @@ import com.google.common.annotations.VisibleForTesting;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.NonNull;
-import org.apache.bookkeeper.common.util.MathUtils;
 
 /**
  * Pending futures of PersistentTopic.
@@ -29,27 +27,10 @@ import org.apache.bookkeeper.common.util.MathUtils;
  */
 public class PendingTopicFutures {
 
-    private final RequestStats requestStats;
-    private final long enqueueTimestamp;
     private int count = 0;
     private CompletableFuture<TopicThrowablePair> currentTopicFuture;
 
-    public PendingTopicFutures(RequestStats requestStats) {
-        this.requestStats = requestStats;
-        this.enqueueTimestamp = MathUtils.nowInNano();
-    }
-
-    private void registerQueueLatency(boolean success) {
-        if (requestStats != null) {
-            if (success) {
-                requestStats.getMessageQueuedLatencyStats().registerSuccessfulEvent(
-                        MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
-            } else {
-                requestStats.getMessageQueuedLatencyStats().registerFailedEvent(
-                        MathUtils.elapsedNanos(enqueueTimestamp), TimeUnit.NANOSECONDS);
-            }
-        }
-    }
+    public PendingTopicFutures() {}
 
     private synchronized void decrementCount() {
         count--;
@@ -62,12 +43,10 @@ public class PendingTopicFutures {
             count = 1;
             // The first pending future comes
             currentTopicFuture = topicFuture.thenApply(persistentTopic -> {
-                registerQueueLatency(true);
                 persistentTopicConsumer.accept(persistentTopic);
                 decrementCount();
                 return TopicThrowablePair.withTopic(persistentTopic);
             }).exceptionally(e -> {
-                registerQueueLatency(false);
                 exceptionConsumer.accept(e.getCause());
                 decrementCount();
                 return TopicThrowablePair.withThrowable(e.getCause());
@@ -77,16 +56,13 @@ public class PendingTopicFutures {
             // The next pending future reuses the completed result of the previous topic future
             currentTopicFuture = currentTopicFuture.thenApply(topicThrowablePair -> {
                 if (topicThrowablePair.getThrowable() == null) {
-                    registerQueueLatency(true);
                     persistentTopicConsumer.accept(topicThrowablePair.getPersistentTopicOpt());
                 } else {
-                    registerQueueLatency(false);
                     exceptionConsumer.accept(topicThrowablePair.getThrowable());
                 }
                 decrementCount();
                 return topicThrowablePair;
             }).exceptionally(e -> {
-                registerQueueLatency(false);
                 exceptionConsumer.accept(e.getCause());
                 decrementCount();
                 return TopicThrowablePair.withThrowable(e.getCause());
