@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.collect.Maps;
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
@@ -68,7 +69,7 @@ public class PartitionLogManager {
         this.recoveryExecutor = recoveryExecutor;
     }
 
-    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix, EventExecutor eventExecutor) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
@@ -76,7 +77,7 @@ public class PartitionLogManager {
             PartitionLog partitionLog = new PartitionLog(kafkaConfig, requestStats,
                     time, topicPartition, key, entryFilters,
                     kafkaTopicLookupService,
-                    prodPerTenant, recoveryExecutor);
+                    prodPerTenant, recoveryExecutor, eventExecutor);
 
             CompletableFuture<PartitionLog> initialiseResult = partitionLog
                     .initialise();

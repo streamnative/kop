@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndRequest;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
@@ -45,6 +46,7 @@ public final class MessageFetchContext {
     private volatile KafkaTopicManager topicManager;
     private volatile RequestStats statsLogger;
     private volatile TransactionCoordinator tc;
+    private volatile EventExecutor eventExecutor;
     private volatile String clientHost;
     private volatile String namespacePrefix;
     private volatile int maxReadEntriesNum;
@@ -64,6 +66,7 @@ public final class MessageFetchContext {
                                           KafkaHeaderAndRequest kafkaHeaderAndRequest) {
         MessageFetchContext context = RECYCLER.get();
         context.requestHandler = requestHandler;
+        context.eventExecutor = requestHandler.ctx.executor();
         context.sharedState = sharedState;
         context.decodeExecutor = decodeExecutor;
         context.topicManager = requestHandler.getTopicManager();

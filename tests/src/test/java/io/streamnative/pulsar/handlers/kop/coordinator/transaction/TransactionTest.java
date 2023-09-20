@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 import static org.apache.kafka.clients.CommonClientConfigs.CLIENT_ID_CONFIG;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
@@ -26,6 +27,7 @@ import static org.testng.Assert.expectThrows;
 import static org.testng.Assert.fail;
 
 import com.google.common.collect.ImmutableMap;
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
@@ -82,6 +84,8 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
+
+    private final EventExecutor eventExecutor = mock(EventExecutor.class);
 
     protected void setupTransactions() {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
@@ -483,7 +487,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         for (int i = 0; i < numPartitions; i++) {
             PartitionLog partitionLog = protocolHandler
                     .getReplicaManager()
-                    .getPartitionLog(new TopicPartition(topicName, i), tenant + "/" + namespace);
+                    .getPartitionLog(new TopicPartition(topicName, i), tenant + "/" + namespace, eventExecutor);
 
             // we can only take the snapshot on the only thread that is allowed to process mutations
             // on the state
@@ -766,7 +770,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         PartitionLog partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
         assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
@@ -801,7 +805,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
         assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
@@ -827,7 +831,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // validate that the topic has been trimmed
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
         assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
@@ -838,7 +842,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         assertSame(partitionLog, protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix));
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor));
 
         assertEquals(7L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
         abortedIndexList =
@@ -857,7 +861,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
         assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
@@ -889,7 +893,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
 
         // verify that we have 2 aborted TX in memory
@@ -1064,7 +1068,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 pulsar.getProtocolHandlers().protocol("kafka");
         PartitionLog partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
         assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
@@ -1084,7 +1088,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         partitionLog = protocolHandler
                 .getReplicaManager()
-                .getPartitionLog(topicPartition, namespacePrefix);
+                .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
         partitionLog.awaitInitialisation().get();
         assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
@@ -1425,7 +1429,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             PartitionLog partitionLog = protocolHandler
                     .getReplicaManager()
-                    .getPartitionLog(topicPartition, namespacePrefix);
+                    .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
             partitionLog.awaitInitialisation().get();
 
             List<FetchResponseData.AbortedTransaction> abortedIndexList =
@@ -1451,7 +1455,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             partitionLog = protocolHandler
                     .getReplicaManager()
-                    .getPartitionLog(topicPartition, namespacePrefix);
+                    .getPartitionLog(topicPartition, namespacePrefix, eventExecutor);
             partitionLog.awaitInitialisation().get();
             assertEquals(5, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 

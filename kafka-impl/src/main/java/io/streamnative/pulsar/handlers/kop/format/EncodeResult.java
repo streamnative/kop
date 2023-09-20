@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.PRODUCE_MESSAGE
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.util.concurrent.TimeUnit;
@@ -81,21 +82,28 @@ public class EncodeResult {
 
     public void updateProducerStats(final TopicPartition topicPartition,
                                     final RequestStats requestStats,
-                                    final Producer producer) {
+                                    final Producer producer,
+                                    final EventExecutor executor) {
         final int numBytes = encodedByteBuf.readableBytes();
 
         producer.updateRates(numMessages, numBytes);
         producer.getTopic().incrementPublishCount(numMessages, numBytes);
 
-        final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLoggerForTopicPartition(topicPartition);
+        int numMessageCopy = numMessages;
+        int conversionCountCopy = conversionCount;
+        long conversionTimeNanosCopy = conversionTimeNanos;
+        executor.execute(() -> {
+            final StatsLogger statsLoggerForThisPartition =
+                    requestStats.getStatsLoggerForTopicPartition(topicPartition);
 
-        statsLoggerForThisPartition.getCounter(BYTES_IN).addCount(numBytes);
-        statsLoggerForThisPartition.getCounter(MESSAGE_IN).addCount(numMessages);
-        statsLoggerForThisPartition.getCounter(PRODUCE_MESSAGE_CONVERSIONS).addCount(conversionCount);
-        statsLoggerForThisPartition.getOpStatsLogger(PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS)
-                .registerSuccessfulEvent(conversionTimeNanos, TimeUnit.NANOSECONDS);
+            statsLoggerForThisPartition.getCounter(BYTES_IN).addCount(numBytes);
+            statsLoggerForThisPartition.getCounter(MESSAGE_IN).addCount(numMessageCopy);
+            statsLoggerForThisPartition.getCounter(PRODUCE_MESSAGE_CONVERSIONS).addCount(conversionCountCopy);
+            statsLoggerForThisPartition.getOpStatsLogger(PRODUCE_MESSAGE_CONVERSIONS_TIME_NANOS)
+                    .registerSuccessfulEvent(conversionTimeNanosCopy, TimeUnit.NANOSECONDS);
 
-        RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessages);
+            RequestStats.BATCH_COUNT_PER_MEMORY_RECORDS_INSTANCE.set(numMessageCopy);
+        });
     }
 
 }
