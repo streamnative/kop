@@ -884,8 +884,10 @@ public class PartitionLog {
                 if (exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
                     invalidateCacheOnTopic.accept(fullPartitionName);
                 }
-                messageReadStats.registerFailedEvent(
-                        MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
+                long failedLatencyNanos = MathUtils.elapsedNanos(startReadingMessagesNanos);
+                eventExecutor.execute(() -> {
+                    messageReadStats.registerFailedEvent(failedLatencyNanos, TimeUnit.NANOSECONDS);
+                });
                 readFuture.completeExceptionally(exception);
             }
         }, null, PositionImpl.LATEST);
