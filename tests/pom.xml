@@ -32,7 +32,7 @@
 
   <properties>
     <schema.registry.version>5.0.0</schema.registry.version>
-    <hydra.version>1.11.8</hydra.version>
+    <hydra.version>2.1.0</hydra.version>
   </properties>
 
   <!-- include the dependencies -->
