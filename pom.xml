@@ -80,7 +80,7 @@
     <kaml.version>0.53.0</kaml.version>
     <kotlinx-serialization-core.version>1.5.0</kotlinx-serialization-core.version>
     <kotlin.version>1.8.10</kotlin.version>
-    <org-json.version>20230227</org-json.version>
+    <org-json.version>20231013</org-json.version>
   </properties>
 
   <licenses>
