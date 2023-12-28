@@ -32,6 +32,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -108,7 +110,7 @@ public class ReplicaManager {
         final CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture;
         Map<TopicPartition, MemoryRecords> entriesPerPartition;
         @Override
-        public void run() {
+        public synchronized void run() {
             topicPartitionNum.set(0);
             if (completableFuture.isDone()) {
                 // It may be triggered again in DelayedProduceAndFetch
