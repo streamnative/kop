@@ -1,9 +1,5 @@
 name: Release
 on:
-  # TODO: remove it
-  pull_request:
-    branches:
-      - master
   push:
     tags:
       - '*'
