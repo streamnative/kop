@@ -393,7 +393,6 @@ public abstract class KopProtocolHandlerTestBase {
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
 
         doReturn(sameThreadOrderedSafeExecutor).when(pulsar).getOrderedExecutor();
-        doAnswer((invocation) -> spy(invocation.callRealMethod())).when(pulsar).newCompactor();
     }
 
     public static MockZooKeeper createMockZooKeeper(String clusterName, String brokerUrl, String brokerUrlTls,
