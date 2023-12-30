@@ -116,9 +116,10 @@ public class ReplicaManager {
             }
             // add the topicPartition with timeout error if it's not existed in responseMap
             entriesPerPartition.keySet().forEach(topicPartition -> {
-                if (!responseMap.containsKey(topicPartition)) {
+                ProduceResponse.PartitionResponse response = responseMap.putIfAbsent(topicPartition,
+                        new ProduceResponse.PartitionResponse(Errors.REQUEST_TIMED_OUT));
+                if (response == null) {
                     log.error("Adding dummy REQUEST_TIMED_OUT to produce response for {}", topicPartition);
-                    responseMap.put(topicPartition, new ProduceResponse.PartitionResponse(Errors.REQUEST_TIMED_OUT));
                 }
             });
             if (log.isDebugEnabled()) {
