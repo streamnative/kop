@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
@@ -35,6 +37,7 @@ import org.apache.bookkeeper.mledger.impl.ManagedCursorImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.test.MockedBookKeeperTestCase;
 import org.apache.pulsar.broker.service.persistent.PersistentMessageExpiryMonitor;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.ByteBufPair;
@@ -171,8 +174,10 @@ public class OffsetFinderTest extends MockedBookKeeperTestCase {
             });
         assertTrue(ex.get());
 
+        PersistentTopic persistentTopic = mock(PersistentTopic.class);
+        when(persistentTopic.getName()).thenReturn("topicname");
         PersistentMessageExpiryMonitor monitor =
-            new PersistentMessageExpiryMonitor("topicname", c1.getName(), c1, null);
+            new PersistentMessageExpiryMonitor(persistentTopic, c1.getName(), c1, null);
         monitor.findEntryFailed(new ManagedLedgerException
             .ConcurrentFindCursorPositionException("failed"), Optional.empty(), null);
         Field field = monitor.getClass().getDeclaredField("expirationCheckInProgress");

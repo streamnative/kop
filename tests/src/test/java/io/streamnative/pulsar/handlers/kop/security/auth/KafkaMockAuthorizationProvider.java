@@ -181,6 +181,11 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
     }
 
     @Override
+    public CompletableFuture<Void> removePermissionsAsync(TopicName topicName) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
     public CompletableFuture<Boolean> allowTopicOperationAsync(TopicName topic,
                                                                String role,
                                                                TopicOperation operation,
