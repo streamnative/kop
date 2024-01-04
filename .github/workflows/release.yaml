@@ -1,0 +1,32 @@
+name: Release
+on:
+  push:
+    tags:
+      - '*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Release KoP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - name: Build artifacts
+        run: mvn clean install -ntp -B -DskipTests
+      - name: Create package directory
+        run: |
+          mkdir packages
+          cp ./kafka-impl/target/*.nar packages/
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: ./packages
