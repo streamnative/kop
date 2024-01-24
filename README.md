@@ -1,5 +1,9 @@
 # Kafka-on-Pulsar (KoP)
 
+> **Note**:
+>
+> KoP is now archived. It's recommended to try KSN (Kafka on StreamNative), see https://docs.streamnative.io/docs/kafka-on-cloud
+
 KoP (Kafka on Pulsar) brings the native Apache Kafka protocol support to Apache Pulsar by introducing a Kafka protocol handler on Pulsar brokers. By adding the KoP protocol handler to your existing Pulsar cluster, you can migrate your existing Kafka applications and services to Pulsar without modifying the code. This enables Kafka applications to leverage Pulsar’s powerful features, such as:
 
 - Streamlined operations with enterprise-grade multi-tenancy
