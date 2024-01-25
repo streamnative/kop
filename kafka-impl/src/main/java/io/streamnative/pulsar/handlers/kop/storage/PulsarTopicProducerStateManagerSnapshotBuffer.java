@@ -13,11 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -53,30 +56,73 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
 
     private CompletableFuture<Void> currentReadHandle;
 
-    private synchronized CompletableFuture<Reader<ByteBuffer>> ensureReaderHandle() {
+    @VisibleForTesting
+    public synchronized CompletableFuture<Reader<ByteBuffer>> ensureReaderHandle() {
         if (reader == null) {
-            reader = pulsarClient.newReaderBuilder()
+            CompletableFuture<Reader<ByteBuffer>> newReader = pulsarClient.newReaderBuilder()
                     .topic(topic)
                     .startMessageId(MessageId.earliest)
                     .readCompacted(true)
                     .createAsync();
+            reader = newReader;
+
+            newReader.whenComplete((r, error) -> {
+                if (error != null) {
+                    discardReader(newReader);
+                }
+            });
         }
         return reader;
     }
 
-    private synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
+    private synchronized void discardReader(CompletableFuture<Reader<ByteBuffer>> oldReader) {
+        if (reader == oldReader || (reader != null && reader.isCompletedExceptionally())) {
+            reader = null;
+            log.info("discard broken reader for {}", topic);
+        }
+    }
+
+    @SuppressFBWarnings("NP_NONNULL_PARAM_VIOLATION")
+    private synchronized void discardReader(Reader<ByteBuffer> oldReader) {
+        if (reader == null) {
+            return;
+        }
+        if (reader.isCompletedExceptionally() || (reader.isDone()
+                && !reader.isCompletedExceptionally()
+                && reader.getNow(null) == oldReader)) {
+            log.info("discard broken reader for {}", topic);
+            reader = null;
+        }
+    }
+
+    @VisibleForTesting
+    public synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
         if (producer == null) {
-            producer = pulsarClient.newProducerBuilder()
+            CompletableFuture<Producer<ByteBuffer>> newProducer = pulsarClient.newProducerBuilder()
                     .enableBatching(false)
                     .topic(topic)
                     .blockIfQueueFull(true)
                     .createAsync();
+
+            producer = newProducer;
+
+            newProducer.whenComplete((r, error) -> {
+                if (error != null) {
+                    discardProducer(newProducer);
+                }
+            });
         }
         return producer;
     }
 
+    private synchronized void discardProducer(CompletableFuture<Producer<ByteBuffer>> oldProducer) {
+        if (producer == oldProducer) {
+            producer = null;
+        }
+    }
+
     private CompletableFuture<Void> readNextMessageIfAvailable(Reader<ByteBuffer> reader) {
-        return reader
+        CompletableFuture<Void> result = reader
                 .hasMessageAvailableAsync()
                 .thenCompose(hasMessageAvailable -> {
                     if (hasMessageAvailable == null
@@ -90,11 +136,19 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                         }, executor);
                     }
                 });
+
+        result.whenComplete((r, error) -> {
+            if (error != null) {
+                discardReader(reader);
+            }
+        });
+
+        return result;
     }
 
 
     private synchronized CompletableFuture<Void> ensureLatestData(boolean beforeWrite) {
-        if (currentReadHandle != null) {
+        if (currentReadHandle != null && !currentReadHandle.isCompletedExceptionally()) {
             if (beforeWrite) {
                 // we are inside a write loop, so
                 // we must ensure that we start to read now
@@ -112,9 +166,19 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         // please note that the read operation is async,
         // and it is not execute inside this synchronized block
         CompletableFuture<Reader<ByteBuffer>> readerHandle = ensureReaderHandle();
+        if (readerHandle == null) {
+            return CompletableFuture.failedFuture(
+                    new KoPTopicException("Failed to create reader handle for " + topic));
+        }
         final CompletableFuture<Void> newReadHandle =
                 readerHandle.thenCompose(this::readNextMessageIfAvailable);
         currentReadHandle = newReadHandle;
+
+        newReadHandle.exceptionally(___ -> {
+            endReadLoop(newReadHandle);
+            return null;
+        });
+
         return newReadHandle.thenApply((__) -> {
             endReadLoop(newReadHandle);
             return null;
@@ -134,7 +198,12 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             // cannot serialise, skip
             return CompletableFuture.completedFuture(null);
         }
-        return ensureProducerHandle().thenCompose(opProducer -> {
+        CompletableFuture<Producer<ByteBuffer>> producerFuture = ensureProducerHandle();
+        if (producerFuture == null) {
+            return CompletableFuture.failedFuture(
+                    new KoPTopicException("Failed to create producer handle for " + topic));
+        }
+        return producerFuture.thenCompose(opProducer -> {
             // nobody can write now to the topic
             // wait for local cache to be up-to-date
             return ensureLatestData(true)
