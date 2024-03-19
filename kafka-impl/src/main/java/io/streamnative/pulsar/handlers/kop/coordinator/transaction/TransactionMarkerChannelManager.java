@@ -52,6 +52,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest.TxnMarkerEntry;
 import org.apache.pulsar.client.api.Authentication;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.ChannelFutures;
@@ -336,7 +337,13 @@ public class TransactionMarkerChannelManager {
 
                         addressFuture.whenComplete((address, throwable) -> {
                             if (throwable != null) {
-                                log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
+                                if (throwable instanceof PulsarClientException.LookupException
+                                        || throwable.getCause() instanceof PulsarClientException.LookupException) {
+                                    log.warn("Failed to find broker for topic partition {} - {}", topicPartition,
+                                            throwable.toString());
+                                } else {
+                                    log.warn("Failed to find broker for topic partition {}", topicPartition, throwable);
+                                }
                                 unknownBrokerTopicList.add(topicPartition);
                                 addFuture.complete(null);
                                 return;
