@@ -46,6 +46,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
@@ -135,16 +136,17 @@ public class SchemaRegistryManager {
 
         private void performAuthorizationValidation(String username, String role, String tenant)
                 throws SchemaStorageException {
-            if (kafkaConfig.isAuthorizationEnabled() && kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
+            if (kafkaConfig.isAuthorizationEnabled()) {
                 KafkaPrincipal kafkaPrincipal =
-                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username, null, null);
+                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username, null,
+                                new AuthenticationDataSource() {});
                 String topicName = MetadataUtils.constructSchemaRegistryTopicName(tenant, kafkaConfig);
                 try {
                     Boolean tenantExists =
                             authorizer.canAccessTenantAsync(kafkaPrincipal, Resource.of(ResourceType.TENANT, tenant))
                                     .get();
                     if (tenantExists == null || !tenantExists) {
-                        log.debug("SchemaRegistry username {} role {} tenant {} does not exist",
+                        log.debug("SchemaRegistry username {} role {} tenant {} does not exist {}",
                                 username, role, tenant, topicName);
                         throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName + " "
                                 + "tenant " + tenant + " does not exist (wrong username?)",
