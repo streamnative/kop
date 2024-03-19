@@ -20,6 +20,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
@@ -112,6 +113,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
+        ch.pipeline().addLast("consolidation", new FlushConsolidationHandler(1024, true));
         ch.pipeline().addLast("idleStateHandler",
                 new IdleStateHandler(
                         kafkaConfig.getConnectionMaxIdleMs(),

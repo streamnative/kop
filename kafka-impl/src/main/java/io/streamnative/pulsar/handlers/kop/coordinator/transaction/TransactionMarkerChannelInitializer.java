@@ -20,6 +20,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
@@ -50,6 +51,7 @@ public class TransactionMarkerChannelInitializer extends ChannelInitializer<Sock
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
+        ch.pipeline().addLast("consolidation", new FlushConsolidationHandler(1024, true));
         if (this.enableTls) {
             ch.pipeline().addLast(TLS_HANDLER,
                     new SslHandler(SSLUtils.createClientSslEngine(sslContextFactory)));
